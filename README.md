@@ -38,7 +38,10 @@ For two phones with Google Play services:
 3. Check Requests on the other phone. The sender shows receipt only after the receiver saves the report and returns a valid signature.
 
 The form shows the sharing audience before sending. **Sharing settings** keeps
-mesh sharing and cloud consent separate and remembers them for the next SOS.
+mesh sharing, GPS location sharing and cloud consent separate and remembers them
+for the next SOS. GPS location sharing is on by default; when location permission
+and a last-known fix are available, the signed SOS includes latitude and
+longitude. If unavailable or disabled, the SOS is sent without location.
 New installations start with mesh sharing on and cloud consent off; existing
 drafts keep their choices. With mesh sharing off, **Save on this phone** saves
 locally. Public reports stay queued without peers. Joining alone never sends a

@@ -34,4 +34,5 @@ data class LocalActions(
     val retrySends: () -> Unit,
     val saveGateway: ((String, String, () -> Unit) -> Unit)? = null,
     val clearGateway: (() -> Unit)? = null,
+    val requestLocation: (() -> Unit)? = null,
 )

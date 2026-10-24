@@ -66,6 +66,8 @@ class PacketValidator(
             1 -> SosCreateV1.parseFrom(data).also { p ->
                 check(uuid(p.requestId) && p.categoryValue in 1..6 && text(p.description, 2000, true) &&
                     (!p.hasPeopleCount() || p.peopleCount in 1..1000) && text(p.coarseArea, 120) && text(p.landmark, 120))
+                check((!p.hasLatitude() && !p.hasLongitude()) ||
+                    (p.hasLatitude() && p.hasLongitude() && p.latitude in -90.0..90.0 && p.longitude in -180.0..180.0))
                 authority = lookup.lookup(AuthorityKind.REQUEST, p.requestId, 0)
                 check(authority == null || authority?.ownerNodeId == sender, Rejection.INVALID_ACTOR)
                 check(p.consent.publicMeshAllowed, Rejection.CONSENT_REQUIRED)

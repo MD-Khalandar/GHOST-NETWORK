@@ -23,7 +23,9 @@ Signed neighbor receipts and delivery knowledge survive restarts. Local-only
 reports stay private to the device; original signatures and expiry are preserved.
 Signing, cloud-key pinning, consent and server authentication also work.
 SOS sending needs only a message and Send; optional details and remembered sharing
-settings expand in place. Mesh joining alone never creates an SOS. Connections
+settings expand in place. GPS sharing is on by default but optional; a last-known
+location is included only when permission and a valid fix are available. Mesh joining
+alone never creates an SOS. Connections
 are open without manual code verification; signatures do not prove human identity.
 The user reports the mesh works on physical phones; handset key persistence has
 not been separately verified here.

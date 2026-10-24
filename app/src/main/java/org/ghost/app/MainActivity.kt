@@ -16,6 +16,7 @@ import org.ghost.feature.foundation.DeviceTrustViewModel
 
 class MainActivity : ComponentActivity() {
     private lateinit var graph: AppGraph
+    private val locationPermissionRequest = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { }
     private val permissionRequest = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
         if (::graph.isInitialized) {
             if (graph.nearby.missingPermissions().isEmpty()) graph.startNearby() else graph.nearby.permissionDenied()
@@ -40,10 +41,12 @@ class MainActivity : ComponentActivity() {
             val state by screens.state.collectAsStateWithLifecycle()
             val trust by trustViewModel.state.collectAsStateWithLifecycle()
             val local by graph.local.collectAsStateWithLifecycle()
-            GhostTheme { GhostApp(state, screens::retry, trust, trustViewModel::retry, local, graph.actions {
+            GhostTheme { GhostApp(state, screens::retry, trust, trustViewModel::retry, local, graph.actions({
                 val missing = graph.nearby.missingPermissions()
                 if (missing.isEmpty()) graph.startNearby() else permissionRequest.launch(missing)
-            }) }
+            }, {
+                locationPermissionRequest.launch(arrayOf(android.Manifest.permission.ACCESS_FINE_LOCATION, android.Manifest.permission.ACCESS_COARSE_LOCATION))
+            })) }
         }
     }
     override fun onStart() {

@@ -73,13 +73,15 @@ private val DraftSaver = Saver<SosDraft, String>(save = { Json.encodeToString(it
 
 @Composable
 fun SosFormDialog(initial: SosDraft, busy: Boolean, error: String?, canSave: Boolean,
-                  onChange: (SosDraft) -> Unit, onSave: (SosDraft) -> Unit, onClose: (SosDraft) -> Unit) {
+                  onChange: (SosDraft) -> Unit, onSave: (SosDraft) -> Unit, onClose: (SosDraft) -> Unit,
+                  onRequestLocation: (() -> Unit)? = null) {
     var draft by rememberSaveable(initial.requestId, stateSaver = DraftSaver) { mutableStateOf(initial) }
     var details by rememberSaveable { mutableStateOf(false) }
     var sharing by rememberSaveable { mutableStateOf(false) }
     var categoryMenu by remember { mutableStateOf(false) }
     var validation by remember { mutableStateOf<String?>(null) }
     fun update(value: SosDraft) { draft = value; validation = null; onChange(value) }
+    LaunchedEffect(Unit) { if (draft.locationSharing) onRequestLocation?.invoke() }
     Dialog(onDismissRequest = { if (!busy) onClose(draft) }, properties = DialogProperties(
         dismissOnClickOutside = false, dismissOnBackPress = !busy, usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         Surface(modifier = Modifier.fillMaxSize().safeDrawingPadding().imePadding(), tonalElevation = 6.dp) {
@@ -116,6 +118,10 @@ fun SosFormDialog(initial: SosDraft, busy: Boolean, error: String?, canSave: Boo
                     if (sharing) {
                         ConsentChoice("Share with nearby phones", "Nearby people can read your request and pass it to more phones.", draft.publicSharing, !busy) { update(draft.copy(publicSharing = it)) }
                         ConsentChoice("Allow online help coordination", "Allow a phone with internet to save your request online. Saving online does not mean help has been arranged.", draft.cloudConsent, !busy) { update(draft.copy(cloudConsent = it)) }
+                        ConsentChoice("Share GPS location if available", "Include this phone's last known location with the SOS. If unavailable, the SOS is sent without it.", draft.locationSharing, !busy) {
+                            update(draft.copy(locationSharing = it))
+                            if (it) onRequestLocation?.invoke()
+                        }
                         Text("We'll remember these choices for your next request.", style = MaterialTheme.typography.bodySmall)
                     }
                     (validation ?: error)?.let { Text(it.userMessage(), color = MaterialTheme.colorScheme.error) }

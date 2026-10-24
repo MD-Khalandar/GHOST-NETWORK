@@ -23,6 +23,7 @@ import org.ghost.protocol.WireCodec
 import org.ghost.security.SigningIdentity
 
 class AppGraph(application: Application) : AndroidViewModel(application) {
+    val location = LastKnownLocationProvider(application)
     private val db = Room.databaseBuilder(application, GhostDatabase::class.java, "ghost.db")
         .addMigrations(GhostDatabase.MIGRATION_1_2, GhostDatabase.MIGRATION_2_3, GhostDatabase.MIGRATION_3_4).build()
     private val identity by lazy { AndroidSigningIdentity().loadOrCreate() }
@@ -95,7 +96,8 @@ class AppGraph(application: Application) : AndroidViewModel(application) {
             try {
                 val payload = SosCreatePayload(RequestId(draft.requestId), draft.category, draft.description.trim(),
                     draft.people.takeIf { it.isNotBlank() }?.toIntOrNull(), draft.area.trim().takeIf { it.isNotEmpty() },
-                    consent = Consent(draft.publicSharing, draft.cloudConsent))
+                    consent = Consent(draft.publicSharing, draft.cloudConsent),
+                    location = if (draft.locationSharing) location.read() else null)
                 require(draft.people.isBlank() || payload.peopleCount != null) { "Enter a valid people count." }
                 repository.publish(payload).getOrThrow()
                 operation.value = LocalUiState(notice = if (draft.publicSharing) "SOS saved. Queued for the mesh." else "SOS saved on this phone only.")
@@ -147,8 +149,9 @@ class AppGraph(application: Application) : AndroidViewModel(application) {
             catch (_: Exception) { operation.update { it.copy(error = "Cloud queue could not be reopened. Try again.") } }
         }
     }
-    fun actions(start: () -> Unit) = LocalActions({ draft -> if (!operation.value.saving) draftWrites.trySend(DraftWrite(draft)) },
-        ::saveDraft, ::publish, start, ::stopNearby, ::retrySends, ::saveGateway, ::clearGateway)
+    fun actions(start: () -> Unit, requestLocation: () -> Unit = {}) = LocalActions(
+        { draft -> if (!operation.value.saving) draftWrites.trySend(DraftWrite(draft)) },
+        ::saveDraft, ::publish, start, ::stopNearby, ::retrySends, ::saveGateway, ::clearGateway, requestLocation)
 
     override fun onCleared() {
         // SDK stop calls are immediate; the app also stops links when its activity backgrounds.

@@ -49,6 +49,8 @@ export async function initializeDatabase(database: Database): Promise<void> {
       people_count INTEGER,
       coarse_area TEXT,
       landmark TEXT,
+      latitude DOUBLE PRECISION,
+      longitude DOUBLE PRECISION,
       public_mesh_allowed BOOLEAN NOT NULL CHECK (public_mesh_allowed),
       cloud_processing_allowed BOOLEAN NOT NULL CHECK (cloud_processing_allowed),
       created_at_ms BIGINT NOT NULL,
@@ -57,6 +59,8 @@ export async function initializeDatabase(database: Database): Promise<void> {
       cloud_revision BIGINT NOT NULL UNIQUE,
       cloud_ack JSONB NOT NULL
     )`);
+    await connection.query("ALTER TABLE sos_reports ADD COLUMN IF NOT EXISTS latitude DOUBLE PRECISION");
+    await connection.query("ALTER TABLE sos_reports ADD COLUMN IF NOT EXISTS longitude DOUBLE PRECISION");
     await connection.query(`CREATE TABLE IF NOT EXISTS sync_uploads (
       principal_id TEXT NOT NULL,
       idempotency_key TEXT NOT NULL,
