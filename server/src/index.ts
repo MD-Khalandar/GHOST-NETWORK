@@ -1,10 +1,12 @@
 import { buildApp } from "./app.js";
 import { ConfigValidationError, loadConfig } from "./config.js";
 import { postgresDatabase } from "./database.js";
+import { OpenAIProposalModel } from "./coordinator/openai-model.js";
 
 export async function start(): Promise<void> {
   const config = loadConfig();
   const app = buildApp({ principals: config.authPrincipals, cloudSigningKeyPem: config.cloudSigningKeyPem,
+    proposalModel: new OpenAIProposalModel({ apiKey: config.openaiApiKey, model: config.coordinatorModel }),
     ...(config.databaseUrl ? { database: postgresDatabase(config.databaseUrl) } : {}) });
   try { await app.listen({ host: config.host, port: config.port }); }
   catch (error) { await app.close(); throw error; }

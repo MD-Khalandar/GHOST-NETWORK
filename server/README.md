@@ -83,5 +83,24 @@ kind-5 publications. It returns the latest signed event per offer; `data.state =
 means withdrawn (legacy publications without state mean available). Also check
 expiry/available_until_ms and quantities before suggesting or approving matches.
 
-Matching/approval and download handlers still return 501.
+## AI coordinator
+
+Set server-only `OPENAI_API_KEY` and `GHOST_COORDINATOR_MODEL` to enable matching.
+The server initializes coordinator runs/proposals, a durable job queue and one
+worker lease. Uploads wake the worker; a periodic scan recovers requests and checks
+new availability. Calls are serialized, provider calls time out after 30 seconds,
+and transient failures retry up to three times per input revision. Restart resumes
+queued work after any previous lease expires (up to 90 seconds).
+
+Viewer/operator routes: `GET /v1/dashboard/proposals` returns the latest 30
+suggestions with source freshness and readable source fields;
+`GET /v1/dashboard/runs` returns configuration availability, pending jobs and the
+latest 20 runs. Operator-only `POST /v1/dashboard/sos/:requestId/coordinate`
+queues an active SOS and returns 202; repeated completed runs have a 30-second
+cooldown (429). Missing model settings return `MODEL_UNAVAILABLE` (503) for reruns.
+No record text or provider errors are logged. Model names may be shown; API keys
+remain server-side. See [coordinator notes](src/coordinator/README.md).
+
+Approval, owner decisions and allocation remain unimplemented; approval and
+download handlers still return 501. AI proposals do not reserve resources.
 See [PROJECT.md](../PROJECT.md).

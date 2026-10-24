@@ -7,6 +7,8 @@ export interface ServerConfig {
   authPrincipals: Principal[];
   cloudSigningKeyPem?: string;
   databaseUrl?: string;
+  openaiApiKey?: string;
+  coordinatorModel?: string;
 }
 
 export class ConfigValidationError extends Error {
@@ -43,5 +45,7 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): Server
   }
   if (issues.length) throw new ConfigValidationError(issues);
   return { environment: mode as ServerConfig["environment"], host: environment.GHOST_HOST?.trim() || "127.0.0.1", port,
-    authPrincipals, ...(cloudSigningKeyPem ? { cloudSigningKeyPem } : {}), ...(databaseUrl ? { databaseUrl } : {}) };
+    authPrincipals, ...(cloudSigningKeyPem ? { cloudSigningKeyPem } : {}), ...(databaseUrl ? { databaseUrl } : {}),
+    ...(environment.OPENAI_API_KEY?.trim() ? { openaiApiKey: environment.OPENAI_API_KEY.trim() } : {}),
+    ...(environment.GHOST_COORDINATOR_MODEL?.trim() ? { coordinatorModel: environment.GHOST_COORDINATOR_MODEL.trim() } : {}) };
 }

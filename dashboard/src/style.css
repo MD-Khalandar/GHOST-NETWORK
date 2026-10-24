@@ -43,6 +43,7 @@ input { border: 1px solid #b5c4ba; background: #fcfdfa; padding: 12px; width: 10
 .desk-tabs [aria-current="page"] { background: #234f3f; color: white; }
 .resource-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 310px), 1fr)); gap: 20px; }
 .resource-card { background: white; border: 1px solid #dbe1da; border-radius: 12px; padding: 24px; overflow-wrap: anywhere; }
+.run-row { display: flex; gap: 18px; align-items: baseline; flex-wrap: wrap; border-top: 1px solid #dbe1da; padding: 12px 0; }
 .inbox-panel, .detail-panel { border: 1px solid #dbe1da; background: white; border-radius: 12px; overflow: hidden; }
 .list-columns, .request-row { display: grid; grid-template-columns: minmax(0, 1fr) 55px 133px; gap: 16px; }
 .list-columns { background: #edf0e9; color: #637063; font-size: 10px; text-transform: uppercase; letter-spacing: .09em; padding: 15px 22px; font-weight: 600; }

@@ -54,7 +54,14 @@ latest-only forwarding and projections prevent delayed originals undoing changes
 Dashboard shows withdrawn offers. The coordinator should read resource_offer_latest
 and exclude withdrawn (data.state = 2), expired or unavailable supplies.
 
-Next: integrate the cloud coordinator → approval, owner decisions and outage recovery.
+The cloud AI coordinator now queues active SOS after uploads/restarts and on
+availability changes. It uses current supply versions, validates bounded model
+suggestions and stores proposals without allocating stock. Leases, bounded retries
+and source checks guard processing. Dashboard AI suggestions shows runs and stale
+proposals; operators can request a rerun. Enable with server-only OPENAI_API_KEY
+and GHOST_COORDINATOR_MODEL. Live provider/deployment testing remains.
+
+Next: operator approval → owner decisions, allocation and signed assistance returns.
 
 Keep public/cloud consent separate, preserve signed bytes, reject forged/duplicate
 events, and keep cloud/provider secrets server-side. Queued, received and confirmed are distinct.

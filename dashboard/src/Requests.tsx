@@ -1,10 +1,11 @@
 import type { SosReport } from "./api";
+import type { ReactNode } from "react";
 
 const categories = ["Other", "Medical", "Trapped", "Water", "Food", "Shelter", "Other"];
 export const categoryName = (category: number) => categories[category] ?? "Other";
 export const time = (ms: number) => new Date(ms).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 
-export function RequestDetails({ report, now }: { report: SosReport; now: number }) {
+export function RequestDetails({ report, now, children }: { report: SosReport; now: number; children?: ReactNode }) {
   return <aside className="detail-panel" aria-label="Selected request">
     <div className="eyebrow">Request details</div>
     <h2>{categoryName(report.category)}</h2>
@@ -19,7 +20,8 @@ export function RequestDetails({ report, now }: { report: SosReport; now: number
       <div><dt>Sharing expires</dt><dd>{time(report.expires_at_ms)}{report.expires_at_ms <= now && <span className="expired-note">Sharing window ended</span>}</dd></div>
       <div><dt>Request ID</dt><dd className="identifier">{report.request_id}</dd></div>
     </dl>
-    <div className="help-note"><strong>Help is not confirmed.</strong><p>This receipt confirms server storage. Matching and assistance approval are not available yet.</p></div>
+    <div className="help-note"><strong>Help is not confirmed.</strong><p>This receipt confirms server storage. AI suggestions require human review and owner acceptance.</p></div>
+    {children}
   </aside>;
 }
 

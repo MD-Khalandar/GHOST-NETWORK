@@ -5,8 +5,13 @@ import { initializeDatabase, type Database } from "./database.js";
 import { SosStore, UploadConflict } from "./sos-store.js";
 import { registerDashboard } from "./dashboard.js";
 import { listResources } from "./resource-store.js";
+import { initializeCoordinator } from "./coordinator/store.js";
+import { CoordinatorWorker } from "./coordinator/worker.js";
+import { OpenAIProposalModel } from "./coordinator/openai-model.js";
+import { CoordinatorFailure, UUID, type ProposalModel } from "./coordinator/types.js";
 
-export interface AppSecurity { principals?: readonly Principal[]; cloudSigningKeyPem?: string; lookup?: AuthorityLookup; now?: () => number; database?: Database }
+export interface AppSecurity { principals?: readonly Principal[]; cloudSigningKeyPem?: string; lookup?: AuthorityLookup; now?: () => number; database?: Database;
+  proposalModel?: ProposalModel }
 
 export function buildApp(security: AppSecurity = {}): FastifyInstance {
   const app = Fastify({ logger: false, bodyLimit: 2400000 });
@@ -23,16 +28,20 @@ export function buildApp(security: AppSecurity = {}): FastifyInstance {
   const signer = security.cloudSigningKeyPem ? SigningIdentity.fromPem(security.cloudSigningKeyPem) : undefined;
   if (security.database && !signer) throw new Error("Cloud signing key is required with storage");
   const store = security.database && signer ? new SosStore(security.database, signer, security.now) : undefined;
+  const coordinator = security.database ? new CoordinatorWorker(security.database,
+    security.proposalModel ?? new OpenAIProposalModel(), security.now) : undefined;
   if (security.database) {
     const database = security.database;
-    app.addHook("onReady", () => initializeDatabase(database));
+    app.addHook("onReady", async () => { await initializeDatabase(database); await initializeCoordinator(database); coordinator!.start(); });
+    app.addHook("preClose", async () => { await coordinator!.stop(); });
     app.addHook("onClose", () => database.close());
   }
   const principals = security.principals ?? [];
   const routes: Array<{ method: "GET" | "POST"; url: string; roles: Role[] }> = [
     { method: "GET", url: "/v1/auth/session", roles: ["gateway", "viewer", "operator"] },
-    ...["/v1/dashboard/sos", "/v1/dashboard/sos/:requestId", "/v1/dashboard/helpers", "/v1/dashboard/offers", "/v1/dashboard/runs"]
+    ...["/v1/dashboard/sos", "/v1/dashboard/sos/:requestId", "/v1/dashboard/helpers", "/v1/dashboard/offers", "/v1/dashboard/runs", "/v1/dashboard/proposals"]
       .map(url => ({ method: "GET" as const, url, roles: ["viewer", "operator"] as Role[] })),
+    { method: "POST", url: "/v1/dashboard/sos/:requestId/coordinate", roles: ["operator"] },
     ...["approve", "reject"].map(action => ({ method: "POST" as const, url: `/v1/dashboard/proposals/:proposalId/${action}`, roles: ["operator"] as Role[] })),
     { method: "POST", url: "/v1/sync/upload", roles: ["gateway"] },
     { method: "GET", url: "/v1/sync/download", roles: ["gateway"] },
@@ -48,6 +57,24 @@ export function buildApp(security: AppSecurity = {}): FastifyInstance {
       if (route.url === "/v1/auth/session") {
         const p = authenticate(request.headers.authorization, principals)!;
         return { id: p.id, role: p.role, ...(p.gateway_node_id ? { gateway_node_id: p.gateway_node_id } : {}) };
+      }
+      if (route.url === "/v1/dashboard/runs" || route.url === "/v1/dashboard/proposals" || route.url.endsWith("/coordinate")) {
+        const id = (request.params as { requestId?: string }).requestId;
+        if (Object.keys(request.query as object).length || route.method === "POST" &&
+          (!UUID.test(id ?? "") || request.body !== undefined && (!request.body || typeof request.body !== "object" || Array.isArray(request.body) || Object.keys(request.body).length)))
+          return reply.code(400).send({ code: "INVALID_REQUEST", message: "Use a request ID and no extra parameters", retryable: false });
+        if (!coordinator) return reply.code(503).send({ code: "STORAGE_UNAVAILABLE", message: "Coordination storage is not configured", retryable: true });
+        try {
+          if (route.url === "/v1/dashboard/runs") return await coordinator.status();
+          if (route.url === "/v1/dashboard/proposals") return { items: await coordinator.store.review((security.now ?? Date.now)()) };
+          if (!coordinator.model.available) return reply.code(503).send({ code: "MODEL_UNAVAILABLE", message: "AI coordination is not configured", retryable: false });
+          if (!await coordinator.enqueue(id!)) return reply.code(429).send({ code: "RUN_COOLDOWN", message: "Wait briefly before retrying this request", retryable: true });
+          return reply.code(202).send({ request_id: id, status: "queued" });
+        } catch (error) {
+          if (error instanceof CoordinatorFailure && error.code === "REQUEST_UNAVAILABLE")
+            return reply.code(404).send({ code: error.code, message: "Request is unavailable or expired", retryable: false });
+          return reply.code(503).send({ code: "STORAGE_UNAVAILABLE", message: "Coordination is temporarily unavailable", retryable: true });
+        }
       }
       if (["/v1/dashboard/sos", "/v1/dashboard/sos/:requestId", "/v1/dashboard/helpers", "/v1/dashboard/offers"].includes(route.url)) {
         const query = request.query as Record<string, unknown>;
@@ -92,7 +119,9 @@ export function buildApp(security: AppSecurity = {}): FastifyInstance {
           });
           if (!store) return reply.code(503).send({ code: "STORAGE_UNAVAILABLE", message: "SOS storage is not configured", retryable: true });
           const principal = authenticate(request.headers.authorization, principals)!;
-          return await store.upload(principal.id, body.idempotency_key, packets);
+          const response = await store.upload(principal.id, body.idempotency_key, packets);
+          coordinator?.wake();
+          return response;
         } catch (error) {
           if (error instanceof PacketError) return reply.code(400).send({ code: error.code, message: "Packet rejected", retryable: false });
           if (error instanceof UploadConflict) return reply.code(409).send({ code: error.code, message: "Upload conflicts with previously saved content", retryable: false });

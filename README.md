@@ -156,3 +156,16 @@ Tokens stay in tab memory; reload/sign-out clears access. Use HTTPS in deploymen
 For UI development, run `npm --prefix dashboard run dev` alongside the server;
 open `http://127.0.0.1:5173/dashboard/`. Vite proxies `/v1` to port 3000.
 Checks: `npm --prefix dashboard test` and `npm --prefix dashboard run build`.
+
+## Cloud AI matching
+
+Set `OPENAI_API_KEY` and `GHOST_COORDINATOR_MODEL` in the server environment and
+restart the server. The model must support Responses strict function calling.
+New SOS and availability uploads trigger matching automatically. **AI suggestions**
+shows model suggestions, run progress/failures and outdated results. Operators can
+use **Find help with AI** on an SOS to request another run. Without model settings,
+the dashboard reports AI unavailable and the existing SOS/relay flow still works.
+
+Only currently available helpers/supplies are candidates. Signed supply edits and
+withdrawals invalidate older proposals. Suggestions require human review; approval,
+owner acceptance and confirmed assistance delivery are the next steps.
