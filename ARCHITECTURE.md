@@ -36,6 +36,12 @@ A connected phone can sync directly with the same cloud API. Any opted-in connec
 
 Keep one Android `:app` module, a separately runnable `server/` service and a web frontend in `dashboard/`. Use Kotlin, Compose Material 3, Room, coroutines/Flow and simple factory injection on Android. Choose and record the server/database/dashboard stack, model provider and deployment target at checkpoint 1 before parallel implementation; the API/event contracts stay provider-independent. Dashboard work must not delay the SOS sending path.
 
+CP01 role A records the selected implementation stack in
+[`docs/CP01_BASELINE.md`](docs/CP01_BASELINE.md): TypeScript/Fastify server,
+PostgreSQL 16, React/Vite dashboard, server-side OpenAI Responses API adapter,
+and a Linux x86_64 Docker Compose deployment target. Those choices do not add
+provider-specific fields to the Android or wire contracts.
+
 | Area | Responsibility |
 | --- | --- |
 | Android `domain/model`, `transport/api`, shared `contracts/` | Typed events/IDs, repository and transport interfaces, protobuf/API schemas and shared fixtures |

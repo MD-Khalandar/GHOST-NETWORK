@@ -1,6 +1,6 @@
 # SOS event and synchronization contract
 
-Planned contract only; no wire/API implementation exists. Checkpoint 1 freezes shared schemas/interfaces and fixtures; checkpoint 2 implements signatures/validation. Ordinary chat, generic information requests and local inference protocols are deferred.
+Planned contract only; no wire/API implementation exists. Checkpoint 1 freezes shared schemas/interfaces and fixtures; checkpoint 2 implements signatures/validation. The CP01 source of truth is [`contracts/`](../contracts/README.md), including the proto field numbers, API paths, and deterministic examples. Ordinary chat, generic information requests and local inference protocols are deferred.
 
 ## Immutable packets
 
@@ -65,7 +65,7 @@ Keep these separate: `SAVED_LOCALLY`, `QUEUED`, `SENT_TO_NEIGHBOR`, `SEEN_BY_REL
 
 ## Change and test requirements
 
-This revision replaces the planned phone-coordinator/hybrid-inference contract with cloud coordination. Remove requester-selected coordinator and raw gateway-inference events from active scope; add cloud acknowledgement/confirmation, trusted cloud signer and approval references. Keep proposal versions, owner authority and origin identity/signature semantics. No implemented data is migrated.
+This revision replaces the planned phone-coordinator/hybrid-inference contract with cloud coordination. Remove requester-selected coordinator and raw gateway-inference events from active scope; add cloud acknowledgement/confirmation, trusted cloud signer and approval references. Keep proposal versions, owner authority and origin identity/signature semantics. No implemented data is migrated. CP01 freezes the semantic contract in `contracts/proto/ghost_events_v1.proto` and `contracts/proto/ghost_wire_v1.proto`; CP02 owns generated code, canonical bytes, signatures, and validation.
 
 Dashboard/database extension: add owner-signed helper profile publish/update events, explicit supply quantity/unit/availability updates and authenticated read models for requests, helpers and supplies. Test profile ownership/consent, quantity/unit compatibility, offer-before-profile arrival, duplicate registration, dashboard authorization/pagination and agreement between dashboard records and agent tool results (D01–D04).
 

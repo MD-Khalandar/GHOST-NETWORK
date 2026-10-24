@@ -13,6 +13,7 @@ Local LLM helpers, ordinary chat, generic information services and LoRa are defe
 3. [10 checkpoints](docs/CHECKPOINTS.md): explanation, sequence and progress.
 4. [40 team prompts](docs/BUILD_PHASES.md): contract owner first, then Android, cloud/database and Android UI/web dashboard work in parallel.
 5. Relevant [protocol](docs/PROTOCOL.md), [agent](docs/AGENT_CONTRACT.md), [UI](docs/UX_SPEC.md) and [acceptance](docs/TEST_MATRIX.md) contracts.
+6. [CP01 role A baseline](docs/CP01_BASELINE.md): selected server/database/dashboard/provider/deployment stack, frozen contracts, ownership paths and wiring hooks.
 
 Use [README.md](README.md) for Android setup on Windows/macOS/Linux. [Environment setup](docs/ENVIRONMENT_SETUP.md) records historical host checks; it does not prove networking or cloud behavior.
 
