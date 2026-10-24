@@ -1,8 +1,10 @@
 import Fastify, { type FastifyInstance } from "fastify";
 import { authenticate, SigningIdentity, type Principal, type Role } from "./security.js";
 import { PacketError, validatePacket, type AuthorityLookup, type WirePacket } from "./protocol.js";
+import { initializeDatabase, type Database } from "./database.js";
+import { SosStore, UploadConflict } from "./sos-store.js";
 
-export interface AppSecurity { principals?: readonly Principal[]; cloudSigningKeyPem?: string; lookup?: AuthorityLookup; now?: () => number }
+export interface AppSecurity { principals?: readonly Principal[]; cloudSigningKeyPem?: string; lookup?: AuthorityLookup; now?: () => number; database?: Database }
 
 export function buildApp(security: AppSecurity = {}): FastifyInstance {
   const app = Fastify({ logger: false, bodyLimit: 2400000 });
@@ -15,7 +17,14 @@ export function buildApp(security: AppSecurity = {}): FastifyInstance {
     });
   });
   // The signer is only available on the server. No signing HTTP endpoint exists.
-  if (security.cloudSigningKeyPem) SigningIdentity.fromPem(security.cloudSigningKeyPem);
+  const signer = security.cloudSigningKeyPem ? SigningIdentity.fromPem(security.cloudSigningKeyPem) : undefined;
+  if (security.database && !signer) throw new Error("Cloud signing key is required with storage");
+  const store = security.database && signer ? new SosStore(security.database, signer, security.now) : undefined;
+  if (security.database) {
+    const database = security.database;
+    app.addHook("onReady", () => initializeDatabase(database));
+    app.addHook("onClose", () => database.close());
+  }
   const principals = security.principals ?? [];
   const routes: Array<{ method: "GET" | "POST"; url: string; roles: Role[] }> = [
     { method: "GET", url: "/v1/auth/session", roles: ["gateway", "viewer", "operator"] },
@@ -44,12 +53,20 @@ export function buildApp(security: AppSecurity = {}): FastifyInstance {
           return reply.code(400).send({ code: "INVALID_UPLOAD", message: "Use bounded signed packets; unsigned receipts are forbidden", retryable: false });
         }
         try {
-          for (const packet of body.packets) validatePacket(packet as WirePacket, {
-            nowMs: (security.now ?? Date.now)(), forCloud: true, lookup: security.lookup,
+          const packets = body.packets.map(packet => {
+            const verified = validatePacket(packet as WirePacket, {
+              nowMs: (security.now ?? Date.now)(), forCloud: true, lookup: security.lookup,
+            });
+            if (verified.envelope.kind !== 1) throw new PacketError("UNSUPPORTED_KIND");
+            return verified;
           });
+          if (!store) return reply.code(503).send({ code: "STORAGE_UNAVAILABLE", message: "SOS storage is not configured", retryable: true });
+          const principal = authenticate(request.headers.authorization, principals)!;
+          return await store.upload(principal.id, body.idempotency_key, packets);
         } catch (error) {
-          const code = error instanceof PacketError ? error.code : "MALFORMED_PACKET";
-          return reply.code(400).send({ code, message: "Packet rejected", retryable: false });
+          if (error instanceof PacketError) return reply.code(400).send({ code: error.code, message: "Packet rejected", retryable: false });
+          if (error instanceof UploadConflict) return reply.code(409).send({ code: error.code, message: "Upload conflicts with previously saved content", retryable: false });
+          return reply.code(503).send({ code: "STORAGE_UNAVAILABLE", message: "SOS upload temporarily unavailable", retryable: true });
         }
       }
       // Trust checks do not imply that a request has been stored or approved.

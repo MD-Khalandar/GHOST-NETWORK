@@ -32,14 +32,14 @@ test("gateway/viewer/operator roles are isolated on every protected route", asyn
   } finally { await app.close(); }
 });
 
-test("upload verifies origin independently of gateway and never claims persistence", async () => {
+test("upload verifies origin independently of gateway and reports unconfigured storage honestly", async () => {
   const app = buildApp({ principals, now: () => fixture.now_ms });
   const payload = { idempotency_key: "test", packets: [fixture.packets[0].packet] };
   const headers = { authorization: `Bearer ${tokens.gateway}` };
   try {
     // This is a relayed origin: the authenticated gateway is not required to be the origin signer.
     const response = await app.inject({ method: "POST", url: "/v1/sync/upload", headers, payload });
-    assert.equal(response.statusCode, 501);
+    assert.equal(response.statusCode, 503);
     const tampered = structuredClone(payload); tampered.packets[0].signature = "AA";
     assert.equal((await app.inject({ method: "POST", url: "/v1/sync/upload", headers, payload: tampered })).statusCode, 400);
     assert.equal((await app.inject({ method: "POST", url: "/v1/sync/upload", headers, payload: { ...payload, receipts: [{ recipient_node_id: fixture.device.node_id }] } })).statusCode, 400);

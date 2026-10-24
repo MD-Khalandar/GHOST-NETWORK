@@ -20,9 +20,13 @@ Signing, cloud-key pinning, consent and server authentication also work.
 SOS sending needs only a message and Send; optional details and remembered sharing
 settings expand in place. Mesh joining alone never creates an SOS. Connections
 are open without manual code verification; signatures do not prove human identity.
-Radio behavior and handset key persistence still need physical testing.
+The user reports the mesh works on physical phones; handset key persistence has
+not been separately verified here.
+Server SOS uploads now persist in PostgreSQL with consent/signature checks,
+transactional deduplication and stored signed cloud acknowledgements. Local
+embedded-PostgreSQL tests pass; external deployment has not been verified.
 
-Next: gateway sync → dashboard
+Next: wire phone gateway uploads and return cloud acknowledgements → dashboard
 and resource matching → approval, owner decisions and outage recovery.
 
 Keep public/cloud consent separate, preserve signed bytes, reject forged/duplicate
