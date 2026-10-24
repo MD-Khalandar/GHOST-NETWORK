@@ -2,15 +2,20 @@ package org.ghost.feature.home
 
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
 import org.ghost.app.LocalActions
 import org.ghost.data.local.AssistanceSummary
 import org.ghost.design.InfoCard
 import org.ghost.feature.foundation.fixtureTime
 
-@Composable fun AssistanceCard(item:AssistanceSummary,actions:LocalActions?,busy:Boolean,closedLocally:Boolean=false) {
+@Composable fun AssistanceCard(item:AssistanceSummary,actions:LocalActions?,busy:Boolean,closedLocally:Boolean=false,
+    modifier:Modifier=Modifier,grouped:Boolean=false) {
     var deciding by remember {mutableStateOf<Int?>(null)}
     val expired=item.deadline<=System.currentTimeMillis() && item.state in 1..2
-    InfoCard(if(item.owner) "Request for your help" else "Assistance for your SOS",item.description) {
+    val resource=if(item.resourceKind==1)"Volunteer assistance" else "${item.quantity ?: "Unknown"} ${item.unit}"
+    InfoCard(if(grouped) { if(item.resourceKind==1)"Volunteer response" else "Supply response" }
+        else if(item.owner) "Request for your help" else "Assistance for your SOS",
+        if(grouped)resource else item.description,modifier) {
         Text(when { closedLocally && item.state in 1..2->"SOS closed on this phone; waiting for the server to update the arrangement"
             expired->"Assistance deadline passed; waiting for updated server status"
             item.pending && item.error==null->"Your decision is saved; waiting for server confirmation"
@@ -22,8 +27,8 @@ import org.ghost.feature.foundation.fixtureTime
             item.state==6->"Requester marked the SOS resolved"
             item.state==7->"Help received (confirmed by requester)"
             else->"Unknown assistance status" })
-        Text(if(item.resourceKind==1)"Volunteer assistance" else "${item.quantity ?: "Unknown"} ${item.unit}")
-        if(item.area.isNotBlank())Text("Reported area: ${item.area}")
+        if(!grouped)Text(resource)
+        if(!grouped && item.area.isNotBlank())Text("Reported area: ${item.area}")
         Text("Decision/commitment deadline: ${fixtureTime(item.deadline)}")
         if(item.reason.isNotBlank())Text(item.reason)
         item.error?.let {Text("Server rejected the decision ($it). Waiting for current coordination status.",color=MaterialTheme.colorScheme.error)}

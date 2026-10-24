@@ -10,13 +10,17 @@ import org.ghost.app.LocalActions
 import org.ghost.app.LocalUiState
 import org.ghost.domain.model.SosState
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import org.ghost.design.*
 import org.ghost.feature.foundation.*
 import org.ghost.domain.model.LocalCloudState
+import org.ghost.data.local.AssistanceSummary
+import org.ghost.feature.home.AssistanceCard
 
 @Composable
 fun RequestsScreen(state: FoundationState, onRetry: () -> Unit, modifier: Modifier = Modifier,
@@ -24,7 +28,10 @@ fun RequestsScreen(state: FoundationState, onRetry: () -> Unit, modifier: Modifi
     var showExplanation by rememberSaveable { mutableStateOf(false) }
     var closingId by rememberSaveable { mutableStateOf<String?>(null) }
     var resolving by rememberSaveable { mutableStateOf(false) }
-    GhostScreen("Saved requests", "Requests for help saved on this phone.", modifier, contentPadding, state.simulated) {
+    val responsesByRequest=local.assistance.filterNot { it.owner }.groupBy { it.requestId }
+    val savedRequestIds=state.requests.map { it.requestId.value }.toSet()
+    val otherResponses=responsesByRequest.filterKeys { it !in savedRequestIds }.toList()
+    GhostScreen("Saved requests", "Each SOS and its assistance responses stay together.", modifier, contentPadding, state.simulated) {
         when {
             state.loading -> item { LoadingCard() }
             state.failed -> item { ErrorCard(onRetry) }
@@ -42,11 +49,13 @@ fun RequestsScreen(state: FoundationState, onRetry: () -> Unit, modifier: Modifi
                         Text("Nearby phones can pass requests along without internet. Saving online needs a configured gateway with internet and your online-sharing permission.")
                     }
                 }
-                if (state.requests.isEmpty()) item("empty") {
+                if (state.requests.isEmpty() && otherResponses.isEmpty()) item("empty") {
                     InfoCard("No requests yet", "Ask for help from Home, or connect to GHOST to receive requests from nearby phones.")
                 }
                 items(state.requests, key = { "request-${it.requestId.value}" }) { request ->
-                    InfoCard(request.category.name.displayName(), request.description ?: "No description provided") {
+                    val responses=responsesByRequest[request.requestId.value].orEmpty()
+                    InfoCard(request.category.name.displayName(), request.description ?: "No description provided",
+                        Modifier.testTag("request-thread-${request.requestId.value}")) {
                         val closed = request.state in setOf(SosState.CANCELLED, SosState.RESOLVED, SosState.CLOSED)
                         if (closed) {
                             StatusLabel(if (request.state == SosState.RESOLVED) "Reported resolved by requester" else "Cancelled by requester")
@@ -68,7 +77,7 @@ fun RequestsScreen(state: FoundationState, onRetry: () -> Unit, modifier: Modifi
                             LocalCloudState.EXPIRED -> "Closure sharing window ended; original SOS has also expired."
                             LocalCloudState.NOT_SHARED -> "Closure not shared online."
                         } else when (request.cloudState) {
-                            LocalCloudState.ACCEPTED -> if(local.assistance.any{!it.owner && it.requestId==request.requestId.value && it.state==7})
+                            LocalCloudState.ACCEPTED -> if(responses.any{it.state==7})
                                 "Received by server · receipt verified. See confirmed receipt of help below."
                                 else "Received by server · receipt verified. Help is not confirmed."
                             LocalCloudState.QUEUED -> "Waiting to be saved online by a phone with internet. Help is not confirmed."
@@ -80,9 +89,20 @@ fun RequestsScreen(state: FoundationState, onRetry: () -> Unit, modifier: Modifi
                             TextButton({ closingId = request.requestId.value; resolving = false }, enabled = !local.saving) { Text("Cancel SOS") }
                             TextButton({ closingId = request.requestId.value; resolving = true }, enabled = !local.saving) { Text("Mark resolved") }
                         }
+                        if(request.createdHere || responses.isNotEmpty()) RequestResponses(responses,actions,local.saving,closed)
                     }
                 }
-                items(local.assistance.filter{!it.owner},key={"assistance-${it.id}"}) { org.ghost.feature.home.AssistanceCard(it,actions,local.saving,state.requests.any{r->r.requestId.value==it.requestId && r.state in setOf(SosState.CANCELLED,SosState.RESOLVED)}) }
+                items(otherResponses,key={"response-request-${it.first}"}) { (requestId,responses) ->
+                    InfoCard("Assistance for your SOS",responses.first().description,Modifier.testTag("request-thread-$requestId")) {
+                        Text("The original request is not saved on this phone. Its assistance updates are shown together.",
+                            style=MaterialTheme.typography.bodySmall)
+                        RequestResponses(responses,actions,local.saving)
+                    }
+                }
+                if(state.offers.isNotEmpty()) item("offers-heading") {
+                    Text("Supply offers",style=MaterialTheme.typography.titleLarge)
+                    Text("General availability. These offers are not responses to a specific SOS.")
+                }
                 items(state.offers, key = { "offer-${it.offerId.value}" }) { offer ->
                     InfoCard("${offer.resourceType.name.displayName()} offer", offer.coarseArea ?: "Area not provided") {
                         StatusLabel(offer.state.label() + if (offer.stale) " · may be out of date" else " · as reported by the person offering help")
@@ -100,5 +120,17 @@ fun RequestsScreen(state: FoundationState, onRetry: () -> Unit, modifier: Modifi
             text = { Text("This ends this request. Send a new SOS if you need help again. Other phones and the server update after delivery; offline copies can remain until expiry.") },
             confirmButton = { TextButton({ actions?.closeSos?.invoke(id, if (resolving) SosState.RESOLVED else SosState.CANCELLED); closingId = null }, enabled = !local.saving) { Text(if (resolving) "Mark resolved" else "Cancel SOS") } },
             dismissButton = { TextButton({ closingId = null }) { Text("Keep request open") } })
+    }
+}
+
+@Composable
+private fun RequestResponses(responses:List<AssistanceSummary>,actions:LocalActions?,busy:Boolean,closed:Boolean=false) {
+    HorizontalDivider()
+    Text("Responses (${responses.size})",style=MaterialTheme.typography.titleSmall)
+    if(responses.isEmpty())Text("No assistance responses received yet.",style=MaterialTheme.typography.bodySmall)
+    responses.forEach { response ->
+        key(response.id) {
+            AssistanceCard(response,actions,busy,closed,Modifier.testTag("assistance-${response.id}"),grouped=true)
+        }
     }
 }

@@ -75,6 +75,9 @@ Session, permissions, expiry and restart tests pass locally. A local browser che
 also covers login, refresh/browser restart restoration and persistent sign-out.
 Navigation is Home, Requests, Offer help and Connections. Requests shows each SOS's
 upload status and an optional explanation; the old Help status tab is removed.
+Each SOS groups its assistance responses and receipt actions in the same card,
+matched by request ID. Updates without a saved original stay grouped separately;
+general supply offers are labelled apart from assistance responses.
 Request owners can cancel an SOS or mark it resolved after confirmation. Signed
 terminal closures retain the original expiry/consent and carry ownership proof,
 so they can arrive first without a delayed original reopening the request.
