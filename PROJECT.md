@@ -23,8 +23,9 @@ Signed neighbor receipts and delivery knowledge survive restarts. Local-only
 reports stay private to the device; original signatures and expiry are preserved.
 Signing, cloud-key pinning, consent and server authentication also work.
 SOS sending needs only a message and Send; optional details and remembered sharing
-settings expand in place. GPS sharing is on by default but optional; a last-known
-location is included only when permission and a valid fix are available. Mesh joining
+settings expand in place. GPS sharing is on by default but optional and remembered
+after sending; a cached location is included only with permission and a valid fix
+no older than five minutes, measured with Android's monotonic clock. Mesh joining
 alone never creates an SOS. Connections
 are open without manual code verification; signatures do not prove human identity.
 The user reports the mesh works on physical phones; handset key persistence has
@@ -42,9 +43,10 @@ Return routing has host exchange/restart tests; physical cloud-to-mesh testing r
 Android uses plain-language actions and delivery updates; connection diagnostics
 sit under optional Technical details.
 The web SOS desk lists server-received reports with request details, pagination,
-manual refresh and expiry labels. Its authenticated, self-contained map plots
-shared GPS locations without a third-party tile service and links markers to
-request details. Viewer/operator tokens stay in tab memory; gateway tokens
+manual refresh and expiry labels. Its authenticated Leaflet map plots shared GPS
+locations with pan/zoom and links markers to request details. OpenStreetMap tiles
+need internet and reveal the viewed area to the tile provider, without sending
+SOS text or access tokens. Viewer/operator tokens stay in tab memory; gateway tokens
 cannot read it. Local browser checks pass against signed uploads.
 
 Next: helper/supply records and matching → approval, owner decisions and outage recovery.

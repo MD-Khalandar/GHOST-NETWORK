@@ -68,7 +68,9 @@ class LocalSosRepository(
                 })
         }
     }.flowOn(Dispatchers.IO)
-    override suspend fun publish(payload: SosCreatePayload): Result<LocalPublishResult> = withContext(Dispatchers.IO) {
+    override suspend fun publish(payload: SosCreatePayload): Result<LocalPublishResult> = publish(payload, null)
+
+    suspend fun publish(payload: SosCreatePayload, locationSharing: Boolean?): Result<LocalPublishResult> = withContext(Dispatchers.IO) {
         try {
             writes.withLock {
                 require(payload.description.isNotBlank() && payload.description.length <= 2000) { "Describe the help you need (up to 2000 characters)." }
@@ -111,7 +113,8 @@ class LocalSosRepository(
                         check(dao.insert(row) != -1L) { "Request could not be saved." }
                         val draft = dao.draft()?.let { json.decodeFromString<SosDraft>(it.value) }
                         if (draft?.requestId == payload.requestId.value) dao.saveDraft(DraftRow(value = json.encodeToString(
-                            SosDraft(publicSharing = payload.consent.publicMeshAllowed, cloudConsent = payload.consent.cloudProcessingAllowed))))
+                            SosDraft(publicSharing = payload.consent.publicMeshAllowed, cloudConsent = payload.consent.cloudProcessingAllowed,
+                                locationSharing = locationSharing ?: draft.locationSharing))))
                         LocalPublishResult(verified.eventId, payload.consent.publicMeshAllowed)
                     }
                 }.let { Result.success(it) }

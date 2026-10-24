@@ -32,11 +32,14 @@ test("location map plots only reports with coordinates and exposes marker select
     expires_at_ms: 3000, cloud_revision: 2,
   };
   const withoutLocation: SosReport = { ...located, request_id: "33333333-3333-4333-8333-333333333333", latitude: null, longitude: null };
-  const html = renderToStaticMarkup(<LocationMap reports={[located, withoutLocation]}
+  const invalidLocation: SosReport = { ...withoutLocation, latitude: NaN, longitude: 999 };
+  const html = renderToStaticMarkup(<LocationMap reports={[located, withoutLocation, invalidLocation]}
     selected={located.request_id} onSelect={() => {}}/>);
   assert.match(html, /SOS location map/);
-  assert.match(html, /1 of 2 requests with GPS/);
+  assert.match(html, /1 of 3 requests with GPS/);
   assert.match(html, /aria-label="Trapped SOS at 12.5, 44.25"/);
   assert.match(html, /aria-pressed="true"/);
   assert.doesNotMatch(html, /33333333-3333-4333-8333-333333333333/);
+  const empty = renderToStaticMarkup(<LocationMap reports={[withoutLocation]} selected={null} onSelect={() => {}}/>);
+  assert.match(empty, /No uploaded SOS report includes a GPS location/);
 });

@@ -118,7 +118,7 @@ fun SosFormDialog(initial: SosDraft, busy: Boolean, error: String?, canSave: Boo
                     if (sharing) {
                         ConsentChoice("Share with nearby phones", "Nearby people can read your request and pass it to more phones.", draft.publicSharing, !busy) { update(draft.copy(publicSharing = it)) }
                         ConsentChoice("Allow online help coordination", "Allow a phone with internet to save your request online. Saving online does not mean help has been arranged.", draft.cloudConsent, !busy) { update(draft.copy(cloudConsent = it)) }
-                        ConsentChoice("Share GPS location if available", "Include this phone's last known location with the SOS. If unavailable, the SOS is sent without it.", draft.locationSharing, !busy) {
+                        ConsentChoice("Share GPS location if available", "Include a cached location up to five minutes old. If unavailable, the SOS is sent without it.", draft.locationSharing, !busy) {
                             update(draft.copy(locationSharing = it))
                             if (it) onRequestLocation?.invoke()
                         }

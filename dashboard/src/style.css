@@ -41,18 +41,13 @@ input { border: 1px solid #b5c4ba; background: #fcfdfa; padding: 12px; width: 10
 .map-panel { border: 1px solid #dbe1da; background: white; border-radius: 12px; padding: 24px; margin-bottom: 24px; }
 .map-heading { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; margin-bottom: 16px; }
 .map-heading h2 { margin: 5px 0 0; font-size: 20px; }
-.map-frame { position: relative; height: min(48vw, 430px); min-height: 260px; border-radius: 9px; overflow: hidden; background: #dce9e8; }
-.map-surface { display: block; width: 100%; height: 100%; }
-.map-water { fill: #dce9e8; }
-.map-grid { fill: none; stroke: #b7d0ce; stroke-width: .22; stroke-dasharray: 1 1; }
-.map-land { fill: #b8ccb6; stroke: #9caf9f; stroke-width: .35; opacity: .9; }
-.map-marker { position: absolute; transform: translate(-50%, -50%); width: 26px; height: 26px; border: 0; border-radius: 50%; padding: 6px; background: #234f3f; box-shadow: 0 2px 7px #152c2459; }
-.map-marker span { display: block; width: 100%; height: 100%; border: 2px solid white; border-radius: 50%; }
-.map-marker:hover, .map-marker.selected { background: #b65738; z-index: 1; }
+.map-frame { position: relative; z-index: 0; height: min(48vw, 430px); min-height: 260px; border-radius: 9px; overflow: hidden; background: #dce9e8; }
+.map-marker { border: 0; border-radius: 50%; padding: 6px; background: #234f3f; box-shadow: 0 2px 7px #152c2459; }
+.map-marker span { display: block; width: 100%; height: 100%; border: 2px solid white; border-radius: 50%; box-sizing: border-box; }
+.map-marker:hover, .map-marker.selected { background: #b65738; }
 .map-marker:focus-visible { outline: 3px solid #287466; outline-offset: 3px; }
-.map-axis { position: absolute; display: flex; justify-content: space-between; left: 10px; right: 10px; color: #49675e; font-size: 10px; pointer-events: none; }
-.map-axis-top { top: 8px; }
-.map-axis-bottom { bottom: 8px; }
+.map-locations { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; max-height: 160px; overflow-y: auto; }
+.map-locations button[aria-pressed="true"] { border-color: #b65738; background: #fcf0e9; }
 .map-empty { display: grid; justify-items: center; padding: 50px 20px; background: #f4f7f2; border-radius: 9px; text-align: center; }
 .map-empty p { margin: 8px 0 2px; font-size: 14px; }
 .map-note { color: #637369; font-size: 11px; margin: 12px 0 0; }

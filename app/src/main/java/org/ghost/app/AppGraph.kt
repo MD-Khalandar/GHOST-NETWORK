@@ -99,7 +99,7 @@ class AppGraph(application: Application) : AndroidViewModel(application) {
                     consent = Consent(draft.publicSharing, draft.cloudConsent),
                     location = if (draft.locationSharing) location.read() else null)
                 require(draft.people.isBlank() || payload.peopleCount != null) { "Enter a valid people count." }
-                repository.publish(payload).getOrThrow()
+                repository.publish(payload, draft.locationSharing).getOrThrow()
                 operation.value = LocalUiState(notice = if (draft.publicSharing) "SOS saved. Queued for the mesh." else "SOS saved on this phone only.")
                 saved(); exchange.flush()
             } catch (cancelled: CancellationException) { throw cancelled }

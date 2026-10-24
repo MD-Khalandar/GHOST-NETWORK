@@ -1,6 +1,4 @@
-. .\scripts\env.ps1
-adb devices
-adb install -r .\app\build\outputs\apk\debug\app-debug.apk# GHOST
+# GHOST
 
 Offline SOS over nearby Android phones, with cloud-assisted help coordination.
 Read [PROJECT.md](PROJECT.md) for the short product brief and current state.
@@ -42,7 +40,7 @@ For two phones with Google Play services:
 The form shows the sharing audience before sending. **Sharing settings** keeps
 mesh sharing, GPS location sharing and cloud consent separate and remembers them
 for the next SOS. GPS location sharing is on by default; when location permission
-and a last-known fix are available, the signed SOS includes latitude and
+and a fix no older than five minutes are available, the signed SOS includes latitude and
 longitude. If unavailable or disabled, the SOS is sent without location.
 New installations start with mesh sharing on and cloud consent off; existing
 drafts keep their choices. With mesh sharing off, **Save on this phone** saves
@@ -129,8 +127,9 @@ Open `http://127.0.0.1:3000/dashboard/` and enter a **viewer or operator** token
 supplied by the server administrator. It lists uploaded SOS reports and plots
 reports with shared GPS coordinates on the built-in server map. Select a marker
 to open its request details; reports without coordinates remain in the list but
-are not plotted. The map uses no third-party tile service, so exact locations
-stay within the authenticated dashboard origin. Refresh checks for new arrivals;
+are not plotted. Leaflet provides pan/zoom and clickable markers over OpenStreetMap
+tiles. The basemap needs internet; tile requests reveal the viewed map area to
+OpenStreetMap but do not send SOS text or access tokens. Refresh checks for new arrivals;
 older reports load in pages. Expiry does not mean help was provided. Tokens stay
 in tab memory; reload/sign-out clears access. Use HTTPS in deployment.
 
