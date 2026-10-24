@@ -73,6 +73,7 @@ enum EventKindV1 {
   DELIVERY_RECEIPT = 12;
   PEER_HELLO = 13;
   INVENTORY = 14;
+  NETWORK_ANNOUNCEMENT = 15; // short-lived graph metadata, never cloud-uploaded
 }
 
 message ConsentV1 {
@@ -84,6 +85,21 @@ message ConsentV1 {
 message PeerHelloV1 {
   bytes challenge = 1;
   bytes reply_to = 2;
+  bool supports_topology = 3; // send graph updates only to supporting peers
+}
+
+enum ConnectivityStatusV1 {
+  CONNECTIVITY_UNKNOWN = 0;
+  CONNECTIVITY_AVAILABLE = 1;
+  CONNECTIVITY_UNAVAILABLE = 2;
+}
+
+// Signed by the phone describing its own connections/status. Not a delivery proof.
+message NetworkAnnouncementV1 {
+  repeated bytes neighbor_node_ids = 1; // at most four authenticated direct peers
+  ConnectivityStatusV1 internet = 2; // Android-validated internet, not server access
+  bool gateway_configured = 3;
+  ConnectivityStatusV1 server = 4; // recent gateway HTTP observation, otherwise unknown
 }
 
 message SosCreateV1 {

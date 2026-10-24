@@ -8,11 +8,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import org.ghost.design.GhostTheme
 import org.ghost.feature.network.NearbyMeshGraph
 import org.ghost.transport.api.PeerHandle
+import org.ghost.mesh.*
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
@@ -28,6 +30,38 @@ class NearbyMeshGraphInteractionTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
     private val a = PeerHandle("nearby", "A")
     private val b = PeerHandle("nearby", "B")
+
+    @Test
+    fun hopSliderShowsRemotePhonesAndTheirReportedInternetAndGatewayStatus() {
+        val local = "0".repeat(64); val direct = "a".repeat(64); val remote = "c".repeat(64)
+        val snapshot = TopologySnapshot(local, announcements = listOf(
+            NodeAnnouncement(direct, listOf(local, remote), NodeCapabilities(), 1, 60001),
+            NodeAnnouncement(remote, listOf(direct), NodeCapabilities(Connectivity.AVAILABLE, true, Connectivity.UNKNOWN), 1, 60001)))
+        compose.setContent { GhostTheme {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                NearbyMeshGraph(listOf(a), mapOf("A" to direct), true, topology = snapshot)
+            }
+        } }
+        compose.onNodeWithTag("mesh-node-$remote").assertDoesNotExist()
+        compose.onNodeWithTag("mesh-hop-slider").performSemanticsAction(SemanticsActions.SetProgress) { it(2f) }
+        compose.onNodeWithTag("mesh-node-$remote").assertExists().performClick()
+        compose.onNodeWithText("Internet available (reported)").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Configured gateway · server status unknown").assertIsDisplayed()
+        compose.onNodeWithText("Full screen").performScrollTo().performClick()
+        compose.onNodeWithTag("mesh-full-screen").assertIsDisplayed()
+        compose.onNodeWithTag("mesh-node-$remote").assertExists().assertIsSelected()
+        compose.onNodeWithText("Show up to 2 hops").assertIsDisplayed()
+        compose.onNodeWithText("Close full screen").performClick()
+        compose.onNodeWithTag("mesh-full-screen").assertDoesNotExist()
+        compose.onNodeWithTag("mesh-node-$remote").assertExists().assertIsSelected()
+        compose.onNodeWithText("All known").performScrollTo().performClick()
+        compose.onNodeWithText("All known phones").assertIsDisplayed()
+        compose.onNodeWithText("Limit distance").performClick()
+        compose.onNodeWithTag("mesh-hop-slider").performScrollTo()
+            .performSemanticsAction(SemanticsActions.SetProgress) { it(1f) }
+        compose.onNodeWithTag("mesh-node-$remote").assertDoesNotExist()
+        compose.onNodeWithTag("mesh-connection-details").assertDoesNotExist()
+    }
 
     @Test
     fun selectingAPhoneTracksIdentityAndClearsDetailsWhenItLeaves() {

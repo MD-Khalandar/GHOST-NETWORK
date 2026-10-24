@@ -5,12 +5,16 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.*
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.Slider
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
@@ -20,13 +24,18 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import org.ghost.transport.api.PeerHandle
+import org.ghost.mesh.*
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.roundToInt
@@ -36,11 +45,22 @@ private val GraphBackground = Color(0xFF111318)
 private val GraphForeground = Color(0xFFE6E8EE)
 private val GraphMuted = Color(0xFFA1A8B8)
 private val GraphTeal = Color(0xFF82D8CE)
+private val GraphOnline = Color(0xFF8EE0A4)
+private val GraphOffline = Color(0xFFE4B578)
 
-private class NeighborMotion(val peer: PeerHandle, val slot: Int) {
+private class NeighborMotion(val id: String, val slot: Int) {
     val arrival = Animatable(0f)
     var displacement by mutableStateOf(Offset.Zero)
     var dragging by mutableStateOf(false)
+}
+
+private class GraphViewState {
+    val hops = mutableFloatStateOf(1f)
+    val allKnown = mutableStateOf(false)
+    val selected = mutableStateOf<String?>(null)
+    val zoom = mutableFloatStateOf(1f)
+    val pan = mutableStateOf(Offset.Zero)
+    val motions = mutableMapOf<String, NeighborMotion>()
 }
 
 // Slots survive changes in list order, so existing phones don't shuffle when another leaves.
@@ -55,27 +75,58 @@ private fun restingPosition(slot: Int): Offset = when (slot) {
     }
 }
 
-/** Local observations only: no inferred links between neighbors or distant phones. */
+/** Direct observations plus short-lived, signed remote reports. Never a delivery map. */
 @Composable
 fun NearbyMeshGraph(peers: List<PeerHandle>, identities: Map<String, String>, active: Boolean,
-                    starting: Boolean = false, modifier: Modifier = Modifier) {
+                    starting: Boolean = false, modifier: Modifier = Modifier, topology: TopologySnapshot = TopologySnapshot()) {
+    val viewState = remember { GraphViewState() }
+    var fullScreen by rememberSaveable { mutableStateOf(false) }
+    var inlineHeight by remember { mutableIntStateOf(0) }
+    if (fullScreen) {
+        // Keep the list's scroll position while the same graph state is expanded.
+        Spacer(modifier.fillMaxWidth().height(with(LocalDensity.current) { inlineHeight.toDp() }))
+        Dialog(onDismissRequest = { fullScreen = false }, properties = DialogProperties(
+            usePlatformDefaultWidth = false, decorFitsSystemWindows = false, dismissOnClickOutside = false)) {
+            BoxWithConstraints(Modifier.fillMaxSize().safeDrawingPadding().testTag("mesh-full-screen")) {
+                GraphContent(peers, identities, active, starting, Modifier.fillMaxSize(), topology, viewState,
+                    fullScreen = true, canvasHeight = (maxHeight - 200.dp).coerceAtLeast(220.dp),
+                    onToggleFullScreen = { fullScreen = false })
+            }
+        }
+    } else {
+        GraphContent(peers, identities, active, starting, modifier.onSizeChanged { inlineHeight = it.height },
+            topology, viewState, fullScreen = false, onToggleFullScreen = { fullScreen = true })
+    }
+}
+
+@Composable
+private fun GraphContent(peers: List<PeerHandle>, identities: Map<String, String>, active: Boolean,
+                         starting: Boolean, modifier: Modifier, topology: TopologySnapshot,
+                         viewState: GraphViewState, fullScreen: Boolean, canvasHeight: Dp? = null,
+                         onToggleFullScreen: () -> Unit) {
     val neighbors = remember(peers, active) {
         if (active) peers.distinct().sortedWith(compareBy({ it.transportId }, { it.endpointId })) else emptyList()
     }
-    val motionCache = remember { mutableMapOf<PeerHandle, NeighborMotion>() }
-    val motions = remember(neighbors) {
-        motionCache.keys.retainAll(neighbors.toSet())
-        neighbors.map { peer ->
-            motionCache.getOrPut(peer) {
+    var hopLimit by viewState.hops
+    var allKnown by viewState.allKnown
+    val view = remember(neighbors, identities, topology, hopLimit, allKnown) {
+        knownMesh(neighbors, identities, topology, if (allKnown) MeshTopology.MAX_REPORTS else hopLimit.roundToInt())
+    }
+    val phones = view.phones
+    val motionCache = viewState.motions
+    val motions = remember(phones.map { it.key }) {
+        motionCache.keys.retainAll(phones.map { it.key }.toSet())
+        phones.map { phone ->
+            motionCache.getOrPut(phone.key) {
                 val occupied = motionCache.values.map { it.slot }.toSet()
-                NeighborMotion(peer, generateSequence(0) { it + 1 }.first { it !in occupied })
+                NeighborMotion(phone.key, generateSequence(0) { it + 1 }.first { it !in occupied })
             }
         }
     }
-    var selectedPeer by remember { mutableStateOf<PeerHandle?>(null) }
-    var zoom by remember { mutableFloatStateOf(1f) }
-    var pan by remember { mutableStateOf(Offset.Zero) }
-    val selected = selectedPeer?.takeIf { it in neighbors }
+    var selectedPeer by viewState.selected
+    var zoom by viewState.zoom
+    var pan by viewState.pan
+    val selected = phones.firstOrNull { it.key == selectedPeer }
     val ready = neighbors.count { identities.containsKey(it.endpointId) }
     val summary = when {
         starting -> "Connecting to GHOST…"
@@ -87,38 +138,60 @@ fun NearbyMeshGraph(peers: List<PeerHandle>, identities: Map<String, String>, ac
     LaunchedEffect(active) {
         if (!active) { selectedPeer = null; zoom = 1f; pan = Offset.Zero }
     }
-    LaunchedEffect(neighbors) { if (selectedPeer !in neighbors) selectedPeer = null }
+    LaunchedEffect(phones.map { it.key }) { if (phones.none { it.key == selectedPeer }) selectedPeer = null }
     motions.forEach { motion ->
-        key(motion.peer) {
+        key(motion.id) {
             LaunchedEffect(motion) {
                 motion.arrival.animateTo(1f, spring(dampingRatio = 0.8f, stiffness = 45f))
             }
         }
     }
-    val transition = rememberInfiniteTransition(label = "mesh atmosphere")
-    val phase by transition.animateFloat(0f, (2 * PI).toFloat(),
-        infiniteRepeatable(tween(18000, easing = LinearEasing)), label = "neighbor drift")
+    val phase = if (phones.size <= 16) {
+        val transition = rememberInfiniteTransition(label = "mesh atmosphere")
+        val drift by transition.animateFloat(0f, (2 * PI).toFloat(),
+            infiniteRepeatable(tween(18000, easing = LinearEasing)), label = "neighbor drift")
+        drift
+    } else 0f
 
-    Surface(modifier.fillMaxWidth(), shape = RoundedCornerShape(24.dp),
+    Surface(modifier.fillMaxWidth(), shape = RoundedCornerShape(if (fullScreen) 0.dp else 24.dp),
         color = GraphBackground, contentColor = GraphForeground) {
-        Column(Modifier.padding(vertical = 20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column((if (fullScreen) Modifier.verticalScroll(rememberScrollState()) else Modifier)
+            .padding(vertical = 20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("Nearby phones", style = MaterialTheme.typography.titleMedium,
+                    Text("Known network", style = MaterialTheme.typography.titleMedium,
                         modifier = Modifier.semantics { heading() })
                     Text(summary, color = GraphMuted, style = MaterialTheme.typography.bodySmall)
                 }
-                Surface(color = GraphTeal.copy(alpha = 0.10f), shape = RoundedCornerShape(50)) {
-                    Text("$ready ready", Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                        color = GraphTeal, style = MaterialTheme.typography.labelSmall)
+                Column(horizontalAlignment = Alignment.End) {
+                    TextButton(onClick = onToggleFullScreen, modifier = Modifier.heightIn(min = 48.dp)) {
+                        Text(if (fullScreen) "Close full screen" else "Full screen", color = GraphTeal)
+                    }
+                    Text("${phones.size} shown", color = GraphTeal, style = MaterialTheme.typography.labelSmall)
                 }
             }
-            BoxWithConstraints(Modifier.fillMaxWidth().aspectRatio(0.95f).clipToBounds()
+            Column(Modifier.padding(horizontal = 20.dp)) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(if (allKnown) "All known phones" else "Show up to ${hopLimit.roundToInt()} ${if (hopLimit.roundToInt() == 1) "hop" else "hops"}",
+                        modifier = Modifier.weight(1f), color = GraphForeground, style = MaterialTheme.typography.labelMedium)
+                    TextButton(onClick = { allKnown = !allKnown }, modifier = Modifier.heightIn(min = 48.dp)) {
+                        Text(if (allKnown) "Limit distance" else "All known", color = GraphTeal)
+                    }
+                }
+                Slider(value = hopLimit, onValueChange = { allKnown = false; hopLimit = it.roundToInt().toFloat() },
+                    valueRange = 1f..4f, steps = 2, modifier = Modifier.testTag("mesh-hop-slider")
+                        .semantics { contentDescription = "Network display distance in hops" })
+                Text("Display only. SOS forwarding stays unchanged.", color = GraphMuted, style = MaterialTheme.typography.labelSmall)
+                Text("This phone: ${topology.localCapabilities.internet.internetLabel().removeSuffix(" (reported)")}",
+                    color = GraphMuted, style = MaterialTheme.typography.labelSmall)
+            }
+            BoxWithConstraints(Modifier.fillMaxWidth().then(if (canvasHeight == null) Modifier.aspectRatio(0.95f) else Modifier.height(canvasHeight)).clipToBounds()
                 .testTag("nearby-mesh-graph")
                 .semantics {
                     contentDescription = "Nearby phones. $summary. ${neighbors.size} ${if (neighbors.size == 1) "phone" else "phones"} connected to you: " +
-                        "$ready ready to pass along requests, ${neighbors.size - ready} getting connected. Only phones connected to you are shown."
+                        "$ready ready to pass along requests, ${neighbors.size - ready} getting connected. ${phones.size} phones shown. " +
+                        (if (allKnown) "All known phones." else "Within ${hopLimit.roundToInt()} hops.") + " Remote links are reported."
                     stateDescription = "Zoom ${(zoom * 100).roundToInt()} percent"
                     customActions = listOf(
                         CustomAccessibilityAction("Zoom in") { zoom = (zoom * 1.25f).coerceAtMost(2.4f); true },
@@ -133,10 +206,14 @@ fun NearbyMeshGraph(peers: List<PeerHandle>, identities: Map<String, String>, ac
                 val labelWidth = with(density) { 88.dp.toPx() }
                 val nodeHeight = with(density) { 56.dp.toPx() }
                 fun project(world: Offset): Offset = center + world * (radius * zoom) + pan
+                fun resting(motion: NeighborMotion): Offset {
+                    val hops = phones.first { it.key == motion.id }.hops
+                    return restingPosition(motion.slot) * (if (hops == 1) 1f else 1.25f)
+                }
                 fun position(motion: NeighborMotion): Offset {
                     val drift = if (motion.dragging || motion.displacement != Offset.Zero) Offset.Zero else
                         Offset(sin(phase + motion.slot * 1.7f), cos(phase + motion.slot * 2.1f)) * 0.035f
-                    return project((restingPosition(motion.slot) + drift) * motion.arrival.value + motion.displacement)
+                    return project((resting(motion) + drift) * motion.arrival.value + motion.displacement)
                 }
 
                 Box(Modifier.matchParentSize().pointerInput(width, height) {
@@ -166,14 +243,26 @@ fun NearbyMeshGraph(peers: List<PeerHandle>, identities: Map<String, String>, ac
                         drawRect(Brush.radialGradient(listOf(Color(0xFF1E242D), GraphBackground),
                             center = center, radius = size.maxDimension * 0.65f))
                         val origin = project(Offset.Zero)
+                        val points = motions.associate { it.id to position(it) } + (SELF to origin)
+                        view.links.forEach { link ->
+                            val from = points[link.from] ?: return@forEach
+                            val to = points[link.to] ?: return@forEach
+                            val checking = phones.any { it.nodeId == null && (it.key == link.from || it.key == link.to) }
+                            val highlighted = selected?.key in listOf(link.from, link.to)
+                            drawLine((if (link.direct && !checking) GraphTeal else GraphMuted).copy(alpha = if (highlighted) 0.65f else 0.3f), from, to,
+                                strokeWidth = if (highlighted) 1.5.dp.toPx() else 1.dp.toPx(),
+                                pathEffect = if (link.direct && !checking) null else PathEffect.dashPathEffect(floatArrayOf(4.dp.toPx(), 5.dp.toPx())))
+                        }
                         motions.forEach { motion ->
                             val target = position(motion)
-                            val verified = identities.containsKey(motion.peer.endpointId)
-                            val highlighted = selected == motion.peer
-                            val tint = if (verified) GraphTeal else GraphMuted
-                            drawLine(tint.copy(alpha = if (highlighted) 0.65f else 0.25f), origin, target,
-                                strokeWidth = if (highlighted) 1.5.dp.toPx() else 1.dp.toPx(),
-                                pathEffect = if (verified) null else PathEffect.dashPathEffect(floatArrayOf(4.dp.toPx(), 5.dp.toPx())))
+                            val phone = phones.first { it.key == motion.id }
+                            val verified = phone.nodeId != null
+                            val highlighted = selected?.key == motion.id
+                            val tint = when (phone.capabilities.internet) {
+                                Connectivity.AVAILABLE -> GraphOnline
+                                Connectivity.UNAVAILABLE -> GraphOffline
+                                Connectivity.UNKNOWN -> GraphMuted
+                            }
                             val pulse = if (verified) 1f else 0.65f + 0.2f * sin(phase * 3 + motion.slot)
                             drawCircle(Brush.radialGradient(listOf(tint.copy(alpha = 0.16f * pulse), Color.Transparent),
                                 center = target, radius = 20.dp.toPx()), radius = 20.dp.toPx(), center = target)
@@ -193,19 +282,20 @@ fun NearbyMeshGraph(peers: List<PeerHandle>, identities: Map<String, String>, ac
                             IntOffset((point.x - labelWidth / 2).roundToInt(), (point.y + 15.dp.toPx()).roundToInt())
                         }.width(88.dp), textAlign = TextAlign.Center)
                     motions.forEach { motion ->
-                        key(motion.peer) {
-                            val nodeId = identities[motion.peer.endpointId]
+                        key(motion.id) {
+                            val phone = phones.first { it.key == motion.id }
+                            val nodeId = phone.nodeId
                             Box(Modifier.offset {
                                 val point = position(motion)
                                 IntOffset((point.x - labelWidth / 2).roundToInt(), (point.y - nodeHeight / 2).roundToInt())
                             }.size(88.dp, 56.dp)
-                                .testTag("mesh-node-${motion.peer.endpointId}")
+                                .testTag("mesh-node-${phone.peer?.endpointId ?: phone.key}")
                                 .semantics {
-                                    contentDescription = if (nodeId == null) "Nearby phone, getting connected" else "Phone ${nodeId.take(8)}, ready to pass along requests"
-                                    this.selected = selected == motion.peer
+                                    contentDescription = if (nodeId == null) "Nearby phone, getting connected" else "Phone ${nodeId.take(8)}, ${phone.hops} hops away. ${phone.capabilities.internet.internetLabel()}"
+                                    this.selected = selected?.key == motion.id
                                 }
-                                .clickable(role = Role.Button) { selectedPeer = motion.peer }
-                                .pointerInput(motion, radius) {
+                                .clickable(role = Role.Button) { selectedPeer = motion.id }
+                                .pointerInput(motion, radius, phone.hops) {
                                     awaitEachGesture {
                                         val down = awaitFirstDown(requireUnconsumed = false)
                                         var movement = Offset.Zero
@@ -220,20 +310,20 @@ fun NearbyMeshGraph(peers: List<PeerHandle>, identities: Map<String, String>, ac
                                                 movement += amount
                                                 if (!motion.dragging && movement.getDistance() > viewConfiguration.touchSlop) {
                                                     motion.dragging = true
-                                                    selectedPeer = motion.peer
+                                                    selectedPeer = motion.id
                                                     amount = movement * (1 - viewConfiguration.touchSlop / movement.getDistance())
                                                 }
                                                 if (motion.dragging) {
                                                     change.consume()
-                                                    val world = restingPosition(motion.slot) + motion.displacement + amount / (radius * zoom)
+                                                    val world = resting(motion) + motion.displacement + amount / (radius * zoom)
                                                     motion.displacement = Offset(world.x.coerceIn(-0.85f, 0.85f),
-                                                        world.y.coerceIn(-0.85f, 0.85f)) - restingPosition(motion.slot)
+                                                        world.y.coerceIn(-0.85f, 0.85f)) - resting(motion)
                                                 }
                                             } while (event.changes.any { it.pressed })
                                         } finally { motion.dragging = false }
                                     }
                                 }, contentAlignment = Alignment.BottomCenter) {
-                                Text(nodeId?.take(8) ?: "Connecting", color = if (nodeId == null) GraphMuted else GraphForeground,
+                                Text((nodeId?.take(8) ?: "Connecting") + if (phone.capabilities.gatewayConfigured) " · G" else "", color = if (nodeId == null) GraphMuted else GraphForeground,
                                     style = MaterialTheme.typography.labelSmall, maxLines = 1)
                             }
                         }
@@ -250,14 +340,18 @@ fun NearbyMeshGraph(peers: List<PeerHandle>, identities: Map<String, String>, ac
                     }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Reset view", color = GraphTeal) }
                 }
                 if (selected != null) {
-                    val nodeId = identities[selected.endpointId]
+                    val nodeId = selected.nodeId
                     Surface(Modifier.fillMaxWidth().testTag("mesh-connection-details"),
                         color = Color(0xFF20262F), shape = RoundedCornerShape(12.dp), contentColor = GraphForeground) {
                         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text(nodeId?.let { "Phone ${it.take(8)}" } ?: "Nearby phone", style = MaterialTheme.typography.titleSmall)
-                            Text(if (nodeId == null) "Getting connected. Requests can be shared once this finishes." else "Ready to pass along requests.",
+                            Text(if (nodeId == null) "Getting connected. Requests can be shared once this finishes." else if (selected.peer == null)
+                                "Known through recent reports. Direct connection not observed here." else "Ready to pass along requests.",
                                 color = if (nodeId == null) GraphMuted else GraphTeal, style = MaterialTheme.typography.bodySmall)
-                            Text("Connected to your phone.", color = GraphMuted, style = MaterialTheme.typography.bodySmall)
+                            Text(if (selected.peer != null) "Connected to your phone." else "${selected.hops} hops away through reported links.", color = GraphMuted, style = MaterialTheme.typography.bodySmall)
+                            Text(selected.capabilities.internet.internetLabel(), color = GraphForeground, style = MaterialTheme.typography.bodySmall)
+                            Text(selected.capabilities.gatewayLabel(), color = GraphMuted, style = MaterialTheme.typography.bodySmall)
+                            if (selected.peer == null) Text("A reported connection can change before the next update.", color = GraphMuted, style = MaterialTheme.typography.bodySmall)
                         }
                     }
                 }
@@ -265,21 +359,34 @@ fun NearbyMeshGraph(peers: List<PeerHandle>, identities: Map<String, String>, ac
                     Text(if (active || starting) "Nearby phones appear here automatically." else "Connect to GHOST to see nearby phones.",
                         color = GraphMuted, style = MaterialTheme.typography.bodySmall)
                 } else {
-                    Text("Solid line: ready to share · dashed line: getting connected", color = GraphMuted,
+                    Text("Solid: direct and ready · dashed: reported or getting connected", color = GraphMuted,
                         style = MaterialTheme.typography.labelSmall)
                     // These buttons also provide keyboard and screen-reader access to each node.
-                    neighbors.forEach { peer ->
-                        val nodeId = identities[peer.endpointId]
-                        TextButton(onClick = { selectedPeer = peer }, modifier = Modifier.heightIn(min = 48.dp)) {
-                            Text(if (nodeId == null) "Getting connected…" else "Phone ${nodeId.take(8)} · ready to share",
+                    phones.forEach { phone ->
+                        val nodeId = phone.nodeId
+                        TextButton(onClick = { selectedPeer = phone.key }, modifier = Modifier.heightIn(min = 48.dp)) {
+                            Text(if (nodeId == null) "Getting connected…" else "Phone ${nodeId.take(8)} · ${if (phone.peer != null) "ready to share" else "${phone.hops} hops away"}",
                                 color = if (nodeId == null) GraphMuted else GraphTeal,
                                 style = MaterialTheme.typography.labelMedium)
                         }
                     }
                 }
-                Text("Only phones connected to yours are shown. A line doesn't mean a request has been saved by that phone.",
+                Text("Green: internet · amber: internet not detected · grey: unknown. G: configured gateway.", color = GraphMuted, style = MaterialTheme.typography.labelSmall)
+                if (view.limited) Text("Showing at most 64 known phones.", color = GraphMuted, style = MaterialTheme.typography.labelSmall)
+                Text("Known network only. Remote status is reported and expires after one minute. Lines do not prove SOS delivery.",
                     color = GraphMuted, style = MaterialTheme.typography.bodySmall)
             }
         }
     }
+}
+
+private fun Connectivity.internetLabel(): String = when (this) {
+    Connectivity.AVAILABLE -> "Internet available (reported)"
+    Connectivity.UNAVAILABLE -> "No internet detected (reported)"
+    Connectivity.UNKNOWN -> "Internet status unknown"
+}
+private fun NodeCapabilities.gatewayLabel(): String = if (!gatewayConfigured) "Gateway status unknown or not configured" else when (server) {
+    Connectivity.AVAILABLE -> "Configured gateway · server reached recently"
+    Connectivity.UNAVAILABLE -> "Configured gateway · server unavailable or access denied"
+    Connectivity.UNKNOWN -> "Configured gateway · server status unknown"
 }

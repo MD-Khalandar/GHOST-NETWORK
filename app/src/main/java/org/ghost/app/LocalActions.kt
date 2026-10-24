@@ -3,6 +3,7 @@ package org.ghost.app
 import org.ghost.domain.model.SosDraft
 import org.ghost.transport.nearby.NearbyState
 import org.ghost.gateway.GatewayUiState
+import org.ghost.mesh.TopologySnapshot
 
 data class LocalUiState(
     val draft: SosDraft? = null,
@@ -13,6 +14,7 @@ data class LocalUiState(
     val network: NearbyState = NearbyState(),
     val peerIdentities: Map<String, String> = emptyMap(),
     val gateway: GatewayUiState = GatewayUiState(),
+    val topology: TopologySnapshot = TopologySnapshot(),
 )
 
 fun LocalUiState.meshStatus(): String = when {

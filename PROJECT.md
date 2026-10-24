@@ -12,9 +12,13 @@ Built: SOS forms/drafts and signed reports in Room, local-only saves, and one-ta
 mesh join with automatic Nearby connections/reconnection. Foreground SOS relay
 has a four-transfer budget, bounded per-phone queues, receipt-driven retries and
 visible relay status.
-Network shows a dark, floating graph of direct neighbors with dragging, pinch zoom
-and connection details on tap, including phones still checking identity. It does
-not infer the wider mesh or relay routes.
+Network shows direct and recently reported remote links with dragging, pinch zoom
+and details on tap. A 1–4 hop slider or All known filters the view without changing
+SOS relay. Full screen expands the graph while keeping its selection and view.
+Signed topology updates expire after one minute, stay in memory, and are bounded
+to four transfers and 64 known reports. Node colours show reported internet state;
+G marks a configured gateway, with recent server reachability shown separately.
+This is a partial known-network view, never proof of a working route or delivery.
 Signed neighbor receipts and delivery knowledge survive restarts. Local-only
 reports stay private to the device; original signatures and expiry are preserved.
 Signing, cloud-key pinning, consent and server authentication also work.

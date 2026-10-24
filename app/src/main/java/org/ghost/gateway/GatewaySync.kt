@@ -27,7 +27,7 @@ class GatewaySync(scope: CoroutineScope, configs: StateFlow<GatewayConfig?>, ena
         scope.launch {
             combine(configs, enabled.distinctUntilChanged(), retry) { config, active, _ -> config to active }
                 .collectLatest { (config, active) ->
-                    client.reachability.value = org.ghost.gateway.api.GatewayReachability.UNKNOWN
+                    client.resetReachability()
                     mutableState.value = GatewayUiState(config != null, config?.serverUrl.orEmpty(), cloudKey != null,
                         message = when {
                             config == null -> "Optional: configure this phone as a cloud gateway."

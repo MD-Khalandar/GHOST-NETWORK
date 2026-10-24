@@ -55,9 +55,23 @@ The mesh is open to nearby GHOST phones; connections have no manual code check.
 Signing verifies report integrity and key possession, not a person's identity.
 Relay pauses when the app backgrounds and resumes when returning to the app;
 **Disconnect from GHOST** stops it until you join again.
-Connections' **Nearby phones** graph updates as direct neighbors connect and leave.
-Solid links are ready to relay; dashed links are still checking identity. It shows
-only this phone's direct connections, not the entire mesh or an SOS delivery path.
+Connections' **Known network** graph shows direct neighbors and fresh connections
+reported by other phones. Use the **1–4 hop slider** to see farther; it only filters
+the display, or choose **All known** for the bounded discovered graph. **Full screen**
+expands the graph; closing it keeps your selection, hop filter and view. Drag nodes,
+pinch to zoom, tap for details or reset the view. Solid
+lines are direct, ready connections; dashed lines are reported links or phones
+still getting connected. This is a partial view, not proof of a route or delivery.
+
+Green nodes report internet access, amber means internet was not detected, and
+grey means unknown. **G** marks a configured gateway. Tap it to see whether that
+phone recently reached the server; internet alone does not imply gateway access.
+Statuses are reported by the originating phone, not independently verified here.
+Topology reports expire after one minute, are kept only in memory, and stop after
+four transfers. The view is capped at 64 phones. Joining advertises connection IDs
+and connectivity status; it does not expose names, contacts, IP addresses or SOS text.
+Older app versions still connect/relay SOS but do not share topology. For A–B–C,
+update all three phones, connect them, and select 2 hops on A to see C.
 
 Each phone has independent bounded queues. A report waits for its neighbor's
 signed receipt before the next report goes out on that link. Missing receipts

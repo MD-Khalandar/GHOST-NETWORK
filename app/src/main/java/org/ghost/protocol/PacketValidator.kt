@@ -40,7 +40,7 @@ class PacketValidator(
             (if (r.hopCount == 0) r.previousNodeId == null else r.previousNodeId?.value?.matches(NODE) == true), Rejection.INVALID_HOPS)
         val e = ImmutableEnvelopeV1.parseFrom(raw)
         check(e.version == 1, Rejection.UNSUPPORTED_VERSION)
-        check(e.kindValue in 1..13 && !(forCloud && e.kindValue == 13), Rejection.UNSUPPORTED_KIND)
+        check((e.kindValue in 1..13 || e.kindValue == 15) && !(forCloud && e.kindValue in setOf(13, 15)), Rejection.UNSUPPORTED_KIND)
         check(uuid(e.packetId) && uuid(e.eventId) && e.priorityValue in 1..3 && e.payloadFormatValue == 1)
         check(now in 1..MAX_SAFE && e.createdAtMs in 1..MAX_SAFE && e.expiresAtMs in 1..MAX_SAFE &&
             e.expiresAtMs > e.createdAtMs && e.expiresAtMs - e.createdAtMs <= MAX_TTL && e.createdAtMs <= now + CLOCK_SKEW, Rejection.INVALID_TIME)
@@ -120,6 +120,12 @@ class PacketValidator(
             }
             13 -> PeerHelloV1.parseFrom(data).also { p ->
                 check(e.destination.kindValue == 1 && p.challenge.size() == 32 && (p.replyTo.isEmpty || p.replyTo.size() == 32))
+            }
+            15 -> NetworkAnnouncementV1.parseFrom(data).also { p ->
+                check(e.destination.kindValue == 1 && e.expiresAtMs - e.createdAtMs <= 60000 &&
+                    p.neighborNodeIdsCount <= 4 && p.neighborNodeIdsList.distinct().size == p.neighborNodeIdsCount &&
+                    p.neighborNodeIdsList.all { it.size() == 32 && it != e.senderNodeId } &&
+                    p.internetValue in 0..2 && p.serverValue in 0..2 && (p.gatewayConfigured || p.serverValue == 0))
             }
             else -> throw ProtocolException(Rejection.UNSUPPORTED_KIND)
         }

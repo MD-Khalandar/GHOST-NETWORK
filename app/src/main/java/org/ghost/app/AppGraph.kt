@@ -11,6 +11,10 @@ import org.ghost.data.local.GhostDatabase
 import org.ghost.data.local.LocalSosRepository
 import org.ghost.domain.model.*
 import org.ghost.mesh.DirectExchange
+import org.ghost.mesh.Connectivity
+import org.ghost.mesh.NodeCapabilities
+import org.ghost.mesh.observeInternet
+import org.ghost.gateway.api.GatewayReachability
 import org.ghost.security.AndroidSigningIdentity
 import org.ghost.transport.nearby.NearbyAdapter
 import org.ghost.BuildConfig
@@ -28,9 +32,18 @@ class AppGraph(application: Application) : AndroidViewModel(application) {
     private val cloudKey = runCatching {
         BuildConfig.CLOUD_PUBLIC_KEY.takeIf { it.isNotEmpty() }?.let { WireCodec.unbase64(it, 91).also(SigningIdentity::decodePublicKey) }
     }.getOrNull()
-    private val exchange = DirectExchange(viewModelScope, nearby, repository, { identity }, cloudKey = cloudKey)
     private val gatewayClient = HttpGatewayClient { gatewaySettings.config.value }
     private val gateway = GatewaySync(viewModelScope, gatewaySettings.config, nearby.state.map { it.active }, gatewayClient, repository, cloudKey)
+    private val internet = observeInternet(application).stateIn(viewModelScope, SharingStarted.Eagerly, Connectivity.UNKNOWN)
+    private val exchange = DirectExchange(viewModelScope, nearby, repository, { identity }, cloudKey = cloudKey, capabilities = {
+        val configured = gateway.state.value.configured && cloudKey != null
+        val fresh = System.currentTimeMillis() - gatewayClient.reachabilityCheckedAt.value in 0..60000
+        NodeCapabilities(internet.value, configured, if (!configured || !fresh) Connectivity.UNKNOWN else when (gatewayClient.reachability.value) {
+            GatewayReachability.ONLINE -> Connectivity.AVAILABLE
+            GatewayReachability.OFFLINE, GatewayReachability.AUTHENTICATION_FAILED -> Connectivity.UNAVAILABLE
+            GatewayReachability.UNKNOWN -> Connectivity.UNKNOWN
+        })
+    })
     val dependencies = GhostAppDependencies(nearby, gatewayClient, repository, UnavailableOffers, UploadCoordinationState(repository))
     private val operation = MutableStateFlow(LocalUiState())
     private data class DraftWrite(val draft: SosDraft, val complete: (() -> Unit)? = null)
@@ -38,6 +51,9 @@ class AppGraph(application: Application) : AndroidViewModel(application) {
     val local: StateFlow<LocalUiState> = combine(repository.observeDraft(), operation, nearby.state, exchange.identities, exchange.message) {
         draft, state, network, identities, message -> state.copy(draft = draft, network = network, peerIdentities = identities, exchangeStatus = message)
     }.combine(gateway.state) { state, cloud -> state.copy(gateway = cloud) }
+        .combine(exchange.topology) { state, topology -> state.copy(topology = topology) }
+        .combine(internet) { state, status -> state.copy(topology = state.topology.copy(
+            localCapabilities = state.topology.localCapabilities.copy(internet = status))) }
         .catch { emit(LocalUiState(error = "Local storage could not be opened.")) }
         .stateIn(viewModelScope, SharingStarted.Eagerly, LocalUiState())
 

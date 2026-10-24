@@ -17,6 +17,12 @@ class GatewayFailure(val code: String, val retryable: Boolean, val authenticatio
 /** Bounded HTTPS upload. Redirects never receive the gateway bearer token. */
 class HttpGatewayClient(private val config: () -> GatewayConfig?) : GatewayClient {
     override val reachability = MutableStateFlow(GatewayReachability.UNKNOWN)
+    val reachabilityCheckedAt = MutableStateFlow(0L)
+    fun resetReachability() { reachability.value = GatewayReachability.UNKNOWN; reachabilityCheckedAt.value = 0 }
+    private fun recordReachability(status: GatewayReachability) {
+        reachability.value = status
+        reachabilityCheckedAt.value = System.currentTimeMillis()
+    }
     private val json = Json { ignoreUnknownKeys = true }
     override suspend fun upload(request: SyncUploadRequest): Result<SyncUploadResponse> = coroutineScope {
         val settings = config() ?: return@coroutineScope Result.failure(GatewayFailure("NOT_CONFIGURED", false))
@@ -32,12 +38,12 @@ class HttpGatewayClient(private val config: () -> GatewayConfig?) : GatewayClien
                 try { Result.success(transfer.await()) } finally { socket.disconnect() }
             }
         } catch (_: TimeoutCancellationException) {
-            reachability.value = GatewayReachability.OFFLINE
+            recordReachability(GatewayReachability.OFFLINE)
             Result.failure(GatewayFailure("NETWORK_UNAVAILABLE", true))
         } catch (cancelled: CancellationException) { throw cancelled }
           catch (failure: GatewayFailure) { Result.failure(failure) }
           catch (_: Exception) {
-            reachability.value = GatewayReachability.OFFLINE
+            recordReachability(GatewayReachability.OFFLINE)
             Result.failure(GatewayFailure("NETWORK_UNAVAILABLE", true))
         } finally { connection?.disconnect() }
     }
@@ -58,7 +64,7 @@ class HttpGatewayClient(private val config: () -> GatewayConfig?) : GatewayClien
         socket.outputStream.use { it.write(bytes) }
         val status = socket.responseCode
         currentCoroutineContext().ensureActive()
-        reachability.value = if (status == 401 || status == 403) GatewayReachability.AUTHENTICATION_FAILED else GatewayReachability.ONLINE
+        recordReachability(if (status == 401 || status == 403) GatewayReachability.AUTHENTICATION_FAILED else GatewayReachability.ONLINE)
         if (status !in 200..299) {
             val code = socket.errorStream?.use { stream ->
                 val body = readBounded(stream, 4096).decodeToString()

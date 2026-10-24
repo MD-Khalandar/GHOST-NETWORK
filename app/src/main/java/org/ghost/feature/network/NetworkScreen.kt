@@ -54,7 +54,7 @@ fun NetworkScreen(state: FoundationState, onRetry: () -> Unit, modifier: Modifie
                     }
                 }
                 item("mesh-graph") {
-                    NearbyMeshGraph(state.peers, local.peerIdentities, local.network.active, local.network.starting)
+                    NearbyMeshGraph(state.peers, local.peerIdentities, local.network.active, local.network.starting, topology = local.topology)
                 }
                 item("radio-details") {
                     InfoCard("Connecting nearby", "Keep Bluetooth and Wi-Fi on.") {

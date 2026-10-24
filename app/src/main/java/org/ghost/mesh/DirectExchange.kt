@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.*
 import org.ghost.contracts.v1.DeliveryReceiptV1
 import org.ghost.contracts.v1.ImmutableEnvelopeV1
 import org.ghost.contracts.v1.PeerHelloV1
+import org.ghost.contracts.v1.NetworkAnnouncementV1
 import org.ghost.data.local.LocalSosRepository
 import org.ghost.domain.model.WirePacket
 import org.ghost.protocol.*
@@ -20,7 +21,8 @@ import org.ghost.transport.api.*
  */
 class DirectExchange(private val scope: CoroutineScope, private val transport: GhostTransport,
     private val repository: LocalSosRepository, private val identity: () -> SigningIdentity,
-    private val now: () -> Long = System::currentTimeMillis, private val cloudKey: ByteArray? = null) {
+    private val now: () -> Long = System::currentTimeMillis, private val cloudKey: ByteArray? = null,
+    private val capabilities: () -> NodeCapabilities = { NodeCapabilities() }) {
     private data class Outgoing(val packetId: String, val wire: ByteArray, val cloudReturn: Boolean)
     private class Session(val scope: CoroutineScope, val startedAt: Long) {
         val challenge = ByteArray(32).also { SecureRandom().nextBytes(it) }
@@ -36,12 +38,24 @@ class DirectExchange(private val scope: CoroutineScope, private val transport: G
         val lastAttempt = mutableMapOf<String, Long>()
         val receipts = mutableMapOf<String, CompletableDeferred<Unit>>()
         var sending: Job? = null
+        var supportsTopology = false
+        var topologySending: Job? = null
+        val topologySent = mutableMapOf<String, Pair<String, Int>>()
+        val topologyLastSent = mutableMapOf<String, Long>()
     }
     private val sessions = mutableMapOf<String, Session>()
     private val mutableIdentities = MutableStateFlow<Map<String, String>>(emptyMap())
     val identities = mutableIdentities.asStateFlow()
     private val mutableMessage = MutableStateFlow<String?>(null)
     val message = mutableMessage.asStateFlow()
+    private val topologyCache = MeshTopology()
+    private val mutableTopology = MutableStateFlow(TopologySnapshot())
+    val topology = mutableTopology.asStateFlow()
+    private val topologyWake = Channel<Unit>(Channel.CONFLATED)
+    private var localAnnouncement: WirePacket? = null
+    private var localNeighbors = emptyList<String>()
+    private var localCapabilities = NodeCapabilities()
+    private var localAnnouncedAt = 0L
 
     init {
         scope.launch(start = CoroutineStart.UNDISPATCHED) {
@@ -82,6 +96,15 @@ class DirectExchange(private val scope: CoroutineScope, private val transport: G
                 flush()
             }
         }
+        scope.launch {
+            while (isActive) {
+                withTimeoutOrNull(5000) { topologyWake.receive() }
+                try { updateTopology() }
+                catch (cancelled: CancellationException) { throw cancelled }
+                catch (_: Exception) { /* Graph metadata must never interrupt durable SOS delivery. */ }
+                delay(1000)
+            }
+        }
     }
 
     private fun current(peer: PeerHandle, session: Session) =
@@ -92,6 +115,11 @@ class DirectExchange(private val scope: CoroutineScope, private val transport: G
             session.incoming.close(); session.controls.close(); session.scope.cancel()
         }
         mutableIdentities.update { it - endpoint }
+        if (sessions.isEmpty()) {
+            topologyCache.clear(); localAnnouncement = null
+            mutableTopology.value = TopologySnapshot()
+        }
+        topologyWake.trySend(Unit)
     }
 
     private fun disconnect(peer: PeerHandle, message: String) {
@@ -143,7 +171,7 @@ class DirectExchange(private val scope: CoroutineScope, private val transport: G
     private suspend fun sendHello(peer: PeerHandle, session: Session, replyTo: ByteString = ByteString.EMPTY) {
         val packet = withContext(Dispatchers.IO) {
             SignedPackets.create(identity(), 13, PeerHelloV1.newBuilder().setChallenge(ByteString.copyFrom(session.challenge))
-                .setReplyTo(replyTo).build().toByteString(), now(), ttl = 300000)
+                .setReplyTo(replyTo).setSupportsTopology(true).build().toByteString(), now(), ttl = 300000)
         }
         control(peer, session, packet)
     }
@@ -158,6 +186,7 @@ class DirectExchange(private val scope: CoroutineScope, private val transport: G
             if (!current(peer, session)) return
             require(session.helloNode == null || session.helloNode == node)
             session.helloNode = node
+            session.supportsTopology = hello.supportsTopology
             if (hello.replyTo.isEmpty) {
                 if (!session.replied) { session.replied = true; sendHello(peer, session, hello.challenge) }
             } else {
@@ -169,15 +198,26 @@ class DirectExchange(private val scope: CoroutineScope, private val transport: G
                 val waiting = session.pending.toList(); session.pending.clear()
                 waiting.forEach { receive(peer, session, it) }
                 flush()
+                topologyWake.trySend(Unit)
             }
             return
         }
         val node = session.nodeId
         if (node == null) {
-            require(envelope.kindValue in setOf(1, 7, 12) && session.pending.size < 4)
+            require(envelope.kindValue in setOf(1, 7, 12, 15) && session.pending.size < 4)
             session.pending.add(packet); return
         }
         when (envelope.kindValue) {
+            15 -> {
+                if (!session.supportsTopology) return
+                // Graph updates are best-effort and have no durable delivery receipts.
+                val verified = withContext(Dispatchers.IO) { PacketValidator().verify(packet, now()) }
+                if (!current(peer, session)) return
+                if (topologyCache.accept(verified, node, identity().nodeId.value, now())) {
+                    publishTopology()
+                    topologyWake.trySend(Unit)
+                }
+            }
             1 -> {
                 val receipt = repository.receiveSos(packet, node)
                 if (!current(peer, session)) return
@@ -213,6 +253,53 @@ class DirectExchange(private val scope: CoroutineScope, private val transport: G
         }
     }
 
+    private fun publishTopology() {
+        mutableTopology.value = mutableTopology.value.copy(announcements = topologyCache.reports())
+    }
+
+    private suspend fun updateTopology() {
+        if (sessions.isEmpty()) return
+        val own = withContext(Dispatchers.IO) { identity() }
+        val direct = mutableIdentities.value.values.distinct().sorted()
+        val status = capabilities()
+        topologyCache.prune(now())
+        if (localAnnouncement == null || direct != localNeighbors || status != localCapabilities || now() - localAnnouncedAt >= 20000) {
+            val timestamp = maxOf(now(), localAnnouncedAt + 1)
+            val packet = withContext(Dispatchers.IO) {
+                SignedPackets.create(own, 15, NetworkAnnouncementV1.newBuilder()
+                    .addAllNeighborNodeIds(direct.map { ByteString.copyFrom(WireCodec.bytes(it)) })
+                    .setInternetValue(status.internet.ordinal).setGatewayConfigured(status.gatewayConfigured)
+                    .setServerValue(status.server.ordinal).build().toByteString(), timestamp, ttl = MeshTopology.TTL)
+            }
+            if (sessions.isEmpty()) return
+            localNeighbors = direct; localCapabilities = status; localAnnouncedAt = timestamp; localAnnouncement = packet
+        }
+        mutableTopology.value = TopologySnapshot(own.nodeId.value, status, topologyCache.reports())
+        sessions.toMap().forEach { (endpoint, session) ->
+            val peer = PeerHandle(transport.id, endpoint)
+            val target = session.nodeId ?: return@forEach
+            if (!session.supportsTopology || session.topologySending?.isActive == true || session.sending?.isActive == true) return@forEach
+            val outgoing = listOf(own.nodeId.value to MeshTopology.forward(localAnnouncement!!, own.nodeId.value)) +
+                topologyCache.outgoing(own.nodeId.value, target)
+            session.topologySent.keys.retainAll(outgoing.map { it.first }.toSet())
+            session.topologyLastSent.keys.retainAll(outgoing.map { it.first }.toSet())
+            session.topologySending = session.scope.launch {
+                for ((origin, packet) in outgoing.filter {
+                    session.topologySent[it.first] != (it.second.immutableEnvelopeBytesBase64 to it.second.relay.hopCount)
+                }.sortedBy { session.topologyLastSent[it.first] ?: Long.MIN_VALUE }.take(4)) {
+                    if (!current(peer, session) || session.sending?.isActive == true) break
+                    try {
+                        val result = withTimeoutOrNull(2000) { transport.send(peer, packet) }
+                        if (result?.code != SendResultCode.ACCEPTED_BY_TRANSPORT) break
+                        session.topologySent[origin] = packet.immutableEnvelopeBytesBase64 to packet.relay.hopCount
+                        session.topologyLastSent[origin] = now()
+                    } catch (cancelled: CancellationException) { throw cancelled }
+                      catch (_: Exception) { break }
+                }
+            }
+        }
+    }
+
     fun flush() {
         transport.peers.value.forEach { peer ->
             val session = sessions[peer.endpointId]?.takeIf { it.nodeId != null } ?: return@forEach
@@ -235,6 +322,7 @@ class DirectExchange(private val scope: CoroutineScope, private val transport: G
                             returns.getOrNull(index)?.let(::add)
                         }
                     }
+                    if (candidates.isNotEmpty()) session.topologySending?.cancel()
                     for (candidate in candidates) {
                         if (!current(peer, session)) break
                         // Reload because a receipt or expiry can arrive during a batch.

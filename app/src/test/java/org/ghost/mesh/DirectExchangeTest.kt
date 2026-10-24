@@ -72,7 +72,7 @@ class DirectExchangeTest {
                               val radio: Radio, val engine: DirectExchange, val scope: CoroutineScope)
 
     private fun TestScope.phone(name: String, databaseName: String = "mesh-${UUID.randomUUID()}.db", key: SigningIdentity? = null,
-                                cloudKey: ByteArray? = null): Phone {
+                                cloudKey: ByteArray? = null, capabilities: () -> NodeCapabilities = { NodeCapabilities() }): Phone {
         val signingKey = key ?: newKey()
         names.add(databaseName)
         val db = Room.databaseBuilder(context, GhostDatabase::class.java, databaseName)
@@ -80,7 +80,7 @@ class DirectExchangeTest {
         val repo = LocalSosRepository(db, { signingKey }, { baseTime + wallOffset + testScheduler.currentTime })
         val radio = Radio(name)
         val scope = CoroutineScope(backgroundScope.coroutineContext + Job(backgroundScope.coroutineContext[Job]))
-        val engine = DirectExchange(scope, radio, repo, { signingKey }, { baseTime + wallOffset + testScheduler.currentTime }, cloudKey)
+        val engine = DirectExchange(scope, radio, repo, { signingKey }, { baseTime + wallOffset + testScheduler.currentTime }, cloudKey, capabilities)
         return Phone(signingKey, db, repo, radio, engine, scope).also { nodes[name] = it }
     }
     private fun connect(a: String, b: String) {
@@ -104,6 +104,24 @@ class DirectExchangeTest {
     private fun sends(from: String, to: String, kind: Int = 1) = packets.count { it == Triple(from, to, kind) }
 
     @After fun close() { databases.forEach { it.close() }; names.forEach { context.deleteDatabase(it) } }
+
+    @Test fun signedTopologyCrossesThreePhonesWithoutBecomingSosOrSurvivingDisconnect() = runTest {
+        val a = phone("A"); phone("B")
+        val c = phone("C", capabilities = { NodeCapabilities(Connectivity.AVAILABLE, true, Connectivity.AVAILABLE) })
+        connect("A", "B"); connect("B", "C")
+        until { nodes.getValue("B").engine.identities.value.size == 2 && c.engine.identities.value.size == 1 }
+        repeat(8) { advanceTimeBy(6000); runCurrent(); Thread.sleep(50) }
+        until { a.engine.topology.value.announcements.any { it.nodeId == c.key.nodeId.value } }
+        val view = knownMesh(a.radio.peers.value, a.engine.identities.value, a.engine.topology.value, 4)
+        val remote = view.phones.single { it.nodeId == c.key.nodeId.value }
+        assertEquals(2, remote.hops)
+        assertEquals(NodeCapabilities(Connectivity.AVAILABLE, true, Connectivity.AVAILABLE), remote.capabilities)
+        assertEquals(1, knownMesh(a.radio.peers.value, a.engine.identities.value, a.engine.topology.value, 1).phones.size)
+        assertEquals(0, runBlocking { a.db.sos().count() })
+        a.radio.disconnect("B"); runCurrent()
+        assertTrue(a.engine.topology.value.announcements.isEmpty())
+        assertEquals(0, sends("A", "B", 1))
+    }
 
     @Test fun liveThreePhoneChainRelaysOnceAndLoopLinksDoNotBounceReports() = runTest {
         val a = phone("A"); val b = phone("B"); val c = phone("C")
