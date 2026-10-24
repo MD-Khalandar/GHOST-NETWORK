@@ -52,7 +52,7 @@ fun ResourceFormDialog(local: LocalUiState, actions: LocalActions?, onClose: () 
                                 { Text(type.name.lowercase().replace('_', ' ')) }, enabled = !local.saving && !draft.editing) }
                         }
                         ResourceChoice("Available to help", draft.available, !local.saving) { draft = draft.copy(available = it) }
-                        Text("Saving a new volunteer report replaces your earlier shared availability once it reaches other phones and the server.", style = MaterialTheme.typography.bodySmall)
+                        Text("Turning sharing off also sends a withdrawal of your earlier shared availability, without your name or area. Other phones and the server update when it arrives; offline copies may remain until expiry.", style = MaterialTheme.typography.bodySmall)
                     } else {
                         Text("What can you provide?")
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -69,6 +69,7 @@ fun ResourceFormDialog(local: LocalUiState, actions: LocalActions?, onClose: () 
                     ResourceChoice("Share with nearby phones", draft.publicSharing, !local.saving && !draft.editing) { draft = draft.copy(publicSharing = it) }
                     ResourceChoice("Allow online help coordination", draft.cloudConsent, !local.saving && !draft.editing) { draft = draft.copy(cloudConsent = it) }
                     Text(if (draft.publicSharing) "Nearby phones can read and relay this information. Online sharing also needs your permission above."
+                        else if (!draft.supply) "Your new details stay on this phone. A withdrawal of earlier shared availability may still be sent."
                         else "Saved on this phone only. Nothing is uploaded while nearby sharing is off.", style = MaterialTheme.typography.bodySmall)
                     (validation ?: local.error)?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                     local.notice?.let { Text(it) }

@@ -58,6 +58,11 @@ verified server receipts return through the mesh. Help types, area, quantity/uni
 and six-hour availability appear in dashboard Helpers/Supplies lists. The latest
 owner-signed helper report controls availability; supplies are separate offers.
 Existing phone data migrates in place. Local-only publications stay local.
+Turning volunteer sharing off now queues a signed unavailable report for its previous
+audience, omitting name/area and preserving the previous expiry. New private details
+and sharing choices stay local. Withdrawals survive restarts, supersede old queued
+availability and show their separate server receipt; offline copies wait for delivery
+or expiry. Nearby availability can remain shared while online availability is withdrawn.
 Owners can edit supply quantity/unit/area or withdraw the same offer. Signed full
 updates carry the original ownership proof and keep its expiry and sharing flags;
 latest-only forwarding and projections prevent delayed originals undoing changes.

@@ -41,12 +41,15 @@ class LocalResourceRepository(private val db: GhostDatabase, private val identit
                     publicSharing = row.publicSharing, cloudConsent = row.cloudConsent, editing = true, baseEventId = row.eventId)
                 else -> null
             }
+            val withdrawal = if (row.owned && helper != null && (!row.publicSharing || !row.cloudConsent)) {
+                val shared = rows.filter { it.entityId == row.entityId && it.publicSharing }
+                listOfNotNull(shared.firstOrNull(), shared.firstOrNull { it.cloudConsent })
+                    .filter { it.eventId != row.eventId && it.expiresAt > time &&
+                        HelperProfilePublishV1.parseFrom(envelope(it).payloadBytes).availabilityValue == 2 }
+                    .maxByOrNull { it.cloudConsent }
+            } else null
             ResourceSummary(row.entityId, row.owner, row.owned, row.kind == 3, title, area.takeIf(String::isNotBlank), available, row.expiresAt,
-                when { row.cloudAck != null -> LocalCloudState.ACCEPTED
-                    !row.publicSharing || !row.cloudConsent -> LocalCloudState.NOT_SHARED
-                    row.expiresAt <= time -> LocalCloudState.EXPIRED
-                    row.cloudError != null -> LocalCloudState.REJECTED
-                    else -> LocalCloudState.QUEUED }, withdrawn, editor)
+                cloudState(row, time), withdrawn, editor, withdrawal?.let { cloudState(it, time) })
         }
     }.flowOn(Dispatchers.IO)
 
@@ -114,7 +117,21 @@ class LocalResourceRepository(private val db: GhostDatabase, private val identit
             .addAllHelpTypesValue(payload.helpTypes.distinct().map { when (it) { HelpType.FIRST_AID -> 1; HelpType.WATER -> 6; else -> it.ordinal + 1 } })
             .setAvailabilityValue(payload.availability.ordinal + 1).setConsent(consent(payload.consent))
             .apply { payload.displayName?.let { displayName = it }; payload.coarseArea?.let { coarseArea = it } }.build()
-        save(3, payload.ownerNodeId.value, p.toByteString(), payload.consent)
+        db.withTransaction {
+            val previous = dao.sharedHelpers(payload.ownerNodeId.value).filter {
+                it.expiresAt > now() && HelperProfilePublishV1.parseFrom(envelope(it).payloadBytes).availabilityValue == 1 &&
+                    (!payload.consent.publicMeshAllowed || (it.cloudConsent && !payload.consent.cloudProcessingAllowed))
+            }
+            if (previous.isNotEmpty()) {
+                // Withdraw only previously shared availability, never the new private name/area.
+                // Reuse the prior audience so an online withdrawal can still reach a gateway.
+                val sharing = Consent(true, previous.any { it.cloudConsent })
+                val withdrawal = HelperProfilePublishV1.newBuilder().setOwnerNodeId(p.ownerNodeId)
+                    .addHelpTypesValue(7).setAvailabilityValue(2).setConsent(consent(sharing)).build()
+                save(3, payload.ownerNodeId.value, withdrawal.toByteString(), sharing, previous.maxOf { it.expiresAt })
+            }
+            save(3, payload.ownerNodeId.value, p.toByteString(), payload.consent)
+        }
     }
     override suspend fun publishOffer(payload: OfferPublishPayload): Result<LocalPublishResult> = publishResult {
         require(payload.ownerNodeId == identity().nodeId)
@@ -158,9 +175,12 @@ class LocalResourceRepository(private val db: GhostDatabase, private val identit
     }
     suspend fun prepare(packetId: String, peer: String): ResourceRow? = withContext(Dispatchers.IO) {
         if (dao.delivery(packetId, peer) != null) null else dao.packet(packetId)?.let {
-            if (it.kind != 3 && dao.entity(it.entityId)?.eventId != it.eventId) null else prepare(it, peer)
+            if (!isCurrentShared(it)) null else prepare(it, peer)
         }
     }
+    suspend fun isCurrentShared(row: ResourceRow): Boolean = if (row.kind == 3)
+        dao.sharedHelpers(row.entityId).any { it.eventId == row.eventId }
+        else dao.entity(row.entityId)?.eventId == row.eventId
     private fun prepare(row: ResourceRow, peer: String): ResourceRow? {
         val p = WireCodec.decode(row.wire)
         val local = identity().nodeId
@@ -219,6 +239,13 @@ class LocalResourceRepository(private val db: GhostDatabase, private val identit
             .setUnit(update.unit).setCoarseArea(update.coarseArea).setAvailableUntilMs(update.availableUntilMs).build()
     }
     private fun envelope(row: ResourceRow) = parse(WireCodec.decode(row.wire))
+    private fun cloudState(row: ResourceRow, time: Long) = when {
+        row.cloudAck != null -> LocalCloudState.ACCEPTED
+        !row.publicSharing || !row.cloudConsent -> LocalCloudState.NOT_SHARED
+        row.expiresAt <= time -> LocalCloudState.EXPIRED
+        row.cloudError != null -> LocalCloudState.REJECTED
+        else -> LocalCloudState.QUEUED
+    }
     private fun parse(packet: WirePacket) = ImmutableEnvelopeV1.parseFrom(WireCodec.unbase64(packet.immutableEnvelopeBytesBase64, PacketValidator.MAX_ENVELOPE))
     companion object { const val LIFETIME = 21600000L }
 }

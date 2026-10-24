@@ -12,6 +12,7 @@ import kotlinx.serialization.json.*
 import org.ghost.contracts.v1.ConsentV1
 import org.ghost.contracts.v1.SosCreateV1
 import org.ghost.contracts.v1.CloudAckV1
+import org.ghost.contracts.v1.HelperProfilePublishV1
 import org.ghost.domain.model.*
 import org.ghost.protocol.ProtocolException
 import org.ghost.protocol.WireCodec
@@ -269,6 +270,92 @@ class LocalSosRepositoryTest {
         clock = original.expiresAt
         assertTrue(source.resources.outgoing(carrier.nodeId.value, emptySet()).isEmpty())
         assertTrue(source.resources.updateOffer(editor, withdraw = true).isFailure)
+    }
+
+    @Test fun disablingHelperSharingWithdrawsOnlyPreviouslySharedAvailabilityAndSurvivesRestart() = runBlocking {
+        for (oldCloud in listOf(false, true)) for (newNearby in listOf(false, true)) for (newCloud in listOf(false, true)) {
+            val owner = key(); val peer = key(); val cloud = key()
+            val name = "helper-withdraw-${UUID.randomUUID()}.db"; val db = open(name)
+            val source = LocalSosRepository(db, { owner }, { time })
+            val receiver = LocalSosRepository(open(), { peer }, { time })
+            source.resources.publish(ResourceDraft(name = "Previously shared", area = "Old area", cloudConsent = oldCloud)).getOrThrow()
+            val old = source.resources.outgoing(peer.nodeId.value, emptySet()).single()
+            source.resources.publish(ResourceDraft(name = "Private new name", area = "Private new area", available = false,
+                publicSharing = newNearby, cloudConsent = newCloud)).getOrThrow()
+            val outgoing = source.resources.outgoing(peer.nodeId.value, emptySet())
+            val needsWithdrawal = !newNearby || (oldCloud && !newCloud)
+            assertNull(source.resources.prepare(old.packetId, peer.nodeId.value))
+            assertNull(source.prepareCloudUpload(old.eventId))
+            val summary = source.resources.observeSummaries().first().single()
+            assertFalse(summary.available)
+            assertEquals("Private new name", summary.editDraft!!.name)
+            assertEquals("Private new area", summary.editDraft!!.area)
+            assertEquals(newNearby, summary.editDraft!!.publicSharing)
+            assertEquals(newCloud, summary.editDraft!!.cloudConsent)
+            val withdrawal = if (needsWithdrawal) outgoing.single { row ->
+                !(PacketValidator().verify(WireCodec.decode(row.wire), time).payload as HelperProfilePublishV1).hasDisplayName()
+            } else null
+            if (withdrawal != null) {
+                val verified = PacketValidator().verify(WireCodec.decode(withdrawal.wire), time, forCloud = oldCloud)
+                val p = verified.payload as HelperProfilePublishV1
+                assertEquals(2, p.availabilityValue)
+                assertFalse(p.hasDisplayName()); assertFalse(p.hasCoarseArea())
+                assertEquals(listOf(7), p.helpTypesValueList)
+                assertTrue(p.consent.publicMeshAllowed)
+                assertEquals(oldCloud, p.consent.cloudProcessingAllowed)
+                assertEquals(old.expiresAt, withdrawal.expiresAt)
+                receiver.resources.receive(WireCodec.decode(withdrawal.wire), owner.nodeId.value)
+            } else {
+                assertEquals(1, outgoing.size)
+                receiver.resources.receive(WireCodec.decode(outgoing.single().wire), owner.nodeId.value)
+            }
+            // A delayed original cannot revive availability or remain eligible for forwarding/upload.
+            receiver.resources.receive(WireCodec.decode(old.wire), owner.nodeId.value)
+            assertFalse(receiver.resources.observeSummaries().first().single().available)
+            assertNull(receiver.resources.prepare(old.packetId, key().nodeId.value))
+            assertNull(receiver.prepareCloudUpload(old.eventId))
+            db.close(); databases.remove(db)
+            val restored = LocalSosRepository(open(name), { owner }, { time })
+            assertEquals(outgoing.map { it.packetId }, restored.resources.outgoing(peer.nodeId.value, emptySet()).map { it.packetId })
+            if (needsWithdrawal && oldCloud && !(newNearby && newCloud)) {
+                val upload = restored.cloudOutgoing().single()
+                assertEquals(withdrawal!!.eventId, upload.eventId)
+                assertEquals(LocalCloudState.QUEUED, restored.resources.observeSummaries().first().single().withdrawalCloudState)
+                val ack = SignedPackets.create(cloud, 7, CloudAckV1.newBuilder().setOriginEventId(upload.eventId)
+                    .setStatusValue(1).setCloudRevision(1).setReceivedAtMs(time).build().toByteString(), time, destination = owner.nodeId.value)
+                restored.acceptCloudAck(upload.eventId, ack, cloud.publicKey.encoded, 1)
+                assertEquals(LocalCloudState.ACCEPTED, restored.resources.observeSummaries().first().single().withdrawalCloudState)
+                assertTrue(restored.cloudOutgoing().isEmpty())
+            }
+        }
+    }
+
+    @Test fun disablingOnlyOnlineHelperSharingKeepsNewNearbyDetailsOutOfTheCloud() = runBlocking {
+        val owner = key(); val peer = key(); val db = open()
+        val source = LocalSosRepository(db, { owner }, { time })
+        val receiver = LocalSosRepository(open(), { peer }, { time })
+        source.resources.publish(ResourceDraft(name = "Online volunteer", cloudConsent = true)).getOrThrow()
+        source.resources.publish(ResourceDraft(name = "Nearby only", area = "New area", cloudConsent = false)).getOrThrow()
+        val packets = source.resources.outgoing(peer.nodeId.value, emptySet())
+        assertEquals(2, packets.size)
+        // Reversed delivery still leaves nearby availability active and the cloud withdrawal queued.
+        for (row in packets.reversed()) receiver.resources.receive(WireCodec.decode(row.wire), owner.nodeId.value)
+        val nearby = receiver.resources.observeSummaries().first().single()
+        assertTrue(nearby.available); assertTrue(nearby.title.startsWith("Nearby only"))
+        for (repo in listOf(source, receiver)) {
+            val upload = repo.cloudOutgoing().single()
+            val p = PacketValidator().verify(WireCodec.decode(upload.wire), time, forCloud = true).payload as HelperProfilePublishV1
+            assertEquals(2, p.availabilityValue)
+            assertFalse(p.hasDisplayName()); assertFalse(p.hasCoarseArea())
+        }
+        // Repeated private saves neither suppress the withdrawal nor create new shared reports.
+        source.resources.publish(ResourceDraft(name = "Private again", publicSharing = false)).getOrThrow()
+        val afterWithdrawal = source.resources.outgoing(peer.nodeId.value, emptySet())
+        source.resources.publish(ResourceDraft(name = "Still private", publicSharing = false, available = false)).getOrThrow()
+        assertEquals(afterWithdrawal.map { it.eventId }, source.resources.outgoing(peer.nodeId.value, emptySet()).map { it.eventId })
+        assertTrue(afterWithdrawal.all {
+            (PacketValidator().verify(WireCodec.decode(it.wire), time).payload as HelperProfilePublishV1).availabilityValue == 2
+        })
     }
 
     @Test fun resourcePublicationsSurviveRestartValidateConsentAndDeduplicateSupplySaves() = runBlocking {

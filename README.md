@@ -115,6 +115,11 @@ unit and area). Save before sharing; availability expires after six hours.
 **Share with nearby phones** and **Allow online help coordination** are separate
 choices. With nearby sharing off, the publication stays on the phone even if
 online consent is checked. There is no automatic assignment or reservation.
+For volunteers, turning sharing off also queues an unavailable report for the
+previous audience, without a name or area. New private details stay local. Turning
+only online sharing off can leave your new availability shared nearby while the
+server receives the withdrawal. The withdrawal keeps the previous expiry and waits
+for delivery; a separate verified receipt shows when the server has received it.
 
 Updated phones relay publications with the same four-transfer limit, signed
 neighbor receipts and gateway upload/return path as SOS. Older phones continue

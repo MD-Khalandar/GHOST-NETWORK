@@ -161,7 +161,7 @@ class LocalSosRepository(
         dao.event(eventId)?.takeIf { it.publicSharing && it.cloudConsent && it.cloudAck == null && it.cloudError == null && it.expiresAt > now() }
             ?.let { UploadCandidate(it.eventId, it.packetId, it.wire) }
             ?: db.resources().event(eventId)?.takeIf { it.publicSharing && it.cloudConsent && it.cloudAck == null && it.cloudError == null && it.expiresAt > now() &&
-                (it.kind == 3 || db.resources().entity(it.entityId)?.eventId == it.eventId) }
+                resources.isCurrentShared(it) }
                 ?.let { UploadCandidate(it.eventId, it.packetId, it.wire) }
     }
     suspend fun retryCloudUploads() = withContext(Dispatchers.IO) { dao.retryCloudUploads(now()); db.resources().retry(now()) }

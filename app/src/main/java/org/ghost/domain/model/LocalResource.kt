@@ -12,6 +12,7 @@ data class ResourceDraft(val id: String = UUID.randomUUID().toString(), val supp
 
 data class ResourceSummary(val id: String, val owner: String, val owned: Boolean, val helper: Boolean,
     val title: String, val area: String?, val available: Boolean, val expiresAt: Long, val cloudState: LocalCloudState,
-    val withdrawn: Boolean = false, val editDraft: ResourceDraft? = null)
+    val withdrawn: Boolean = false, val editDraft: ResourceDraft? = null,
+    val withdrawalCloudState: LocalCloudState? = null)
 
 data class UploadCandidate(val eventId: String, val packetId: String, val wire: ByteArray)

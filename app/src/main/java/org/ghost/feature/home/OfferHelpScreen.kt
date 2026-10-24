@@ -85,4 +85,13 @@ private fun ResourceStatus(resource: ResourceSummary) {
         LocalCloudState.REJECTED -> "Server upload rejected · retry from Connections"
         LocalCloudState.EXPIRED -> "Sharing expired"
     }, style = MaterialTheme.typography.bodySmall)
+    resource.withdrawalCloudState?.let { state ->
+        Text(when (state) {
+            LocalCloudState.ACCEPTED -> "Earlier availability withdrawal received by server; receipt verified."
+            LocalCloudState.QUEUED -> "Earlier availability withdrawal saved; waiting for an online gateway."
+            LocalCloudState.REJECTED -> "Earlier availability withdrawal rejected by server; retry from Connections."
+            LocalCloudState.NOT_SHARED -> "Earlier nearby availability withdrawal saved."
+            LocalCloudState.EXPIRED -> "Earlier availability withdrawal expired."
+        } + " Nearby copies update when the withdrawal arrives or expire on their own.", style = MaterialTheme.typography.bodySmall)
+    }
 }

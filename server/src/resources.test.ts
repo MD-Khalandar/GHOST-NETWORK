@@ -27,7 +27,10 @@ test("signed helper/supply uploads deduplicate, preserve owner identity, and pro
   const upload = (packets: ReturnType<typeof make>[], key: string = randomUUID()) => app.inject({ method: "POST", url: "/v1/sync/upload",
     headers: gatewayHeaders, payload: { idempotency_key: key, packets } });
   try {
-    const older = make(3, helperData), newer = make(3, { ...helperData, availability: 2 }, now);
+    // Android withdraws earlier sharing with a minimal report; new private details stay local.
+    const older = make(3, helperData), newer = make(3, {
+      owner_node_id: helperData.owner_node_id, help_types: [7], availability: 2, consent,
+    }, now);
     const offer = make(5, offerData);
     const first = await upload([newer, offer], "resource-batch");
     assert.equal(first.statusCode, 200, first.body);
@@ -40,6 +43,8 @@ test("signed helper/supply uploads deduplicate, preserve owner identity, and pro
     const helpers = await app.inject({ url: "/v1/dashboard/helpers", headers: viewerHeaders });
     assert.equal(helpers.statusCode, 200); assert.equal(helpers.json().items.length, 1);
     assert.equal(helpers.json().items[0].availability, 2);
+    assert.equal(helpers.json().items[0].display_name, null);
+    assert.equal(helpers.json().items[0].coarse_area, null);
     assert.equal(helpers.json().items[0].owner_node_id, origin.nodeId);
     assert.doesNotMatch(helpers.body, /cloud_ack|immutable_envelope|origin_signature|token_sha256/);
     const supplies = await app.inject({ url: "/v1/dashboard/offers?limit=1", headers: viewerHeaders });

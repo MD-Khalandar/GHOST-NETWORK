@@ -105,6 +105,36 @@ class DirectExchangeTest {
 
     @After fun close() { databases.forEach { it.close() }; names.forEach { context.deleteDatabase(it) } }
 
+    @Test fun privateUnavailableHelperSaveRelaysAWithdrawalAndReturnsItsServerReceipt() = runTest {
+        val cloud = newKey(); val pin = cloud.publicKey.encoded
+        val a = phone("A", cloudKey = pin); phone("B", cloudKey = pin); val g = phone("G", cloudKey = pin)
+        runBlocking {
+            a.repo.resources.publish(ResourceDraft(name = "Shared volunteer", cloudConsent = true)).getOrThrow()
+        }
+        connect("A", "B"); connect("B", "G")
+        until { g.repo.resources.observeSummaries().first().singleOrNull()?.available == true }
+        runBlocking {
+            a.repo.resources.publish(ResourceDraft(name = "New private name", available = false,
+                publicSharing = false, cloudConsent = false)).getOrThrow()
+        }
+        until { g.repo.resources.observeSummaries().first().singleOrNull()?.available == false }
+        runBlocking {
+            val report = g.repo.cloudOutgoing().single()
+            val p = PacketValidator().verify(WireCodec.decode(report.wire), baseTime, forCloud = true).payload as org.ghost.contracts.v1.HelperProfilePublishV1
+            assertEquals(2, p.availabilityValue)
+            assertFalse(p.hasDisplayName()); assertFalse(p.hasCoarseArea())
+            val ack = SignedPackets.create(cloud, 7, CloudAckV1.newBuilder().setOriginEventId(report.eventId)
+                .setStatusValue(1).setCloudRevision(2).setReceivedAtMs(baseTime).build().toByteString(), baseTime,
+                destination = a.key.nodeId.value)
+            g.repo.acceptCloudAck(report.eventId, ack, pin, 2)
+        }
+        until { a.repo.resources.observeSummaries().first().single().withdrawalCloudState == LocalCloudState.ACCEPTED }
+        val own = runBlocking { a.repo.resources.observeSummaries().first().single() }
+        assertEquals("New private name", own.editDraft!!.name)
+        assertFalse(own.editDraft!!.publicSharing); assertFalse(own.editDraft!!.cloudConsent)
+        assertEquals(LocalCloudState.NOT_SHARED, own.cloudState)
+    }
+
     @Test fun helpersAndSuppliesRelayAndVerifiedServerReceiptsReturnToTheirOwner() = runTest {
         val cloud = newKey(); val pin = cloud.publicKey.encoded
         val a = phone("A", cloudKey = pin); val b = phone("B", cloudKey = pin); val g = phone("G", cloudKey = pin)
