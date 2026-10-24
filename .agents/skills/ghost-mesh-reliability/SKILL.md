@@ -1,11 +1,11 @@
 ---
 name: ghost-mesh-reliability
-description: Implement or review GHOST Nearby transport, packet validation, store-and-forward routing, retries, deduplication, and signed receipt tracking. Use for networking changes and relay reliability.
+description: Implement or review GHOST Nearby SOS relay, cloud gateway sync, retries, deduplication and signed phone/cloud receipts.
 ---
 
 # GHOST mesh reliability
 
-Read `AGENTS.md`, `ARCHITECTURE.md`, `docs/PROTOCOL.md`, and the T01–T13 cases in `docs/TEST_MATRIX.md`. Inspect the transport interface and current queue implementation. Treat the protocol document as the agreed contract, including its unresolved conceptual details; do not silently invent missing wire fields.
+Read `AGENTS.md`, `ARCHITECTURE.md`, `docs/PROTOCOL.md`, and relevant T/G cases in `docs/TEST_MATRIX.md`. Inspect transport/queue implementation. Owner A freezes shared contracts at checkpoint 1; route changes through that owner with fixtures.
 
 ## Preserve boundaries and packet meaning
 
@@ -16,8 +16,10 @@ Read `AGENTS.md`, `ARCHITECTURE.md`, `docs/PROTOCOL.md`, and the T01–T13 cases
 - Persist before sending. Keep the queue and deduplication state through process restart, with finite retention, size caps, backoff, and fairness. Do not reset hop budget when reconnecting or changing transport.
 - Exchange bounded inventories and send missing valid packets. Exclude the previous hop as required by the protocol; prevent repeated callbacks or overlapping reconnect work from creating duplicate effects.
 - A successful Nearby send establishes at most neighbor transmission. Require the protocol's signed end-recipient receipt before displaying delivered-to-recipient; relay acknowledgment and delivery proof are different observations.
+- Preserve original signed SOS bytes through cloud upload and verify trusted cloud signatures on returned packets. Stop forwarding at addressed destinations; gateways cannot impersonate the coordinator.
+- Distinguish neighbor/relay, durable cloud ACK and phone receipt. Gateway download ACK is not final delivery. Persist results before cursor advancement; test duplicates across multiple gateways and cursor/outbox recovery. Internet loss must not stop local SOS transport.
 
-For any packet schema, event type, stable ID, or cross-owner interface change, show the concrete proposed change in the task response and add compatibility/fixture tests. Do not describe a different protocol as the frozen v1.
+For packet/event/ID/shared-interface changes, show the concrete proposal and applicable fixture/compatibility tests. For docs-only changes, specify required tests without claiming a frozen or implemented format.
 
 ## Handle Android lifecycle and permissions
 
@@ -29,7 +31,7 @@ Stop discovery/listeners appropriately and make foreground-relay behavior explic
 
 Use deterministic `FakeTransport`, fake clock, and fixtures to cover the relevant cases: A/C without a direct link, B offline then reconnecting, replay 10 times, expiry during a retry, bad signature/version/oversize/hops, bounded inventory, and unsigned or wrong-recipient receipt. Test durable queue/dedup recovery with storage reopening where applicable.
 
-Run the repository build/unit command. Describe simulated topology and physical evidence separately. A real relay claim needs actual phones with A/C unable to connect directly and correlated packet IDs on B and C. Do not infer a global topology from local hearsay or mark T01–T13 complete from fake/emulator results.
+For application changes run the repository build/unit command. Describe simulations and physical evidence separately. Real relay needs phones with A/C unable to connect directly and correlated IDs on B/C. Do not infer global topology or mark device gates complete from fake/emulator results. Docs-only work does not require a build.
 
 For reviews, report reproducible findings with file/line, failed invariant, impact, fix, and the test that demonstrates it.
 

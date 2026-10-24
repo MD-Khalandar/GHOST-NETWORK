@@ -1,34 +1,33 @@
 ---
 name: ghost-agent-safety
-description: Implement or review GHOST local-model orchestration, Kotlin tools, structured decisions, authorization, human approval, and decline/replan. Use for AI behavior or tool-policy changes.
+description: Implement or review GHOST cloud coordination, typed server tools, owner consent, human approval, idempotency and decline/replan.
 ---
 
 # GHOST agent safety
 
-Read `AGENTS.md`, `docs/AGENT_CONTRACT.md`, `ARCHITECTURE.md`, and A01–A08 in `docs/TEST_MATRIX.md`. Inspect the actual model adapter, policy, tool registry, and human publish path. Read `docs/PROTOCOL.md` for any event/receipt changes.
+Read `AGENTS.md`, `ARCHITECTURE.md`, `docs/AGENT_CONTRACT.md` and A/G gates in `docs/TEST_MATRIX.md`. Read the protocol for event/receipt changes. Respect the current team prompt's file ownership.
 
-## Trace authority through the whole action
+## Follow the authority path
 
-Trace verified incoming event → Room snapshot → model text → typed decision → deterministic validation → allowlisted Kotlin tool → persisted observation/proposal → human confirmation → signed publication. A model response is neither a tool invocation nor authorization.
+Trace signed report → cloud validation/persistence → durable job → current snapshot → untrusted model decision → typed server tool → draft → authenticated operator approval → revalidation → cloud-signed outbox → gateway/mesh → recipient receipt.
 
-- Treat SOS, offer notes, quoted instructions, model explanations, and model JSON as untrusted data. Bound prompt size, output size, argument strings, result counts, run duration, and tool steps.
-- Parse into the finite decision schema. Reject unknown actions/fields as required by the schema, invalid types/enums, out-of-bounds values, and entity IDs absent from the known snapshot. Never execute generated shell, SQL, arbitrary URLs, or function names.
-- Enforce freshness, ownership/signatures, resource compatibility, remaining quantity where supplied, request status, and proposal idempotency in Kotlin. Unknown location/quantity remains uncertain; do not invent resources, routes, triage, or authority.
-- Model tools may read or create local drafts only. Human actions authorize outward offers, request resolution, or resource commitment according to the contract's actor rules. Approval must be enforced in the use case/policy, not just a UI button.
-- Revalidate the latest offer/request and proposal version at approval/publication. A decline or revocation invalidates the pending proposal; an earlier approval must not authorize a replacement offer automatically.
-- Persist runs and observations, debounce duplicate triggers by the documented keys, and recover pending state after restart without duplicate sends. Use a single coordinator queue, maximum four model decisions per run, and at most one invalid-output repair retry within those bounds.
-- Record actual tool arguments/results and provenance in sanitized traces. Separate model-selection, validation, execution, and publication outcomes so partial failures do not appear successful.
+- Coordination/model/tool execution belongs on the server. Phones and gateways cannot start independent coordinating agents, approve as an operator through a local toggle, or fabricate cloud results.
+- Reject unknown actions, invalid types/bounds and IDs outside the snapshot. Report text and model output are untrusted; never execute generated shell, SQL, unrestricted URLs or function names.
+- Enforce owner/cloud consent, request/offer freshness, quantities and proposal version in server policy. Unknown or unsynchronized facts remain uncertain.
+- Read/draft tools cannot publish. Check authenticated operator role and exact version at approval; resource owners accept/decline and requesters close SOS.
+- Commit allocation only on authorized owner acceptance in a transaction. Test competing accepts; a queued handset action is not cloud confirmation.
+- Decline/withdrawal/closure invalidates stale work. Replanning creates a fresh trace/version and requires new approval.
+- Deduplicate across gateway uploads, job triggers, approval retries and outgoing events. Verify exclusive worker ownership and durable restart behavior; do not promise exactly-once provider calls.
+- Enforce bounded steps/retries/deadlines. Late output cannot revive an expired/closed proposal. Keep provider/signing secrets server-side and traces sanitized.
 
-## Keep inference local and bounded
+## Connectivity and helpers
 
-For engine integration, read the installed `litert-lm/SKILL.md`. Keep the runtime behind `LocalModelRuntime` in `ai/runtime`; its chat ViewModel example must not replace GHOST's repository/orchestrator boundaries. Preserve the existing version catalog rather than copying a sample dependency version.
+No reachable gateway/cloud means coordination pending, not phone-local model fallback. The mesh must still store/relay reports. Separate cloud ingestion acknowledgement, proposal publication, phone receipt and resource confirmation.
 
-Use pre-provisioned model files outside the APK, verify integrity, and own initialization, inference, cancellation, and close on the dedicated background owner. A coroutine timeout around a blocking native call alone does not prove native cancellation; test the adapter's actual lifecycle.
+Local LLM drafting/translation/summarization is deferred and has no allocation or approval authority. Do not integrate LiteRT-LM for the current SOS checkpoints merely because a dependency/model exists.
 
-The installed LiteRT-LM skill covers text inference, not native tool calling. Implement GHOST's structured-text/Kotlin validation loop explicitly. Missing model, invalid output, runtime failure, timeout, and cancellation must produce truthful states. Label rules fallback separately; never silently switch to a cloud service or upload SOS/location.
+## Verify
 
-## Verify the authority boundary
+Use fake model/cloud, clock and resource fixtures for injection, malformed output, stale/revoked consent/offers, unauthorized operator/owner actions, duplicate gateways, conflicting accepts, worker restart, timeout and late response. Test rejected actions leave consequential state/outbox unchanged.
 
-Use `FakeModelRuntime`, fake clock, and real resource fixtures to test valid proposals, malicious SOS instructions, malformed/oversized output, invented IDs, stale/revoked offers, missing approval, decline/replan, duplicate triggers, timeout, cancellation, and restart. Test that rejected actions leave outward transport and consequential state untouched.
-
-Run the repository build/unit command. Report fake-model results separately from offline Phone C inference, which requires model hash/device identity and actual output→validated tool trace. Do not mark A01/A02/A05 complete using a fake, and do not alter shared tool/event contracts without an explicit proposal and tests.
+Run applicable server tests and Android checks only for touched implementation. Separate fake tests from actual cloud model/tool evidence. Docs-only changes specify tests without building. Route shared contract changes through owner A with fixtures and integration notes.

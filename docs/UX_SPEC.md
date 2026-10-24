@@ -1,69 +1,51 @@
-# GHOST visual design system and screen contract
+# SOS phase screen contract
 
-## Design intention
+Build the SOS phase of GHOST now. Ordinary conversations, generic internet queries and local-model helpers remain later work. Use Compose Material 3 and honest local/mesh/cloud states.
 
-A calm, high-trust emergency utility, **not** a neon cyberpunk console. Crisp Material 3, legible typography, sparse layouts, clear status states and one unmistakable SOS action. The interface needs to look credible during a live demo and remain usable for tired or stressed people.
+## Navigation
 
-## Visual tokens (starting design choices; check contrast)
+Four destinations: **Home**, **Requests**, **Mission**, **Network**. SOS compose opens from Home/Requests. Mission shows the single cloud coordinator's activity; it is not a model running on the handset.
 
-- Primary deep navy `#14273D` (navigation, headers)
-- Accent teal `#087F8C` (connected / normal primary actions)
-- Emergency red `#C52A36` (SOS and true urgent visual states only)
-- Warning amber `#B76C09` (pending, not yet delivered)
-- Surface warm-white `#FAFBFC`; card white `#FFFFFF`; text `#182431`; muted `#586574`
-- Spacing grid 4/8/12/16/24/32 dp; min recommended tap target **48dp**; cards 16dp radius; restrained elevation
-- Fonts: native readable sans with Material 3 typography scale; body >=14sp with support for system font scaling; avoid all caps on paragraphs
-- Respect light/dark mode and system contrast; do not use color alone to express a message state.
+| Screen | Required behavior |
+| --- | --- |
+| Home | Prominent Send SOS; local queue, nearby peers and cloud reachability shown separately |
+| SOS form | Medical/trapped/water/food/shelter/other; description, optional people count and coarse location. Preview exact content/audience, public sharing and separate cloud-coordination consent |
+| Requests / details | Locally known reports, source/age, pending cloud sync, cloud acknowledgements, proposal and actual recipient state |
+| Offers | Owner publish/update/withdraw, cloud consent, accept/decline exact proposal version; acceptance stays pending until cloud confirmation |
+| Mission | Read-only cloud run/tool summary, proposal/version, waiting-for-operator state and approved outcome. Operator approval happens in the web dashboard |
+| Network | Permission/radio state, observed peers/relay path, queue/expiry, gateway sharing toggle, last cloud sync and retry |
 
-## Nav structure
+A handset's local role toggle cannot grant approval authority. For the demo the operator uses the web dashboard on a computer or C's browser. Phone owners accept/decline their own offers in the app.
 
-Four bottom destinations: **Home**, **Requests**, **Mission**, **Network**. Prominent primary `SEND SOS` CTA on Home, always visible and accessible. Standard peers show Mission as a transparent “Coordinator not active on this device” overview, not a fake agent.
+## Cloud web dashboard
 
-### Home
+An authenticated browser UI in `dashboard/`, using the server API and shared cloud records. Build incoming SOS visibility before advanced agent views.
 
-- Hero status: `OFFLINE MESH ACTIVE · 2 PEERS` OR `NO NEARBY PEERS` OR `INTERNET GATEWAY AVAILABLE`.
-- Primary emergency action: wide red `SEND SOS` surface; explanatory consent before sending any GPS/landmark.
-- Three state chips: relay queue count, SOS pending count, last successful sync.
-- “Recent events” with provenance: **queued**, **relay received**, **delivered to recipient**, **read**. Use text+icon labels.
-- Battery/radio state visible but not alarmist.
+| View | Required behavior |
+| --- | --- |
+| Incoming SOS | Persisted incoming requests with category, coarse area, reported/received time and state; bounded filters/pagination and visible last refresh |
+| Request detail | Original reported content, source/freshness, cloud status, proposed assistance and actual receipt evidence |
+| Helpers and supplies | Owner-provided helper name or short identity, help types, resource quantity/unit where known, availability/expiry and last update; no inferred verification badges |
+| Agent activity | Actual job/model/tool history, draft/version, uncertainty and waiting-for-approval state |
+| Operator actions | Approve/reject exact proposal version through authenticated role-checked API; stale data causes revalidation rather than automatic approval |
 
-### SOS form
+Start with polling and clear loading/empty/error/stale states. A report queued on an offline phone is not an incoming cloud record. Dashboard controls cannot silently edit owner supplies, confirm receipt or close someone else's SOS. Keep keyboard navigation, accessible labels, readable contrast and narrow-screen layouts usable. Do not require the dashboard to create or send a phone's SOS.
 
-- Select category: medical / trapped / water / food / shelter / other.
-- Number of people optional; description; optional coarse area/landmark; explicit checkbox that public SOS may be visible to relay peers.
-- Preflight confirmation: exact content, audience, location granularity; publish only on explicit Send.
-- Show message ID, expiry, and honest delivery timeline afterward.
+## States and consent
 
-### Requests board
+- No gateway/cloud means “Waiting for internet gateway” or “Cloud unavailable.” No phone-local AI fallback is implied.
+- Distinguish saved/queued, neighbor send, relay observed, cloud accepted, awaiting approval, proposal sent, phone receipt and allocation confirmed. HTTP success is not help offered or delivered.
+- Public mesh sharing and cloud processing are separate choices. Explain that declining cloud consent leaves the report available for local/manual help only. Precise location requires explicit opt-in.
+- Until E2E encryption is implemented/tested, disclose relay visibility; do not claim signatures make content private.
+- Show current reported source/age and uncertainty; a central coordinator still lacks unsynchronized reports.
+- Preserve drafts on error/navigation, prevent duplicate sends, and expose empty/loading/stale/failed/permission-denied/service-unavailable states.
+- Mission trace shows actual model-selected tool, validated result, draft and human approval. Mark fixtures simulated; do not display cloud activity from a fake as live.
+- If approval or acceptance becomes stale while disconnected, require revalidation rather than showing success.
 
-- Cards: need, approximate location, age, reported sender trust, current verified state, current/possible volunteer offers.
-- Filters category, new/acknowledged/help offered/closed. Clear empty, loading, stale and error views.
-- Volunteer can publish offer, withdraw it, accept/decline a specific proposal, without editing other people's offer records.
+## Visual and implementation baseline
 
-### Mission Control
+Retain Material 3 tokens: navy `#14273D`, teal `#087F8C`, SOS red `#C52A36`, pending amber `#B76C09`, light surface `#FAFBFC`. Verify semantic light/dark contrast.
 
-- Only enabled for coordinator with model ready.
-- Top: `LOCAL MODEL READY (OFFLINE)` or `MODEL LOADING` / `RULES ONLY` with no misrepresentation.
-- Main panel: “What the agent observed → which tool it selected → what tool returned → what it proposed → waiting for approval”.
-- Explain each match with freshness: reported resources, rough area, last update age. `Approve and send` and `Reject` distinct.
-- Event trace is timeline, not raw tokens; details expansion can show sanitized input/output and event IDs for judges.
-- On decline, show previous suggestion crossed as `DECLINED by offer owner` and next alternative as `NEW PROPOSAL`.
+Use 4/8dp spacing, 48dp touch targets, screen-reader labels/focus, 200% font support, reduced motion and keyboard/system-bar clearance. Screens observe repository Flow through ViewModels; keep I/O/model execution out of composition. Supply loaded/empty/loading-error/disconnected previews.
 
-### Network
-
-- Peers with stable short IDs, last seen, trust status, radio transport, connection status.
-- Queued packets and relay log (A → B → C), receipt level; no fake visual maps or global topology inferred from hearsay.
-- Permission health and button to retry discovery; foreground relaying status.
-
-## Accessibility and smoothness checklist
-
-- Support font scaling, screen readers/content descriptions, reduced motion, touch target sizes and logical focus order.
-- Avoid endless shimmer and animations during unstable connectivity; simple 150-250ms transitions are enough if motion is enabled.
-- No disk/network inference on main UI thread. Observe Room through ViewModels/StateFlow and render using `collectAsStateWithLifecycle`.
-- Stable keys in lazy lists; keep list updates focused, debounce repeated Radio/Room events; use `@Preview` fixture states.
-- Include previews for 4 states per screen: loaded, empty, loading/error, disconnected/stale.
-- Verify real-device usability on a small phone and in dark mode. Screenshots at fixed configuration for consistent judges' demo.
-
-## Design acceptance tests
-
-No truncated SOS text at 200% font scale; offline indication always visible; queued/relay/delivered statuses visually and textually distinct; mandatory consent cannot be skipped; no accidental network sends from screen composition or re-render; user can leave/return to a form without losing typed text; buttons disabled while a duplicate action is processing.
+Verify U01–U06 in [TEST_MATRIX.md](TEST_MATRIX.md) on physical phones. Previews do not prove accessibility or delivery.

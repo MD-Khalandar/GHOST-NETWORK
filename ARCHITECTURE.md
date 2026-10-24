@@ -1,178 +1,106 @@
-# GHOST — Locked implementation architecture v2.0
+# GHOST architecture
 
-**Role:** Offline-first human-approved disaster assistance coordination with a real, limited on-device agent.  
-**Scope:** 24-hour proof of capability. Not a life-safety or certified response system.
+GHOST is an Android mesh communication app for outages. The wider product includes saved-contact messaging, SOS/help and in-app internet services. **Build SOS sending first, coordinated by one cloud agent.** A web dashboard shows incoming requests, helpers/supplies and agent activity from the same cloud database. Local LLM features, ordinary chat, general information services and LoRa are later work.
 
-## 1. Non-negotiable decisions
+Current repository state: Android build scaffold only. This document describes planned components, not working features. Preserve the existing Android toolchain.
 
-1. **Single Android APK; three selectable roles.** A peer, AI coordinator and optional radio/internet bridge all share the same codebase. Only a configured coordinator runs the heavyweight language model.
-2. **Single Gradle Android app for the hackathon, split by packages and narrow Kotlin interfaces.** Avoid many Gradle modules until boundaries are stable.
-3. **Nearby Connections `P2P_CLUSTER` is the only required real transport.** `P2P_CLUSTER` is *not* automatic multihop: `MeshEngine` stores, de-duplicates and forwards.
-4. **Local Room database is source of truth.** All writes are persisted before announcing or transmitting. All UI screens observe local `Flow` state.
-5. **A single designated AI coordinator is authoritative for demo coordination proposals.** Other phones can send resource/SOS events. Do not pretend global consensus or conflict-free resource allocation.
-6. **LLM runs locally on Phone C; no cloud call in core proof.** LiteRT-LM + pre-provisioned compatible `.litertlm` model. Runtime support and real tool-selection accuracy must pass a device feasibility gate.
-7. **Model reasons, Kotlin executes.** The LLM returns a constrained *proposed* action as structured text; Kotlin validates it, runs an allowlisted tool, writes an audit record and requests consent for consequential actions. Never turn raw model text directly into a wireless or database command.
-8. **Every SOS, resource offer, decline, acceptance and resolution is an immutable signed event.** A status view is derived from verified events; remote writes cannot silently overwrite an SOS or other sender's resource offer.
-9. **Honest delivery states.** Local persistence, neighbor transmission, relay receipt, end-recipient receipt and read receipt are distinct, evidenced states.
-10. **LoRa and internet gateway are optional adapters.** Both require separate proof. Neither is necessary to establish the offline Agentic AI claim.
-
-## 2. Logical architecture
+## SOS architecture
 
 ```mermaid
-flowchart TB
-  subgraph PHONE[One Android app / on every device]
-    UI[Compose UI: Home / SOS / Requests / Mission Control / Network]
-    VM[ViewModels + Use Cases]
-    ROOM[(Room: events, packets, peers, receipts, agent runs)]
-    DOM[Event Projector: SOS board + resource ledger]
-    MESH[MeshEngine: queue / dedup / inventory / receipts / forwarding]
-    TM[TransportManager]
-    NEAR[Nearby Connections Adapter]
-    AI[Local Agent Orchestrator / Kotlin Policy + Tools]
-    MODEL[LiteRT-LM Local Model Adapter]
-    EXT[Optional Meshtastic + Gateway adapters]
-  end
-  UI --> VM
-  VM --> ROOM
-  VM --> MESH
-  ROOM <--> DOM
-  MESH <--> ROOM
-  MESH <--> TM
-  TM <--> NEAR
-  TM <--> EXT
-  DOM --> AI
-  AI <--> MODEL
-  AI --> ROOM
-  AI --> VM
+flowchart LR
+  A[Phone A / requester / Room] <-->|signed SOS and replies| B[Phone B / relay / Room]
+  B <--> C[Phone C / online gateway / Room]
+  C <-->|authenticated sync| API[Cloud API]
+  API <--> DB[(Durable cloud database)]
+  DB <--> AG[One logical coordinator / bounded agent jobs]
+  AG <--> LLM[Cloud model provider]
+  AG --> P[Draft proposal]
+  H[Authenticated operator / web dashboard] <-->|requests, helpers, approvals| API
+  P --> DB
+  API -->|signed approved result| C
 ```
 
-**Hardware roles for 3-phone demo:**
-- **Phone A:** requester, no internet; sends SOS; receives approved response and signed recipient receipt.
-- **Phone B:** relay **and volunteer X**, no internet; publishes a genuine test resource offer, later declines; remains a relay despite declining.
-- **Phone C:** AI coordinator **and volunteer Y**, no internet; model finds offers, first proposes B, reads decline, then proposes local C offer for confirmation. A and C must be outside direct Nearby range.
+A connected phone can sync directly with the same cloud API. Any opted-in connected phone can be a gateway; C is the demo assignment. Gateways forward original signed events and return cloud-signed results. They do not run another coordination agent or hold provider secrets.
 
-## 3. Kotlin package structure (one `:app` module initially)
+**No reachable internet means no cloud coordination.** Phones still create, store, relay and display SOS/resource reports; manual help remains possible. They queue cloud-authorized events until a gateway returns or the event expires. Show “Waiting for internet gateway,” not a fabricated AI response.
 
-```text
-app/src/main/java/org/ghost/
-  app/                       Application, MainActivity, nav, DI composition
-  design/                    Compose Material 3 theme, typography, components
-  feature/home/              network, queue summary, quick actions
-  feature/sos/               SOS composer and request details
-  feature/requests/          requests board, offer composer, statuses
-  feature/mission/           agent trace, proposals, approval screen
-  feature/network/           peers, relay traces, permissions, diagnostics
-  domain/model/              typed IDs, SOS/Offer/Event, status projections
-  domain/usecase/            PublishSOS, OfferHelp, ResolveRequest, etc.
-  protocol/                  frozen v1 envelope, encoder, parser, validator
-  security/                  identities, signing, trust policy, consent
-  data/local/                Room entities, DAO, migrations, repositories
-  mesh/                      MeshEngine, queue, inventory, routing, receipts
-  transport/api/             GhostTransport, PeerHandle, capabilities
-  transport/nearby/          Nearby discovery, connect, send, receive
-  ai/runtime/                ModelRuntime, LiteRT-LM adapter, readiness
-  ai/orchestrator/           event loop, tool registry, state machine, policy
-  ai/tools/                  allowlisted read/propose tools
-  optional/lora/             Meshtastic adapter; behind feature flag
-  optional/gateway/          whitelisted HTTP retrieval; behind flag
-  simulation/                in-memory FakeTransport, deterministic clock
-```
+## One coordinator and two kinds of state
 
-Keep UI independent of Android wireless APIs. Keep `MeshEngine` independent of the `Nearby` SDK. Keep `ai/tools/` independent of any model SDK.
+- **Room:** each phone's durable local records, outbox, received events and UI state. Save before transmitting; observe repositories through Flow.
+- **Cloud database:** accepted coordination events, SOS requests, helper profiles, supply/help offers, jobs, proposals, approvals and return outbox. The agent and dashboard read the same records through the server. It knows only reports that have reached it; display freshness.
+- **One logical coordinator:** one serialized agent worker for the first version, backed by durable jobs. Each job builds a bounded database snapshot; it is not one endless model conversation. Enforce exclusive worker ownership and idempotency so restarts/multiple gateways cannot create competing decisions.
+- **Server policy:** validates model-selected tools and applies transactions for proposal versions and resource acceptance. The model drafts; an authenticated operator approves outgoing proposals, the resource owner accepts/declines, and the requester closes an SOS.
+- After an offline owner accepts, show “Acceptance queued” until the cloud validates current availability and confirms it. Never treat a local click or an AI draft as an authoritative reservation.
 
-## 4. Core API boundaries
+## Components and ownership
 
-```kotlin
-interface GhostTransport {
-    val id: String
-    val events: Flow<TransportEvent>
-    suspend fun start(): Result<Unit>
-    suspend fun stop()
-    suspend fun send(peer: PeerHandle, encoded: ByteArray): SendResult
-    fun peers(): Flow<List<PeerHandle>>
-}
+Keep one Android `:app` module, a separately runnable `server/` service and a web frontend in `dashboard/`. Use Kotlin, Compose Material 3, Room, coroutines/Flow and simple factory injection on Android. Choose and record the server/database/dashboard stack, model provider and deployment target at checkpoint 1 before parallel implementation; the API/event contracts stay provider-independent. Dashboard work must not delay the SOS sending path.
 
-interface MeshEngine {
-    suspend fun publish(event: SignedDomainEvent): PacketId
-    suspend fun onReceive(bytes: ByteArray, peer: PeerHandle, transportId: String)
-    fun deliveryStates(): Flow<List<PacketDeliveryView>>
-}
+| Area | Responsibility |
+| --- | --- |
+| Android `domain/model`, `transport/api`, shared `contracts/` | Typed events/IDs, repository and transport interfaces, protobuf/API schemas and shared fixtures |
+| Android `security`, `protocol` | Stable identities, signing, verification and cloud-key pinning |
+| Android `data/local`, `domain/usecase` | Room, SOS/offers, projections, transactional publication and receipts |
+| Android `mesh`, `transport/nearby` | Nearby neighbor links, store-and-forward, dedup, inventory, retries and expiry |
+| Android `gateway` | Opt-in authenticated cloud synchronization, durable upload/download cursors |
+| Android `feature/*`, `design` | SOS, Requests/Offers, Mission Control and Network views |
+| `server/api`, `server/security`, `server/data`, `server/sync` | Authenticated ingestion/read/approval API, event authorization, database and signed return delivery |
+| `server/agent`, `server/tools` | Model adapter, durable single coordinator, validated read/draft tools and run trace |
+| `dashboard/` | Authenticated incoming-SOS board, helper/supply directory, request details, agent trace and operator approvals; server API client only |
+| Android `simulation`, server test fixtures | Fake transport/cloud/model, deterministic clock and resource data |
 
-interface LocalModelRuntime {
-    fun readiness(): Flow<ModelReadiness> // missing, loading, ready, failed
-    suspend fun generateAction(prompt: String): ModelOutput
-}
+Paths under `server/` are logical ownership areas; checkpoint 1 maps them to the selected framework. Only the contract/integration owner edits shared schemas/interfaces and app composition/build files during team work.
 
-interface AgentTool {
-    val name: String
-    suspend fun execute(validated: ToolArgs): ToolResult
-}
-```
+## Database and dashboard
 
-`NodeId` (long-lived cryptographic identity) MUST NOT equal Nearby's transient endpoint ID (`PeerHandle`). All packets enter via one validation method before Room insertion. Untrusted SOS text is **data**, never system instructions for the model.
+Use a durable relational cloud database, separate from each phone's Room database. Minimum records:
 
-## 5. Data model (event-oriented)
+| Records | Stored information |
+| --- | --- |
+| SOS requests | Stable request ID, requester identity, category/text, optional people/coarse area, consent, current state, reported/received times and source event |
+| Helpers | Verified owner NodeId, optional owner-provided display name/coarse area, help types, reported availability, consent and last update |
+| Supply/help offers | Offer ID, helper/owner reference, resource or help type, quantity/unit when supplied, area, expiry, current availability and source event |
+| Coordination | Proposal/version, request/offer references, allocation, agent job/tool history, operator approval and delivery evidence |
 
-- `identities(node_id, public_key, keystore_ref, trust, created_at)`
-- `peers(node_id, ephemeral_handle, trust_level, last_seen, capabilities)`
-- `packet_queue(packet_id, immutable_blob, relay_blob, state, received_at, expires_at)`
-- `seen_packets(packet_id, expires_at)`
-- `domain_events(event_id, entity_id, event_type, signer_node_id, payload_blob, created_at, validated_at)`
-- `sos_projection(request_id, owner_node_id, category, people_count, coarse_location, current_state, updated_at)`
-- `offers_projection(offer_id, owner_node_id, resource_type, quantity, rough_area, offer_state, updated_at)`
-- `match_proposals(proposal_id, request_id, offer_id, created_by_coordinator, state, version)`
-- `agent_runs(run_id, trigger_event_id, model_id, requested_tool, tool_result_code, outcome, created_at)`
-- `receipts(packet_id, recipient_node_id, receipt_type, signed_blob, received_at)`
-- `relay_log(packet_id, from_peer, to_peer, transport, event, time)` (bounded retention)
+Helper profiles and offers are owner-submitted signed data, not verified rescue credentials. If an offer arrives before its profile, create an identity-only helper record; do not discard the offer or invent profile details. Enforce unique IDs, owner authorization, migrations and transactional allocation checks. Keep immutable events alongside derived records.
 
-Projected SOS and offer states are computed from signed immutable events. Use entity owner and event-authorized roles for transitions. Offline peers may hold **different current views**; show staleness, don't invent global truth. No autonomous resource reservation across multiple disconnected coordinators in v1.
+The dashboard initially polls bounded authenticated read APIs for incoming SOS/details and shows last-refresh/stale/error states. Requests appear only after committed cloud ingestion; an unsynchronized phone report cannot appear as received. Add the helper/supply directory and version-specific approval controls next, then actual agent traces. Dashboard users do not write database tables directly, impersonate helper owners or bypass server policy. Provider/database secrets stay off the frontend.
 
-## 6. Feature workflow
+`MeshEngine` never calls Android radio APIs; `NearbyAdapter` never edits projection tables. Nearby supplies neighbor links, while GHOST implements multihop. `GatewayClient` syncs signed events; it is not a raw model-inference client. The model adapter and tool loop run on the server.
 
-**A. SOS**: requester completes form -> consent disclosure -> sign event -> Room transaction -> queue -> Nearby -> relay B -> coordinator C -> validate -> project SOS board.
+## End-to-end SOS flow
 
-**B. Agent**: C sees new SOS/offer/decline event -> debounced deterministic trigger -> construct small redacted world state -> local model chooses from finite allowed actions -> schema parse & bounds -> Kotlin tool executes *read or proposal only* -> store trace -> approval card appears -> operator approves -> signed coordination event transmitted.
+1. Requester writes category, description, optional people count/coarse location and sharing choices. Explicitly send after content/audience preview.
+2. Sign and persist the SOS plus outbox atomically. Broadcast locally; eligible gateways upload the unchanged signed event if cloud consent permits.
+3. Cloud authenticates the gateway, verifies the original signer/authority/expiry/consent, deduplicates, persists and returns a signed cloud acknowledgement. HTTP success alone is not a recipient receipt or a match.
+4. Committed requests appear in the dashboard. The coordinator reads uploaded SOS/helper/offer records, selects validated tools and saves a draft. Missing/stale resources produce uncertainty or no match.
+5. An authenticated human operator approves the exact proposal version in the web dashboard. Server revalidates state and writes a cloud-signed outgoing proposal to its durable outbox.
+6. A gateway downloads and persists the result before relaying it to requester/offer owner. Actual phone receipt travels back through the mesh and cloud sync.
+7. Owner decline triggers a new cloud job and proposal version. Owner acceptance is validated transactionally; the cloud confirms available allocation. Replacement proposals require new operator approval.
 
-**C. Replanning**: B (volunteer X) explicitly declines -> signed DECLINED arrives C -> invalidate pending proposal -> orchestrator reruns on latest Room snapshot -> find alternative offer (e.g. volunteer Y at C) -> human confirms -> requester receives OFFERED event via B. A's signed receipt returns to C.
+Gateway replay is expected: deduplicate by origin event ID across all gateways. Sync cursors advance only after local/server durable writes. An outage or restart must not lose pending results or duplicate consequential actions.
 
-**D. Network disconnect**: persist first, keep pending with expiry, exchange compact IDs on recontact, transmit missing valid packets, dedup by immutable packet ID. Nearby send completion ≠ recipient delivery.
+## Identity, privacy and trust
 
-## 7. AI model feasibility gate
+Use stable public-key identities independently of Nearby handles. The cloud has a configured trusted service signing identity; a gateway cannot impersonate it. Operator approval requires server authentication/role authorization, not a device's local “operator” toggle.
 
-- Primary exploratory runtime: **Google AI Edge LiteRT-LM Kotlin** with `.litertlm` model pre-provisioned on C. Candidate small CPU/GPU model: `Qwen3-0.6B.litertlm`; compare with `gemma-4-E2B-it.litertlm` if hardware supports it. These are **candidates**, not guaranteed reliable tool-callers.
-- The Android LiteRT-LM setup skill covers local text inference, **not native tool calling**. Implement function-selection as constrained structured text parsed into your own `AgentDecision`, then deterministically validate, allowlist and execute; never claim native runtime tool calling unless implemented and tested.
-- Warm the model in a background dedicated single-thread owner; don't block Compose rendering or put model weights in the APK; validate model hash and space requirements. Download/transfer model ahead of offline demo.
-- Hard timeouts, maximum 4 tool-action steps per run, explicit `UNAVAILABLE` when inference fails. `RulesFallback` is a **different mode** and MUST NOT be labelled “LLM agent executed”.
+Separate public mesh sharing from cloud coordination consent on SOS/offers. Do not upload non-consenting records or include them in model prompts. A minimal authorized consent-revocation/update must reach the service before it can affect its already-uploaded view; do not promise instantaneous revocation across a partition.
 
-## 8. Security and safety
+Provider credentials and cloud signing secrets stay server-side. Keep raw SOS/location and credentials out of diagnostic logs. Signatures prove integrity, not E2E privacy: disclose relay visibility until application encryption is implemented and verified.
 
-- Authenticate initial peer pairing using Nearby's displayed matching code when possible; apply per-peer rate limits, message size/TTL/hop caps, replay/dedup, and stable signed sender identities. Use maintained crypto libraries and test across actual target Android versions.
-- Use the **exact immutable packet bytes** as signature input; relays only edit separately serialized relay metadata. Do not claim transport encryption equals application-wide E2E privacy.
-- Public SOS metadata is visibly consent-based; allow coarse area and landmark instead of precise GPS. All agent and network trace screens should redact identifiers by default.
-- A model may READ local SOS/offers and CREATE A PROPOSAL. It may **not** autonomously: commit resources, dispatch volunteers, resolve an SOS, send an outward offer, claim a rescue, or invent medical advice.
-- Permission denial, no model, no peer, missing recipient receipt, stale SOS, model output invalid -> accurate user-visible state, not silent fake success.
+## Three-phone demo
 
-## 9. Design priorities
+A is offline and creates SOS; B is offline and relays/offers help; C has internet and bridges to the cloud. The operator opens the authenticated web dashboard on a computer or C's browser. A/C cannot connect directly. Publish test helper profiles/offers from B and C; show A's incoming SOS in the dashboard, actual cloud tool selection, approval, B's decline, cloud replanning, fresh approval and A's receipt.
 
-Material 3 + Compose, minimal high-contrast design, explicit offline status, single prominent SOS affordance, large tap targets, accessible labels, dynamic text sizes, beautiful but sparse request cards, clear staleness labels and a visually compelling Mission Control **tool trace**. See `docs/UX_SPEC.md`.
+Then disconnect C's internet. Prove SOS storage/relay still works and coordination shows pending. Reconnect and prove exactly one accepted event/job outcome despite retries. This is an offline-client/cloud-coordination demo, not an all-offline AI demo.
 
-## 10. Optional integrations
+## Later local-LLM helpers
 
-**Meshtastic/LoRa**: external Meshtastic radios needed at both bridge ends; payloads are tiny and radio region settings must be compliant. GHOST packet signatures may not fit: define and test an independently signed minimal **bridge bulletin** with source-attribution caveat; never pretend it is the untouched origin envelope. Global dedup should link bridge summary IDs to their origin event ID to avoid loops.
+These are ideas, not checkpoint requirements or additional coordinators:
 
-**Online gateway**: enabled only by an opted-in online peer; allowlist HTTPS sources, cache updates, cite publisher+age. It is not a prerequisite for local AI inference. Never send private SOS text to an internet LLM without informed authorization.
+- Draft/shorten SOS text into a structured report for the user to review.
+- Translate requests/replies while preserving the original wording.
+- Flag missing details such as people count or an unclear landmark; suggest a clarification.
+- Summarize cached, timestamped updates for the user without presenting them as live information.
 
-## 11. Stop/go decisions
-
-- If the designated C handset cannot load a model and emit a validated action after the first feasibility gate, stop promising fully offline LLM inference; choose an alternate proven compatible handset/model or honestly label rules-only demo.
-- If A -> B -> C true relay fails, prioritize networking over polishing optional features.
-- If local inference doesn't produce consistently correct tool choices, narrow the agent's action space and verify with scripted cases; do not make the LLM an unbounded dispatcher.
-- At demo freeze, turn off all external networks, keep required Bluetooth/Wi-Fi radios, and demonstrate with actual relay/agent logs.
-
-## 12. Sources consulted
-
-- `GHOST_System_Architecture_v1(1).md` (original team architecture proposal)
-- `GHOST_Proposal_Claude_Coworkers.pdf` (approved Agentic AI proposal)
-- https://developer.android.com/agents/skills/device-ai/litert/litert-lm/skill
-- https://developer.android.com/topic/architecture/data-layer/offline-first
-- https://developers.google.com/nearby/connections/strategies
+Helpers cannot allocate resources, approve proposals, resolve requests or claim current cloud knowledge. Keep existing local-model setup intact but unused by this SOS phase. See [checkpoints](docs/CHECKPOINTS.md) and [team prompts](docs/BUILD_PHASES.md).

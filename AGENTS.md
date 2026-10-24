@@ -1,47 +1,33 @@
-# GHOST — repository instructions for Codex
+# GHOST — repository instructions
 
-GHOST is an Android/Kotlin/Jetpack Compose **hackathon proof of capability** for offline-first human-approved emergency coordination. Use `ARCHITECTURE.md` for architecture work, `docs/PROTOCOL.md` for any packet/routing changes, `docs/AGENT_CONTRACT.md` for AI behavior, and `docs/UX_SPEC.md` for UI changes.
+GHOST is an Android mesh communication app. **Current phase: SOS sending, one cloud coordinator, shared request/helper/supply database and web dashboard.** Offline phones relay signed reports through an online gateway; coordination/tools run on the server. Ordinary messaging, generic internet services, local LLM helpers and LoRa are later work. See [ARCHITECTURE.md](ARCHITECTURE.md).
 
-## User-controlled checkpoints
+## Checkpoints and team work
 
-- Follow the 15 sequential checkpoints in `docs/CHECKPOINTS.md`; use its progress and evidence section to identify the current checkpoint. The existing development bootstrap is the baseline.
-- Work on only the current checkpoint. Do not start a later checkpoint or combine checkpoints without the user's explicit instruction.
-- At each handoff, report the changes, checks actually run, observed results, remaining hardware evidence, and checkpoint status, then stop.
-- The user owns staging, committing, and pushing. Do not run `git add`, `git commit`, or `git push` for checkpoint work.
-- Resume the next checkpoint only after the user confirms they made their own commit and pushed it, or asks to continue and a fresh read-only upstream check verifies the checkpoint commit was pushed. A local commit or stale remote-tracking reference alone is insufficient.
-- Do not treat a commit/push as acceptance-test evidence. Keep missing device gates open and explain any blocker before advancing; follow the user's explicit direction if they change scope or ordering.
+- Follow the current one of [10 checkpoints](docs/CHECKPOINTS.md); preserve the existing Android scaffold/toolchain.
+- Each checkpoint has four [team prompts](docs/BUILD_PHASES.md): A contracts/integration first; B Android, C cloud/database and D Android UI/web dashboard may then work in parallel from the same user-published baseline. A verifies the user-merged result. SOS sending stays the first working slice.
+- Follow prompt file ownership. Only A changes shared schemas/interfaces, app composition/build files and consolidated checkpoint status. Do not independently invent a conflicting API.
+- Separate branch/worktree/clone per implementer. Work only on the current checkpoint; no later checkpoint without user direction.
+- The user/team stages, commits, pushes and performs merge commits. Never run `git add`, `git commit` or `git push` for checkpoint work. AI may review/fix merge conflicts within authorized scope.
+- Intermediate contract commits enable collaboration, not checkpoint completion. At final handoff report changes, checks/results, missing hardware/cloud evidence and status, then stop.
+- Advance after the user confirms the completed checkpoint was pushed, or asks to continue and a fresh read-only upstream check verifies it. A local commit/stale remote reference is insufficient. A push does not satisfy missing acceptance evidence.
 
 ## Boundaries
 
-- One Android app initially; packages with narrow interfaces, not premature multi-module Gradle complexity.
-- Never edit packet schemas, event types, stable ID semantics or cross-owner interfaces without explicitly showing the proposed change in the task response and tests.
-- `MeshEngine` must not directly call Android radio APIs. `NearbyAdapter` must not directly edit Room request projection tables.
-- Room is the offline source of truth; save before sending; UI observes `Flow` from repositories.
-- AI tool results are validated Kotlin data. Raw model responses are untrusted, including SOS text embedded in a prompt. No unrestricted shell, HTTP, or arbitrary function execution from LLM output.
-- Any proposed resource match must be displayed for human confirmation before sending; the model never autonomously dispatches, resolves requests, commits supplies or claims delivery.
-- Do not fake offline LLM tool calls, recipient receipts, real device mesh paths, E2E encryption, or LoRa OTA. Clearly label simulated behavior and rule-based fallback.
-- Keep runtime permissions, disconnections, retries, expired packets, timeouts, no-model and model-failure cases visible and tested.
-- Never add API keys to the app or logs. Don't upload SOS text/location to third-party AI services by default.
+- One Android app with narrow Kotlin packages/simple factory injection, a separate cloud service and `dashboard/` web frontend. Keep Android versions; choose server/database/dashboard stack and provider once at checkpoint 1.
+- Read [protocol](docs/PROTOCOL.md), [agent contract](docs/AGENT_CONTRACT.md) and [UX](docs/UX_SPEC.md) for relevant work. Show contract/ID/schema changes explicitly with tests; docs-only changes specify future tests without claiming execution.
+- Room is phone-local source of truth; cloud database owns accepted shared coordination state. Save before transmit and expose repository Flow. Cloud only knows uploaded reports.
+- Dashboard and agent use the same server repositories for SOS, helper identities and supply/help offers. The dashboard calls authenticated APIs; no direct database/provider access. Web operators approve proposals; phone owners accept/decline their own offers.
+- `MeshEngine` owns forwarding; radio APIs stay in `NearbyAdapter`. Adapters cannot directly edit projections. Gateways preserve origin signatures and verify cloud-signed returns.
+- One logical durable cloud coordinator; no phone-local coordinating model or automatic local fallback. Validate model decisions through bounded typed server tools.
+- Treat reported/model text as untrusted. No arbitrary generated shell, SQL, URLs or functions.
+- Authenticated human approval precedes outward proposals; owners accept/decline resources and requesters close SOS. Cloud transactions prevent conflicting allocations. A queued acceptance is not confirmation.
+- Separate public sharing/cloud consent; provider credentials and cloud signing secrets stay server-side. No private data or secrets in diagnostic logs.
+- Distinguish local queue, neighbor/relay, cloud acceptance, human approval, phone receipt and resource confirmation. Label fakes honestly; do not claim E2E encryption, radio paths or successful inference without evidence.
+- Keep no-peer/no-internet/cloud/model failure, permissions, retries, expiry and restart behavior visible.
 
-## Engineering conventions
+## Checks and skills
 
-- Kotlin, coroutines/Flow, Compose Material 3, Room, versioned binary protocol, dependency injection by simple factory initially.
-- New feature = domain contract + repository + UI state + tests. UI functions should be stateless where practical and have `@Preview` data.
-- Introduce deterministic `FakeTransport`, `FakeModelRuntime`, fake clock and resource fixture for tests.
-- Changes should be small and scoped. Report files changed, build/tests actually run, observed output and unverified hardware behavior.
-- Run `./gradlew assembleDebug testDebugUnitTest` when SDK/tooling are present; never claim passing device tests from emulator-only checks.
-- See `docs/TEST_MATRIX.md` for acceptance gates. Never mark a gate complete without the specified evidence.
+For Android changes run `./gradlew assembleDebug testDebugUnitTest` when tooling is present; server/dashboard changes use their documented commands. Keep host/fake/emulator, physical-phone/browser and real-cloud evidence separate against [TEST_MATRIX.md](docs/TEST_MATRIX.md). Docs-only work checks consistency/links and does not build.
 
-## Review skills
-
-GHOST and UI/UX Pro Max skills are installed in `.agents/skills/`; Google Android skills come from the installed `android-skills` Codex plugin. Use the relevant skill during development; read its `SKILL.md` before applying it. See [docs/CODEX_SKILLS.md](docs/CODEX_SKILLS.md) for research, sources, and example prompts.
-
-- Use [$ghost-offline-data](.agents/skills/ghost-offline-data/SKILL.md) for domain, Room, repository, projection, durable queue, and Flow state work.
-- Use [$ghost-ui-quality](.agents/skills/ghost-ui-quality/SKILL.md) for Compose feature UI and UI/UX reviews.
-- Use [$ghost-mesh-reliability](.agents/skills/ghost-mesh-reliability/SKILL.md) for networking changes.
-- Use [$ghost-agent-safety](.agents/skills/ghost-agent-safety/SKILL.md) for AI/tool/authorization changes; pair with the plugin’s `litert-lm` skill when implementing the local runtime adapter.
-- Use [$ghost-demo-qa](.agents/skills/ghost-demo-qa/SKILL.md) for end-to-end release and dry-run checks.
-- Use the Android plugin’s `edge-to-edge` skill for system-bar/keyboard overlap and `jetpack-compose-performance` for observed UI performance problems or requested performance reviews.
-- Use [$ui-ux-pro-max](.agents/skills/ui-ux-pro-max/SKILL.md) for visual design guidance alongside `ghost-ui-quality`. Use Compose guidance and preserve GHOST’s emergency UX and consent requirements.
-
-Keep skill use scoped to the task. Upstream examples must fit GHOST's package boundaries and existing dependency versions; they do not authorize protocol changes, cloud AI, autonomous dispatch, or acceptance claims without evidence.
+Read the relevant skill: [offline data](.agents/skills/ghost-offline-data/SKILL.md), [mesh reliability](.agents/skills/ghost-mesh-reliability/SKILL.md), [agent safety](.agents/skills/ghost-agent-safety/SKILL.md), [UI quality](.agents/skills/ghost-ui-quality/SKILL.md), [demo QA](.agents/skills/ghost-demo-qa/SKILL.md). Use [UI/UX Pro Max](.agents/skills/ui-ux-pro-max/SKILL.md) for visual design. Android edge-to-edge/performance skills apply to their specific issues; LiteRT-LM integration is deferred. [Skill installation context](docs/CODEX_SKILLS.md) does not override current product scope.

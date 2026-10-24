@@ -5,7 +5,7 @@ description: Implement or review GHOST Kotlin domain models, Room repositories, 
 
 # GHOST offline data development
 
-Work from the GHOST repository root. Read `AGENTS.md`, `ARCHITECTURE.md`, and the relevant feature section of `docs/BUILD_PHASES.md`. Read `docs/PROTOCOL.md` when working with signed events or the queue. These files define the contracts; inspect the implementation before assuming planned classes exist.
+Work from the GHOST repository root. Read `AGENTS.md`, `ARCHITECTURE.md`, and the current checkpoint in `docs/CHECKPOINTS.md`. Read `docs/PROTOCOL.md` when working with signed events or the queue. Inspect implementation before assuming planned classes exist.
 
 ## Trace the feature through persistence
 
@@ -17,8 +17,11 @@ Identify the user action, typed domain input, repository write, Room transaction
 - Recover pending work and deduplication state from storage after restart. Use stable domain IDs for idempotency, independently of transient Nearby endpoint handles.
 - Keep receive callbacks behind validation and repository boundaries. A radio adapter must not update request projections itself.
 - Preserve user forms across navigation and recreation where required; do not confuse saved form input with a published event.
+- Track local persistence, cloud acknowledgement, proposal version, phone receipt and allocation confirmation separately. Verify the trusted cloud signer; gateway delivery alone cannot confirm assistance.
+- Room is local truth; the cloud owns shared coordination state. Store owner consent, pending acceptance and cloud provenance without inventing a local coordinator or confirmed reservation. Ordinary contact/chat persistence is deferred in the SOS phase.
+- Owner-signed helper profiles link to supply/help offers by stable identity. Test profile ownership/consent and offer-before-profile handling; keep unknown profile details unknown. The dashboard/agent share server records rather than writing independent inventories.
 
-Changes to packet schemas, event types, stable IDs, or shared interfaces require an explicit proposed change in the task response and compatibility tests. Do not silently redesign these to make a repository easier to implement.
+Changes to packet schemas, event types, stable IDs, or shared interfaces require an explicit proposed change and applicable tests. Documentation-only work specifies future tests rather than claiming compatibility is implemented.
 
 ## Expose honest observable state
 
@@ -32,7 +35,7 @@ Inject time and dispatchers where timing/concurrency matters. Use structured can
 
 Choose tests for the actual risk: offline publication, transaction rollback, duplicate event application, unauthorized updates, projection freshness, or queue recovery after reopening storage. Use deterministic clocks and fixtures; use Room tests for SQL/transaction behavior rather than treating an in-memory repository fake as proof of database persistence.
 
-Run `source scripts/env.sh` and `./gradlew assembleDebug testDebugUnitTest` when tooling is present. Report changed files, observed results, and any unverified migration/device behavior. No acceptance gate is complete merely because the fakes pass.
+For application changes run `source scripts/env.sh` and `./gradlew assembleDebug testDebugUnitTest` when tooling is present. Report observed results and unverified migration/device behavior. No acceptance gate is complete merely because fakes pass; docs-only work does not require a build.
 
 For UI work use `ghost-ui-quality`; networking changes use `ghost-mesh-reliability`; authorization and agent tools use `ghost-agent-safety`. Read those skill files only when the task actually crosses those boundaries.
 

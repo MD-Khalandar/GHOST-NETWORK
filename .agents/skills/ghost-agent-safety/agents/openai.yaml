@@ -1,6 +1,6 @@
 interface:
   display_name: "GHOST Agent Safety"
-  short_description: "Validate local AI tools and human approval"
+  short_description: "Validate cloud coordination and human authority"
 
 policy:
   allow_implicit_invocation: true

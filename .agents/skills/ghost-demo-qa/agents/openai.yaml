@@ -1,6 +1,6 @@
 interface:
   display_name: "GHOST Demo QA"
-  short_description: "Verify offline demo gates with actual evidence"
+  short_description: "Verify SOS mesh and cloud coordination evidence"
 
 policy:
   allow_implicit_invocation: true

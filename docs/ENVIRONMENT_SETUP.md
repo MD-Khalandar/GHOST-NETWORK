@@ -7,19 +7,21 @@ project-local x64 Windows installer; it has not been executed on Windows here.
 Linux and Intel Mac use installed JDK 21/Android Studio toolchains. No Windows,
 Linux, or hardware acceptance gate is implied by the Mac verification record.
 
-GHOST is one Kotlin/Jetpack Compose Android APK with selectable peer, coordinator,
-and optional bridge roles. Room will be the offline source of truth. Nearby
-Connections provides direct links; the future MeshEngine must implement storage,
-forwarding, deduplication, expiry, and recipient receipts itself. The coordinator
-uses a pre-provisioned local LiteRT-LM model to propose validated Kotlin actions;
-consequential actions require human approval. See `ARCHITECTURE.md` and the
-protocol, agent, UX, build-phase, and test-matrix documents for the full contracts.
+The current phase builds SOS in one Kotlin/Compose APK plus a separate cloud
+coordinator service. Room holds local phone state; the server owns accepted shared
+coordination state. Nearby provides neighbor links and MeshEngine handles relay.
+The cloud service/provider/authentication are selected at checkpoint 1; this
+Android bootstrap does not provision them. The planned `dashboard/` frontend uses
+the same server APIs/database for incoming SOS, helpers, supplies and approvals.
+Its toolchain/run commands will be documented when scaffolded; this is not part of
+the existing Android installation. Local LLM features are deferred.
+See `ARCHITECTURE.md` and the current 10-checkpoint plan.
 
 The original folder contained only eight Markdown documents, without source code,
 Gradle files, a Git repository, or the `.agents/skills/` directory mentioned by the
-starter README. This setup adds build infrastructure and a minimal launcher, not
-the H0–H2 feature implementation. Existing packet schemas, event types, IDs, and
-cross-owner interfaces have not been implemented or changed.
+starter README. The bootstrap added build infrastructure and a minimal launcher,
+not product features. Packet/event contracts remain documentation until their
+implementation checkpoint; this historical setup record is not feature evidence.
 
 ## Installed toolchain
 
@@ -44,7 +46,9 @@ Java/Android installations are not modified.
 coroutines/Flow, JSON serialization, Nearby Connections, LiteRT-LM, protobuf-lite,
 and host test dependencies. They are resolved through Google Maven, Maven Central,
 and the Gradle plugin portal. No API key, cloud inference service, Node.js,
-Homebrew, NDK, CMake, or Python ML environment is required for this Kotlin setup.
+Homebrew, NDK, CMake, or Python ML environment is required to build this scaffold.
+Cloud coordination tests require a configured authenticated service; provider
+secrets stay server-side and are not part of the Android setup.
 LiteRT-LM supplies prebuilt native libraries. Choose a signature library and
 Keystore scheme when implementing the security gate against actual handsets.
 
@@ -120,13 +124,16 @@ source scripts/env.sh
 emulator -avd GHOST_API_35
 ```
 
-Emulator checks cannot satisfy the required physical mesh or coordinator
-inference evidence. The four `$ghost-*` review skills named in `AGENTS.md` were
+Emulator checks cannot satisfy physical mesh or actual cloud-provider evidence.
+The original `$ghost-*` review skills named in `AGENTS.md` were
 absent from the supplied folder; recover their original `.agents/skills/` files
 before invoking those review workflows. The Google Android skills are optional
 tooling; see the official Android skills repository linked below.
 
-## Offline model provisioning
+## Offline model provisioning (deferred)
+
+Retained for later local-helper experiments, outside the SOS checkpoints. Existing
+dependencies/downloads are not a requirement to run the cloud coordinator.
 
 The downloaded candidate is the CPU/GPU `Qwen3-0.6B.litertlm` from
 `litert-community/Qwen3-0.6B`, not an NPU-specific or web build.
@@ -148,9 +155,9 @@ does not establish phone compatibility, inference, JSON compliance, or tool
 selection. Runtime integration and a user-visible missing/loading/failed model
 state still need implementation.
 
-After selecting coordinator Phone C, enabling USB debugging, and installing the
+For a later local-helper experiment, after selecting a capable phone, enabling USB debugging and installing the
 debug app, these are the manual provisioning commands. If multiple phones are
-attached, replace `PHONE_C_SERIAL` with the coordinator's serial from `adb devices
+attached, replace `PHONE_C_SERIAL` with that test phone's serial from `adb devices
 -l`. These commands have not been run on hardware during setup:
 
 ```sh
@@ -195,10 +202,10 @@ the standard `app/build/test-results/` and `app/build/reports/tests/` directorie
 
 No phones were attached when ADB was checked. All physical acceptance tests in
 `docs/TEST_MATRIX.md` remain open, including Play Services availability, Nearby
-permissions and matching-code pairing, offline inference and tool selection on
-Phone C, true A → B → C relay, process-restart recovery, and signed recipient
-receipts. Optional Meshtastic radios and online gateway infrastructure are not
-needed for the core proof and have not been installed or simulated.
+permissions and matching-code pairing, true A → B → C relay, restart recovery,
+cloud ingestion/coordination and signed recipient receipts. No cloud service was
+provisioned by this bootstrap. Saved-contact messaging, local inference and
+Meshtastic radios are deferred; none has acceptance evidence from setup.
 
 ## Files added or updated
 

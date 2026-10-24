@@ -1,8 +1,11 @@
 # GHOST
 
-Android/Kotlin/Jetpack Compose proof of capability for offline emergency coordination.
-The current app is a development scaffold; mesh coordination and local inference
-are still to be implemented. See [the project overview](README_START_HERE.md).
+Android/Kotlin/Jetpack Compose mesh communication app. Build SOS/help first with
+one cloud coordinator, reached by offline phones through mesh gateways, with a
+shared request/helper/supply database and a web dashboard. Messaging,
+local LLM helpers and other in-app internet services follow later. The current app
+is a scaffold; see [the overview](README_START_HERE.md), [10 checkpoints](docs/CHECKPOINTS.md)
+and [team prompts](docs/BUILD_PHASES.md).
 
 Develop the same project on **Windows, macOS, or Linux**. It produces an Android
 app, which runs on an Android phone or emulator. No separate Kotlin or Gradle
@@ -29,7 +32,7 @@ command-line tools, then installs platform-tools, Android API 36, and Build Tool
 The execution-policy setting lasts only for this PowerShell session; managed
 computers may enforce a policy that takes precedence.
 
-To download the optional coordinator model too, use
+To download the optional local model for later experiments, use
 `.\scripts\setup-windows.ps1 -WithModel`. The model is unnecessary for building
 the current scaffold and is never included in Git or the APK.
 
@@ -107,8 +110,8 @@ only; Linux and Intel Mac use the manual prerequisites above.
 - Unit-test report: `app/build/reports/tests/testDebugUnitTest/index.html`.
 - Minimum Android API: 24; handset model/radio compatibility requires real-device testing.
 - The Mac build has been checked locally. Windows/Linux setup and physical-device
-  behavior need verification on those hosts; emulators do not prove offline relay
-  or local model inference.
+  behavior need verification on those hosts; emulators do not prove real relay
+  or cloud coordination. The server is planned separately in checkpoint 1.
 
 Keep `local.properties`, SDKs, caches, signing credentials, and model weights out
 of Git. See [environment details](docs/ENVIRONMENT_SETUP.md) and the

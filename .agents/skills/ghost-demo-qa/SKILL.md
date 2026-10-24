@@ -1,34 +1,27 @@
 ---
 name: ghost-demo-qa
-description: Run GHOST integration, release-readiness, and offline three-phone demo checks with evidence against T01–T13, A01–A08, and U01–U06. Use for end-to-end QA and demo dry runs.
+description: Run GHOST SOS three-phone and cloud-coordinator QA with real relay, approval, replan, outage recovery and recorded acceptance evidence.
 ---
 
 # GHOST demo QA
 
-Read `AGENTS.md`, `docs/TEST_MATRIX.md`, and `docs/BUILD_PHASES.md`. Consult `ARCHITECTURE.md`, `docs/PROTOCOL.md`, `docs/AGENT_CONTRACT.md`, and `docs/UX_SPEC.md` for the gates being tested. Inspect the current app and existing evidence before assuming any feature is implemented.
+Read `AGENTS.md`, current checkpoint/team ownership, `docs/TEST_MATRIX.md` and relevant architecture/protocol/agent/UX contracts. Inspect implementation/evidence before assuming features exist.
 
-## Establish what can actually be checked
+For application QA use the configured Android environment and build/unit command; run the server command documented at CP01. Docs-only work does not build. List physical phones separately from emulators and target ADB by serial. Do not erase device data as a routine check.
 
-Run `scripts/doctor.sh` when environment diagnosis is needed. Use `source scripts/env.sh` before Gradle/ADB commands so Java, Android SDK, and caches use the repository setup. Run `./gradlew assembleDebug testDebugUnitTest` when tooling is present. Record exact commands, exit status, test counts/failures, and APK/report locations; a successful build is not a device test.
+Record PASS/FAIL/NOT RUN/BLOCKED per active T/A/G/U/D gate. Missing phones/browser, cloud/database/dashboard, provider access or operator account leaves evidence open. M gates/local LLM helpers are deferred.
 
-List available devices with their roles and distinguish physical phones from emulators. When multiple devices are connected, target device operations with `adb -s <serial>`. Follow existing device authorization; do not perform destructive resets or erase app data as a routine check. Missing devices/model/radios leave the corresponding gates NOT RUN, with a concrete next step.
+## Three-phone proof
 
-Keep observed PASS, FAIL, NOT RUN, and BLOCKED separate for each relevant matrix ID. Never fill evidence gaps with fixtures, screenshots of simulated traces, or expected results. Preserve the existing test matrix as a specification; store new evidence in a task-specific report only when a report is requested or needed for the QA task.
+1. A/B have internet off, C has internet/gateway sharing. Open an authenticated web dashboard; confirm cloud trust/auth and A/C inability to connect directly.
+2. Send A's consented SOS through B/C; correlate unchanged origin IDs/bytes, durable cloud ACK and return relay.
+3. Publish test helper profiles/offers from B/C. Verify the incoming SOS and helper/supply records in database/dashboard. Capture actual cloud tools, saved draft and dashboard operator approval of its exact version.
+4. B declines; capture signed decline upload, distinct real cloud replan selecting another offer and fresh operator approval. Owner acceptance requires cloud allocation confirmation.
+5. Return the response to A and its actual signed phone receipt to cloud. Repeat the full scenario three times.
+6. Disconnect C's internet: local SOS persists/relays while coordination is pending. Reconnect and verify dedup, cursor/outbox recovery and truthful status.
+7. Exercise phone/server restart, duplicate gateways, stale approval, conflicting acceptance, denied consent, invalid packet/receipt and provider failure.
+8. Check phone consent/accessibility/failure UX and dashboard keyboard, refresh/stale, role authorization and data consistency (D01–D04). Distinguish phone/browser evidence.
 
-## Exercise the mandatory demo in gate order
+Use the exact matrix/script; do not describe this as all-offline AI. Gateways downloading a result do not prove requester receipt. No E2E privacy, rescue or LoRa claim without separate evidence.
 
-1. Confirm the build launches, required permissions are handled, and Phone C actually loads its local model. Record handset/model identity and model hash/version. Pre-provision the model before disconnecting internet.
-2. With internet/mobile data disabled and required local Bluetooth/Wi-Fi radios enabled, demonstrate A→B direct signed-event transport, then A→B→C with A/C unable to connect directly. Correlate packet/event IDs and relay logs.
-3. Exercise replay/dedup, queue recovery, B disconnect/reconnect, expiry/invalid packets, owner authorization, and honest receipt transitions. Include process restart where the matrix requires it.
-4. Publish genuine test offers from B and C, send A's SOS, observe actual model output selecting a tool, and inspect Kotlin execution and the draft proposal. Confirm that no offer is sent before human approval.
-5. Approve the initial proposal, have B's owner decline, and capture the signed decline and a distinct actual model run proposing C's existing alternate offer. Human approval precedes the new publication. Show A's signed recipient receipt returning through B.
-6. Check permission denial, no peers, no model/model failure, stale offers, and visible queue/expiry states. Check consent, 200% font scale, TalkBack, small-screen/dark mode, and real Mission Control provenance.
-7. Repeat the fully offline flow three times before calling T13 complete. Capture the run evidence rather than inferring reliability from one success.
-
-The five-minute script and exact required evidence are in `docs/TEST_MATRIX.md`. Prioritize failures in mandatory transport/model/approval paths over optional LoRa, gateway, visual polish, or new features.
-
-## Report readiness honestly
-
-Report build/unit results, physical checks, matrix IDs with evidence, failed gates with reproduction steps, and the next blocking integration issue. Distinguish emulator checks, fake transport/model tests, and physical proof. Keep private SOS text/location and raw personal identifiers out of shared logs/screenshots; use clearly identified test fixtures.
-
-No E2E encryption, recipient delivery, automatic multihop, offline LLM tool execution, or LoRa over-the-air claim is established without the corresponding implementation and evidence. Use the relevant GHOST review skill to diagnose failures; avoid changing shared contracts or adding optional integrations during a dry run unless the task includes that change.
+Report actual Android/server checks, cloud/tool traces, physical gates, failed reproductions and missing prerequisites. Keep private data/secrets out of artifacts. Use assigned `docs/evidence/cpNN/<role>.md` reports; integration owner A consolidates status after user merges.

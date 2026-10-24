@@ -1,6 +1,6 @@
 ---
 name: ghost-ui-quality
-description: Build or review GHOST Compose screens for accessible emergency UX, consent, honest offline delivery states, and Mission Control provenance. Use for feature UI and UX reviews.
+description: Build or review GHOST Compose SOS, cloud Mission Control and gateway screens for accessibility, consent and honest status.
 ---
 
 # GHOST UI quality
@@ -9,12 +9,14 @@ Read `AGENTS.md`, `docs/UX_SPEC.md`, and the relevant UI in `ARCHITECTURE.md`. F
 
 ## Check the complete interaction
 
-Follow the task from screen entry through user action, confirmation, local persistence, and eventual result. Render explicit UI state and callbacks; keep radio APIs, database writes, and model execution outside composables. Use existing Material 3 tokens and the Home / Requests / Mission / Network navigation contract.
+Follow screen entry through user action, consent, persistence and result. Keep radio APIs, database writes and models outside composables. The SOS phase uses Home / Requests / Mission / Network; Mission displays cloud coordination, never an on-phone agent.
 
 - Keep the Home SOS action prominent. Sending requires a preflight view of exact content, audience, and location granularity, with explicit public-sharing consent. Default to coarse location.
+- Keep local SOS usable without internet/cloud. Ordinary chat is deferred. Preserve drafts and disclose relay visibility until E2E encryption is verified.
+- Separate public mesh consent from owner cloud permission. Gateway sharing is opt-in; cloud unavailability differs from mesh disconnection. Show data source/age and actual cloud provenance.
 - Distinguish queued, neighbor send, relay receipt, signed recipient delivery, and optional read receipt with text and icons. A transport callback cannot produce a recipient-delivered badge.
 - Show no peers, denied/revoked permissions, disconnected/retrying, expired/failed packets, stale data, empty results, and loading/error states where applicable. Give a meaningful recovery action.
-- Display actual model readiness and actual validated tool observations. Mark fixtures as simulated and fallback as Rule-Based Assistance Only. Ordinary peers must not imply that they host an active coordinator model.
+- Phone Mission shows actual cloud tools/approval status; operator approval lives in the web dashboard. Mark fixtures simulated; no local-AI fallback. Cloud ACK, operator approval, phone receipt and allocation stay distinct; offline owner acceptance remains pending.
 - An approval card shows the proposal version, offer provenance, freshness, uncertainty, and distinct approve/reject actions. Sending follows an explicit human action; re-rendering or entering the screen must not send.
 - Disable duplicate submissions while processing, preserve typed forms, and expose recoverable failures without replacing the user's input.
 
@@ -28,7 +30,7 @@ For system-bar or keyboard overlap, read the installed `edge-to-edge/SKILL.md`. 
 
 ## Validate and report
 
-Use previews and available Compose behavior checks to verify the changed interaction, especially consent, duplicate actions, state restoration, and failure recovery. Run the repository build/unit command when tooling is present. Record which accessibility/device checks were actually performed; a preview or screenshot alone does not prove TalkBack behavior or a real receipt.
+For UI implementation use previews/behavior checks for consent, duplicate actions, restored drafts and failure recovery, plus repository build/unit checks when tooling is present. Record actual accessibility/device checks; previews do not prove TalkBack or real receipts. Documentation-only changes do not require an app build.
 
 For a review, report actionable findings with severity, file/line, trigger, user impact, and a focused fix. If evidence is unavailable, state what remains unverified. Map relevant checks to U01–U06 in `docs/TEST_MATRIX.md` without marking them complete without evidence.
 

@@ -1,6 +1,6 @@
 # Codex skills for GHOST
 
-Updated 24 October 2026. Keep skills focused on this offline Android proof of capability.
+Updated 24 October 2026. Current scope: SOS over Android mesh with one cloud coordinator. Follow the 10 checkpoints and assigned team-prompt ownership; chat and local LLM helpers are deferred.
 
 ## Project skills
 
@@ -9,9 +9,9 @@ Six skills live in `.agents/skills/`:
 | Skill | Purpose |
 |---|---|
 | `ghost-offline-data` | Room, repositories, durable queues, Flow and restart consistency |
-| `ghost-ui-quality` | Emergency UX, accessibility, consent and honest delivery states |
+| `ghost-ui-quality` | SOS/Mission UI, accessibility, consent and honest states |
 | `ghost-mesh-reliability` | Nearby transport, routing, retries and receipt evidence |
-| `ghost-agent-safety` | Validated model decisions, tool policy and human approval |
+| `ghost-agent-safety` | Cloud decisions/tools, consent, human authority and idempotency |
 | `ghost-demo-qa` | Integration checks and physical-phone acceptance evidence |
 | `ui-ux-pro-max` | Visual design research and Compose guidance |
 
@@ -28,7 +28,7 @@ codex plugin add android-skills@android-skills
 
 Installed version: `1.0.17`. Three bundled skills remain enabled:
 
-- `litert-lm`: local text model runtime integration.
+- `litert-lm`: local text model integration, deferred for this phase.
 - `edge-to-edge`: system bars and keyboard insets.
 - `jetpack-compose-performance`: observed Compose performance issues.
 
@@ -40,6 +40,6 @@ Removed six unrequested UI/UX installer companion skills: `banner-design`, `bran
 
 UI/UX Pro Max was installed with `npx --yes ui-ux-pro-max-cli init --ai codex`. Restart Codex to load the new skill set and enablement settings. See [Codex skill configuration](https://learn.chatgpt.com/docs/build-skills).
 
-No app code, protocol, dependencies or acceptance gates changed. Installing skills does not establish physical mesh, inference or accessibility evidence. Read `AGENTS.md` and the relevant project contracts before applying upstream examples.
+The installation record below predates the architecture correction. Installing skills does not establish physical mesh, inference or accessibility evidence. Read `AGENTS.md` and the current project contracts before applying upstream examples.
 
 Verification: six project skill entrypoints exist; all 33 Android plugin entrypoints exist, with exactly 30 disabled by config and three retained. `codex plugin list --json` confirmed version 1.0.17 installed and enabled. Skill selection in a restarted IDE session remains unverified. App builds were not run for this skill-only configuration change.
