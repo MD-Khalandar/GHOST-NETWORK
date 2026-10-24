@@ -1,4 +1,6 @@
-# GHOST
+. .\scripts\env.ps1
+adb devices
+adb install -r .\app\build\outputs\apk\debug\app-debug.apk# GHOST
 
 Offline SOS over nearby Android phones, with cloud-assisted help coordination.
 Read [PROJECT.md](PROJECT.md) for the short product brief and current state.
@@ -124,10 +126,13 @@ npm --prefix server start
 ```
 
 Open `http://127.0.0.1:3000/dashboard/` and enter a **viewer or operator** token
-supplied by the server administrator. It lists uploaded SOS reports; selecting a
-report shows its message, area, people count and timestamps. Refresh checks for
-new arrivals; older reports load in pages. Expiry does not mean help was provided.
-Tokens stay in tab memory; reload/sign-out clears access. Use HTTPS in deployment.
+supplied by the server administrator. It lists uploaded SOS reports and plots
+reports with shared GPS coordinates on the built-in server map. Select a marker
+to open its request details; reports without coordinates remain in the list but
+are not plotted. The map uses no third-party tile service, so exact locations
+stay within the authenticated dashboard origin. Refresh checks for new arrivals;
+older reports load in pages. Expiry does not mean help was provided. Tokens stay
+in tab memory; reload/sign-out clears access. Use HTTPS in deployment.
 
 For UI development, run `npm --prefix dashboard run dev` alongside the server;
 open `http://127.0.0.1:5173/dashboard/`. Vite proxies `/v1` to port 3000.

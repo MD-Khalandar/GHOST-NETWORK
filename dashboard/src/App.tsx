@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { ApiError, get, type Session, type SosPage, type SosReport } from "./api";
 import { RequestDetails, RequestList, time } from "./Requests";
+import { LocationMap } from "./LocationMap";
 
 export default function App() {
   // Credentials live only in this tab's memory and disappear on reload/sign-out.
@@ -68,6 +69,7 @@ export default function App() {
         <div className="inbox-toolbar"><div><strong>{reports.length} {reports.length === 1 ? "request" : "requests"} loaded</strong><span className="subtle">{updated ? `Last refreshed ${time(updated)}` : "Loading requests"}</span></div><button className="secondary-button" disabled={busy} onClick={() => void load()}>{busy ? "Loading…" : "Refresh requests"}</button></div>
         <div className="inbox-note"><span className="status-dot" aria-hidden="true"/><p>Only uploaded reports appear here. Phones still offline may hold other requests. Refresh to check for new arrivals.</p></div>
         {error && <div className="error error-banner" role="alert">{error} {reports.length > 0 && "Showing previously loaded reports."}</div>}
+        {reports.length > 0 && <LocationMap reports={reports} selected={selected} onSelect={setSelected}/>}
         <div aria-busy={busy} className="workspace">
           <section className="inbox-panel" aria-label="SOS inbox">
             {reports.length > 0 ? <RequestList reports={reports} selected={selected} onSelect={setSelected} now={now}/> : <div className="empty-state"><span className="empty-symbol" aria-hidden="true">◎</span><h2>No requests received yet</h2><p>Cloud-consented SOS reports will appear after a gateway uploads them.</p></div>}

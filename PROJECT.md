@@ -42,8 +42,10 @@ Return routing has host exchange/restart tests; physical cloud-to-mesh testing r
 Android uses plain-language actions and delivery updates; connection diagnostics
 sit under optional Technical details.
 The web SOS desk lists server-received reports with request details, pagination,
-manual refresh and expiry labels. Viewer/operator tokens stay in tab memory;
-gateway tokens cannot read it. Local browser checks pass against signed uploads.
+manual refresh and expiry labels. Its authenticated, self-contained map plots
+shared GPS locations without a third-party tile service and links markers to
+request details. Viewer/operator tokens stay in tab memory; gateway tokens
+cannot read it. Local browser checks pass against signed uploads.
 
 Next: helper/supply records and matching → approval, owner decisions and outage recovery.
 
