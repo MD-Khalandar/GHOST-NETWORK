@@ -146,7 +146,8 @@ Gemini keys come from Google AI Studio; the model ID must be available to that
 key's project. Both adapters use the same validation, queue and failure handling.
 The server initializes coordinator runs/proposals, a durable job queue and one
 worker lease. Uploads wake the worker; a periodic scan recovers requests and checks
-new availability. Calls are serialized, provider calls time out after 30 seconds,
+new availability and assistance outcomes. One request is leased at a time; people
+and supply specialists can make at most two parallel provider calls, each timing out after 30 seconds,
 and transient failures retry up to three times per input revision. Restart resumes
 queued work after any previous lease expires (up to 90 seconds).
 

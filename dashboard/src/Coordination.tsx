@@ -11,10 +11,11 @@ export interface AiProposal {
   request_area?: string | null; request_expires_at_ms?: number; resource_expires_at_ms?: number | null;
 }
 export interface AiRun { run_id: string; request_id: string; status: string; error_code: string | null; created_at_ms: number;
-  finished_at_ms?: number | null; candidate_count?: number | null; proposal_count?: number | null }
+  finished_at_ms?: number | null; candidate_count?: number | null; proposal_count?: number | null; specialist?:"helper"|"supply"|null }
+export interface FollowUp {request_id:string;specialist:"helper"|"supply";status:string;description:string;detail:string;received_count:number;updated_at_ms:number}
 interface AiStatus { configured: boolean; model: string | null; queued_total: number;
   queued: { request_id: string; attempts: number; next_attempt_at_ms: number }[]; runs: AiRun[];
-  budget?: { used: number; limit: number; resets_at_ms: number } }
+  budget?: { used: number; limit: number; resets_at_ms: number };followups?:FollowUp[] }
 interface ProposalPage { items: AiProposal[]; next_before: string | null; evaluated_at_ms: number }
 export interface ReviewMode { manual_review:boolean; updated_at_ms:number }
 const errors: Record<string, string> = {
@@ -168,6 +169,7 @@ export default function Coordination({ csrfToken, onAccessLost, operator=false }
       AI checks are paused until {time(status.budget.resets_at_ms)}. Requests remain queued; uploads and nearby relay continue.
     </p>}
     {error && <p className="error error-banner" role="alert">{error} Previously loaded results may be outdated.</p>}
+    {status?.followups && <FollowUpPanel items={status.followups} requestId={selection.current.requestId}/>}
     <div className="resource-grid">{items.map(item => <ProposalCard key={item.proposal_id} proposal={item} operator={operator} busy={reviewing || busy} manualReview={mode?.manual_review!==false} onReview={(id,approve)=>void review(id,approve)}/>)}</div>
     <nav className="inbox-toolbar ai-pages" aria-label="Suggestion pages">
       {previous.length > 0 && <>
@@ -191,10 +193,27 @@ export default function Coordination({ csrfToken, onAccessLost, operator=false }
         SOS {job.request_id.slice(0, 8)} · {job.attempts} failed {job.attempts === 1 ? "attempt" : "attempts"} · next retry {time(job.next_attempt_at_ms)}
       </p>)}
       {status.runs.map(run => <div className="run-row" key={run.run_id}>
-        <span className="identifier">{run.request_id.slice(0, 8)}</span><strong>{runLabel(run,mode?.manual_review!==false)}</strong><span>{time(run.created_at_ms)}</span>
+        <span className="identifier">{run.request_id.slice(0, 8)}{run.specialist?` / ${run.specialist==="helper"?"People":"Supplies"}`:""}</span><strong>{runLabel(run,mode?.manual_review!==false)}</strong><span>{time(run.created_at_ms)}</span>
       </div>)}
     </div>}
   </section>;
+}
+
+export function FollowUpPanel({items,requestId=""}:{items:FollowUp[];requestId?:string}) {
+  const groups=new Map<string,FollowUp[]>();
+  for(const item of items)if(!requestId || requestId===item.request_id)groups.set(item.request_id,[...(groups.get(item.request_id)??[]),item]);
+  return <div className="help-note"><h2>Request follow-up</h2>
+    <p>The coordinator checks people and supplies separately, waits for decisions, and looks for alternatives after declines or expiry. Latest 30 tracked requests.</p>
+    {groups.size===0 && <p>No tracked requests in this view yet.</p>}
+    {Array.from(groups,([id,tasks])=><article className="resource-card" key={id}>
+      <p className="report-message">{tasks[0].description}</p><span className="identifier">SOS {id}</span>
+      {tasks.map(task=><div key={task.specialist}><strong>{task.specialist==="helper"?"People and transport":"Supplies"}</strong>
+        <p>{task.detail}</p>
+        {task.received_count>0 && <p>{task.received_count} {task.received_count===1?"receipt":"receipts"} confirmed by requester.{!["closed","expired"].includes(task.status)?" The SOS remains open; further needs are not assumed fulfilled.":""}</p>}
+        <p className="subtle">Updated {time(task.updated_at_ms)}</p>
+      </div>)}
+    </article>)}
+  </div>;
 }
 
 export function ReviewModeControl({mode,operator,busy,changing=false,onChange}: {

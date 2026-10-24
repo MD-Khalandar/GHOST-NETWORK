@@ -1,5 +1,5 @@
 import { CoordinatorFailure, type MatchContext, type ProposalModel } from "./types.js";
-import { instructions, readModelResponse, suggestionTool, type ModelOptions } from "./model-common.js";
+import { specialistInstructions, readModelResponse, specialistTool, type ModelOptions } from "./model-common.js";
 
 /** Google's documented Chat Completions compatibility endpoint; credentials stay server-side. */
 export class GeminiProposalModel implements ProposalModel {
@@ -16,12 +16,12 @@ export class GeminiProposalModel implements ProposalModel {
   async suggest(context: MatchContext): Promise<unknown> {
     if (!this.available) throw new CoordinatorFailure("MODEL_UNAVAILABLE");
     try {
-      const { name, description, parameters, strict } = suggestionTool;
+      const { name, description, parameters, strict } = specialistTool(context);
       const response = await this.transport("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", {
         method: "POST", redirect: "error", signal: AbortSignal.timeout(30000),
         headers: { Authorization: `Bearer ${this.apiKey}`, "Content-Type": "application/json" },
         body: JSON.stringify({ model: this.name,
-          messages: [{ role: "system", content: instructions }, { role: "user", content: JSON.stringify({ untrusted_records: context }) }],
+          messages: [{ role: "system", content: specialistInstructions(context) }, { role: "user", content: JSON.stringify({ untrusted_records: context }) }],
           tools: [{ type: "function", function: { name, description, parameters, strict } }],
           tool_choice: { type: "function", function: { name } }, parallel_tool_calls: false, max_tokens: 6000 }),
       });

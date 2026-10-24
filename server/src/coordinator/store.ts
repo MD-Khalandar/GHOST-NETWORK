@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { candidateSql } from "./candidates.js";
+import { candidateSql,teamCandidateSql } from "./candidates.js";
+import { initializeFollowUp,readFollowUp,recordTask,fingerprint,taskLabels } from "./followup.js";
 import type { Database, SqlConnection } from "../database.js";
 import { CANDIDATES_PER_KIND, CoordinatorFailure, UUID, type MatchContext, type MatchDraft,
-  type ResourceSource, type ReviewProposal, type RunResult, type SosSource, type SourceVersion } from "./types.js";
+  type ResourceSource, type ReviewProposal, type RunResult, type SosSource, type SourceVersion, type Specialist } from "./types.js";
 
 /** Run after initializeDatabase. Source publications stay in their existing tables. */
 export async function initializeCoordinator(database: Database): Promise<void> {
@@ -57,6 +58,7 @@ export async function initializeCoordinator(database: Database): Promise<void> {
     await connection.query(`CREATE TABLE IF NOT EXISTS coordinator_model_budget (
       window_start_ms BIGINT PRIMARY KEY, calls INTEGER NOT NULL CHECK (calls > 0)
     )`);
+    await initializeFollowUp(connection);
   });
 }
 
@@ -145,27 +147,65 @@ export class CoordinatorStore {
     return { used: Number(rows[0]?.calls ?? 0), limit, resets_at_ms: window + 3600000 };
   }
 
-  async start(requestId: string, model: string | null, now: number): Promise<string> {
+  async start(requestId: string, model: string | null, now: number,specialist?:Specialist): Promise<string> {
     const id = randomUUID();
-    await this.database.query(`INSERT INTO coordinator_runs (run_id, request_id, model_name, status, created_at_ms)
-      VALUES ($1,$2,$3,'running',$4)`, [id, requestId, model, now]);
+    await this.database.query(`INSERT INTO coordinator_runs (run_id, request_id, model_name, status, created_at_ms,specialist)
+      VALUES ($1,$2,$3,'running',$4,$5)`, [id, requestId, model, now,specialist??null]);
     return id;
   }
 
-  async context(requestId: string, now: number): Promise<MatchContext> {
+  async context(requestId: string, now: number,specialist?:Specialist): Promise<MatchContext> {
     return this.database.transaction(async connection => {
       await connection.query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ");
       const request = await readRequest(connection, requestId, now);
       const { rows } = await connection.query(`SELECT candidates.* FROM sos_reports s
-        CROSS JOIN LATERAL (${candidateSql}) candidates WHERE s.request_id = $2
+        CROSS JOIN LATERAL (${specialist?teamCandidateSql:candidateSql}) candidates WHERE s.request_id = $2
         ORDER BY CASE WHEN candidates.kind = 3 THEN 0 ELSE 1 END, candidates.candidate_rank`, [now, requestId]);
-      return { request, resources: rows.map(row => resource(row, now)).filter((r): r is ResourceSource => !!r) };
+      const resources=rows.map(row => resource(row, now)).filter((r): r is ResourceSource => !!r);
+      return { request, resources:specialist?resources.filter(r=>r.kind===(specialist==="helper"?"helper":"offer")):resources,
+        ...(specialist?{specialist,follow_up:await readFollowUp(connection,requestId,specialist,now)}:{}) };
     });
   }
 
   async fail(runId: string, status: "unavailable" | "error", code: RunResult["code"], now: number): Promise<void> {
     await this.database.query(`UPDATE coordinator_runs SET status = $2, error_code = $3, finished_at_ms = $4
       WHERE run_id = $1 AND status = 'running'`, [runId, status, code, now]);
+    await this.database.query(`UPDATE coordinator_tasks SET status=$2,updated_at_ms=$3 WHERE last_run_id=$1 AND status NOT IN('closed','expired')`,
+      [runId,code==="MODEL_BUDGET_EXHAUSTED"?"budget_paused":"error",now]);
+  }
+
+  async task(context:MatchContext,status:string,now:number,runId:string|null=null) {
+    await recordTask(this.database,context,status,now,runId);
+  }
+  async unchanged(context:MatchContext):Promise<boolean> {
+    const row=(await this.database.query("SELECT input_hash,status FROM coordinator_tasks WHERE request_id=$1 AND specialist=$2",
+      [context.request.request_id,context.specialist])).rows[0];
+    return !!row && row.input_hash===fingerprint(context) && !["searching","error","budget_paused"].includes(row.status);
+  }
+  async closeTasks(now:number) {
+    await this.database.query(`UPDATE coordinator_tasks t SET status=CASE WHEN s.state<>1 THEN 'closed' ELSE 'expired' END,
+      updated_at_ms=$1 FROM sos_reports s WHERE s.request_id=t.request_id AND (s.state<>1 OR s.expires_at_ms<=$1)
+      AND t.status NOT IN('closed','expired')`,[now]);
+  }
+  async followups(now=Date.now()) {
+    const {rows}=await this.database.query(`WITH recent AS (SELECT request_id,MAX(updated_at_ms) AS updated FROM coordinator_tasks
+      GROUP BY request_id ORDER BY MAX(updated_at_ms) DESC,request_id LIMIT 30)
+      SELECT t.*,s.description,s.state AS sos_state,s.expires_at_ms AS sos_expiry,
+        (SELECT COUNT(*) FROM assistance_cases a WHERE a.request_id=t.request_id
+        AND a.resource_kind=CASE WHEN t.specialist='helper' THEN 1 ELSE 2 END AND a.state=1) AS invited,
+        (SELECT COUNT(*) FROM assistance_cases a WHERE a.request_id=t.request_id
+        AND a.resource_kind=CASE WHEN t.specialist='helper' THEN 1 ELSE 2 END AND a.state=2) AS committed,
+        (SELECT COUNT(*) FROM assistance_cases a WHERE a.request_id=t.request_id
+        AND a.resource_kind=CASE WHEN t.specialist='helper' THEN 1 ELSE 2 END AND a.state=7) AS received_count
+      FROM recent JOIN coordinator_tasks t USING(request_id) JOIN sos_reports s USING(request_id)
+      ORDER BY recent.updated DESC,t.request_id,t.specialist`);
+    return rows.map(r=>{
+      const status=r.sos_state!==1?"closed":Number(r.sos_expiry)<=now?"expired":Number(r.committed)>0?"committed":Number(r.invited)>0?"awaiting_owner":
+        ["committed","awaiting_owner"].includes(r.status)?Number(r.received_count)>0?"receipt_recorded":"needs_replan":r.status;
+      return {request_id:r.request_id,specialist:r.specialist,status,
+        description:r.description,detail:taskLabels[status]??"Waiting for an update",received_count:Number(r.received_count),
+        updated_at_ms:Number(r.updated_at_ms)};
+    });
   }
 
   async recordCandidates(runId: string, count: number): Promise<void> {
@@ -181,6 +221,8 @@ export class CoordinatorStore {
       }
       const request = await readRequest(connection, context.request.request_id, now);
       if (!sameSource(request.source, context.request.source)) throw new CoordinatorFailure("STALE_SOURCE");
+      if(context.specialist && JSON.stringify(await readFollowUp(connection,request.request_id,context.specialist,now))!==JSON.stringify(context.follow_up))
+        throw new CoordinatorFailure("STALE_SOURCE");
       const current = drafts.length ? await readResources(connection, now, drafts.map(d => d.resource_id)) : [];
       const ids: string[] = [];
       for (const draft of drafts) {
@@ -201,6 +243,7 @@ export class CoordinatorStore {
         ids.push(existing.rows[0].proposal_id);
       }
       await connection.query("UPDATE coordinator_runs SET status = 'completed', finished_at_ms = $2, proposal_count = $3 WHERE run_id = $1", [runId, now, ids.length]);
+      await recordTask(connection,context,ids.length?"proposed":"no_match",now,runId);
       return ids;
     });
   }
@@ -253,9 +296,9 @@ export class CoordinatorStore {
 
   async history() {
     const { rows } = await this.database.query(`SELECT run_id, request_id, model_name, status, error_code,
-      created_at_ms, finished_at_ms, candidate_count, proposal_count FROM coordinator_runs ORDER BY created_at_ms DESC, run_id DESC LIMIT 20`);
+      created_at_ms, finished_at_ms, candidate_count, proposal_count,specialist FROM coordinator_runs ORDER BY created_at_ms DESC, run_id DESC LIMIT 20`);
     return rows.map(row => ({ run_id: row.run_id as string, request_id: row.request_id as string,
-      model_name: row.model_name as string | null, status: row.status as string, error_code: row.error_code as string | null,
+      model_name: row.model_name as string | null, status: row.status as string, error_code: row.error_code as string | null,specialist:row.specialist,
       created_at_ms: Number(row.created_at_ms),
       candidate_count: row.candidate_count === null ? null : Number(row.candidate_count),
       proposal_count: row.proposal_count === null ? null : Number(row.proposal_count),

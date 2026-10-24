@@ -10,6 +10,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Database } from "./database.js";
 import { AssistanceService,initializeAssistance } from "./assistance.js";
+import { CoordinatorStore } from "./coordinator/store.js";
+import { AssistanceTeam } from "./coordinator/team.js";
+import type { MatchContext } from "./coordinator/types.js";
 
 const key=()=>SigningIdentity.fromPem(generateKeyPairSync("ec",{namedCurve:"prime256v1"}).privateKey.export({format:"pem",type:"pkcs8"}).toString());
 async function fixture(path?: string,manualReview=true) {
@@ -203,6 +206,52 @@ test("automatic recovery expires old commitments before checking availability wi
     await service.setReviewMode(false,"operator");await service.autoReview();
     assert.equal((await f.pg.query<any>("SELECT state FROM assistance_cases WHERE proposal_id=$1",[old])).rows[0].state,5);
     assert.equal((await f.pg.query<any>("SELECT state FROM assistance_cases WHERE proposal_id=$1",[next])).rows[0].state,1);
+  }finally{await f.app.close();}
+});
+
+test("specialists follow signed decisions through alternatives, commitments, receipts, timeout and SOS closure",async()=>{
+  const f=await fixture();try{
+    const alternative=randomUUID();
+    for(const actor of [f.supplier,f.other])
+      await f.upload(f.packet(actor,3,{owner_node_id:Buffer.from(actor.nodeId,"hex"),help_types:[6],availability:1,consent:f.consent}));
+    await f.upload(f.packet(f.other,5,{offer_id:alternative,owner_node_id:Buffer.from(f.other.nodeId,"hex"),resource_type:1,quantity:8,unit:"litres",consent:f.consent}));
+    const inputs:MatchContext[]=[];const store=new CoordinatorStore(f.database);
+    const team=new AssistanceTeam(store,{available:true,name:"test-specialists",suggest:async context=>{
+      inputs.push(context);
+      assert.ok(context.resources.every(r=>r.kind===(context.specialist==="helper"?"helper":"offer")));
+      const r=context.resources.find(r=>r.resource_id===(context.specialist==="helper"?f.supplier.nodeId:f.offerId))??context.resources[0];
+      return {matches:[{request_id:f.requestId,resource_kind:r.kind,resource_id:r.resource_id,
+        quantity:r.kind==="helper"?null:7,explanation:"Reported capability; access still needs owner confirmation"}]};
+    }},f.clock);
+    assert.equal((await team.run(f.requestId)).proposal_ids.length,2);assert.equal(inputs.length,2);
+    const service=new AssistanceService(f.database,f.cloud,f.clock);
+    await service.setReviewMode(false,"operator");await service.autoReview();
+    await team.run(f.requestId);assert.equal(inputs.length,2);
+    let plans=await store.followups(f.clock());assert.ok(plans.every(p=>p.status==="awaiting_owner"));
+    const initial=(await f.pg.query<any>("SELECT proposal_id,resource_kind FROM assistance_cases")).rows;
+    const helper=initial.find(r=>r.resource_kind===1).proposal_id,supply=initial.find(r=>r.resource_kind===2).proposal_id;
+    await f.upload(f.decision(await f.status(helper)));
+    await f.upload(f.decision(await f.status(supply),2));
+    await team.run(f.requestId);assert.equal(inputs.length,3);
+    assert.equal(inputs[2].specialist,"supply");assert.equal(inputs[2].follow_up!.arrangements[0].state,3);
+    assert.ok(inputs[2].resources.every(r=>r.resource_id!==f.offerId));
+    await service.autoReview();
+    const replacement=(await f.pg.query<any>("SELECT proposal_id FROM assistance_cases WHERE resource_id=$1",[alternative])).rows[0].proposal_id;
+    await f.upload(f.decision(await f.status(replacement,1,f.other.nodeId),1,f.other));
+    await team.run(f.requestId);assert.equal(inputs.length,3);
+    await f.upload(f.decision(await f.status(replacement,2,f.requester.nodeId),4,f.requester));
+    await team.run(f.requestId);assert.equal(inputs.length,3);
+    plans=await store.followups(f.clock());
+    assert.equal(plans.find(p=>p.specialist==="supply")!.received_count,1);
+    assert.equal(plans.find(p=>p.specialist==="helper")!.status,"committed");
+    await f.upload(f.decision(await f.status(helper,2),3));
+    await team.run(f.requestId);assert.equal(inputs.length,4);assert.equal(inputs[3].specialist,"helper");
+    await service.autoReview();f.advance(3600001);await service.autoReview();
+    await team.run(f.requestId);assert.equal(inputs.length,4);
+    assert.ok((await store.followups(f.clock())).every(p=>p.status==="no_candidates"));
+    await f.upload(f.closure(6));await store.closeTasks(f.clock());
+    assert.equal((await team.run(f.requestId)).code,"REQUEST_UNAVAILABLE");assert.equal(inputs.length,4);
+    assert.ok((await store.followups(f.clock())).every(p=>p.status==="closed"));
   }finally{await f.app.close();}
 });
 

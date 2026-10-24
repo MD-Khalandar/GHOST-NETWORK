@@ -124,6 +124,15 @@ defaults to 120 provider calls per UTC hour, configurable on the server; exhaust
 work stays queued for the next hour and the dashboard shows the pause. This limits
 calls, not currency spend. Live provider testing remains.
 
+The coordinator delegates to two scoped AI specialists: people/transport and supplies.
+Each proposes at most one next option; eligible calls run in parallel and each counts
+against the same hourly budget. PostgreSQL tasks remember no-match inputs and track
+review, invitations, commitments and receipt. Declines/cancellations/timeouts requeue
+alternative searches, excluding tried source versions before candidate limits.
+Active arrangements pause that specialist; unchanged inputs avoid repeat calls.
+Dashboard **Request follow-up** shows both tracks and receipts without assuming the
+whole SOS is fulfilled. Closing/expiry stops follow-up; progress survives restarts.
+
 AI suggestions defaults to automatic invitations. An operator-only **Require
 operator approval** toggle stores the server-wide mode in PostgreSQL across restarts.
 Eligible pending/new proposals use the same transactional freshness/availability

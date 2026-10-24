@@ -12,8 +12,9 @@ candidate set. Unrelated uploads and delayed originals do not rerun unchanged
 inputs; expiry, withdrawals and capability changes do. The latest resource view
 is materialized once per discovery scan. Queue generations preserve changes found
 during inference; bounded batches continue draining without an extra polling delay.
-One leased worker runs at a time; it heartbeats and checks lease ownership before
-saving results. Graceful shutdown finishes the active bounded call. A hard crash
+One leased request runs at a time, with at most two scoped specialist calls in parallel;
+the worker heartbeats and checks lease ownership before saving results. Graceful
+shutdown finishes these bounded calls. A hard crash
 can delay recovery up to 90 seconds; its interrupted run is marked failed when
 the queued request resumes. Transient failures retry at most three times per input
 revision with backoff. Operators can retry from an SOS after a short cooldown.
@@ -24,7 +25,7 @@ empty-resource runs do not. When exhausted, work stays queued for the next hour
 without consuming retries, and the review desk shows the pause. Uploads continue.
 This is a call cap, not a currency spending limit.
 
-Each run reads one SOS and at most 50 helpers plus 50 current offers, preferring
+Each coordination step reads one SOS and at most 50 helpers plus 50 current offers, preferring
 the normalized reported area (case/whitespace ignored). Category-compatible types
 are filtered before the cap, and the requester's own resources are excluded.
 Unspecified categories include all types; transport/general help remain candidates.
@@ -33,6 +34,23 @@ Supply reads use the latest signed resource projection, so signed edits and
 withdrawals invalidate older proposals. Suggestions are validated for IDs,
 quantities, expiry and exact source versions again before atomic persistence.
 Unknown stock stays unknown. Suggestions do not reserve stock; approval needs a known supply quantity. Confirmed commitments reduce available candidates.
+
+The people/transport and supply specialists receive separate candidates, role-specific
+instructions and bounded signed-arrangement history. Each returns at most one next
+suggestion; the coordinator combines independently validated results. A failed
+specialist does not discard valid work from the other. Every actual provider call,
+including failed calls, consumes the shared budget. Budget-deferred work resumes
+without recalling a specialist that already completed unchanged inputs.
+
+`coordinator_tasks` persists each track and its last processed input. Waiting for
+review, an invitation or a commitment pauses that track. Signed declines, owner
+cancellation, expiry and receipts affect scheduling; previously tried resource
+versions are excluded before the 50-item cap. No-match results wait for changed
+inputs or an explicit operator rerun. Receipt history is supplied to the specialist
+so it can consider explicitly unmet needs without inventing a target quantity.
+Neither receipt nor absence of candidates automatically resolves an SOS.
+Closed/expired requests stop follow-up. The dashboard shows up to 30 recent tracked
+requests and labels each provider run by specialist. Startup upgrades tables in place.
 
 The [Responses function-calling API](https://developers.openai.com/api/docs/guides/function-calling)
 receives untrusted records and one forced strict suggestion tool, with a 30-second

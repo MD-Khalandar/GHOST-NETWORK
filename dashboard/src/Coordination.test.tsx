@@ -1,7 +1,17 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import { FindHelp, ProposalCard, ReviewModeControl, runLabel, type AiProposal } from "./Coordination";
+import { FindHelp, ProposalCard, FollowUpPanel,ReviewModeControl, runLabel, type AiProposal } from "./Coordination";
+
+test("follow-up distinguishes committed help from received help, escapes records and respects the SOS filter",()=>{
+  const items=[{request_id:"request",specialist:"helper" as const,status:"committed",description:"<script>request</script>",detail:"Help committed; waiting for requester receipt confirmation",received_count:0,updated_at_ms:1},
+    {request_id:"request",specialist:"supply" as const,status:"no_candidates",description:"Water",detail:"No untried available resources",received_count:1,updated_at_ms:1}];
+  const html=renderToStaticMarkup(<FollowUpPanel items={items}/>);
+  assert.match(html,/People and transport/);assert.match(html,/Supplies/);assert.match(html,/waiting for requester receipt/);
+  assert.match(html,/1 receipt confirmed by requester/);assert.match(html,/further needs are not assumed fulfilled/);
+  assert.doesNotMatch(html,/<script>/);
+  assert.doesNotMatch(renderToStaticMarkup(<FollowUpPanel items={items} requestId="different"/>),/Water|&lt;script/);
+});
 
 test("operators can select persisted manual review; automatic invitations never imply helper acceptance",()=>{
   const automatic=renderToStaticMarkup(<ReviewModeControl mode={{manual_review:false,updated_at_ms:0}} operator busy={false} onChange={()=>{}}/>);

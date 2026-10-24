@@ -24,7 +24,12 @@ export interface ResourceSource {
   expires_at_ms: number;
 }
 
-export interface MatchContext { request: SosSource; resources: ResourceSource[] }
+export type Specialist = "helper" | "supply";
+export interface FollowUp {
+  awaiting_review: number;
+  arrangements: { proposal_id:string; resource_id:string; state:number; version:number; quantity:number|null; unit:string }[];
+}
+export interface MatchContext { request: SosSource; resources: ResourceSource[]; specialist?:Specialist; follow_up?:FollowUp }
 export interface MatchDraft {
   request_id: string;
   resource_kind: "helper" | "offer";

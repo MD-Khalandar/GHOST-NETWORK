@@ -39,6 +39,10 @@ test("Gemini HTTP requests force the shared tool, validate matches and fail clos
     assert.deepEqual(received.tool_choice, { type: "function", function: { name: "suggest_matches" } });
     assert.deepEqual(JSON.parse(received.messages[1].content), { untrusted_records: context });
     assert.doesNotMatch(received.messages[0].content, /IGNORE RULES/);
+    await model.suggest({...context,specialist:"supply",follow_up:{awaiting_review:0,arrangements:[]}});
+    assert.match(received.messages[0].content,/supply specialist/);
+    assert.equal(received.tools[0].function.parameters.properties.matches.maxItems,1);
+    assert.deepEqual(received.tools[0].function.parameters.properties.matches.items.properties.resource_kind.enum,["offer"]);
     for (const invalid of [
       { choices: [{ finish_reason: "length", message: success.choices[0].message }] },
       { choices: [{ finish_reason: "stop", message: { content: "Help is confirmed" } }] },

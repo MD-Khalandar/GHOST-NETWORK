@@ -127,9 +127,9 @@ export class AssistanceService {
   }
   /** Eligibility is filtered before LIMIT; unavailable proposals cannot block later ones. */
   async autoReview():Promise<boolean> {
-    if((await this.reviewMode()).manual_review)return false;
     // Expired commitments must stop blocking the availability view even with no phones polling.
     await this.sweep();
+    if((await this.reviewMode()).manual_review)return false;
     const {rows}=await this.database.query(`SELECT p.proposal_id FROM coordinator_proposals p
       JOIN sos_reports s ON s.request_id=p.request_id
       JOIN coordinator_resource_available r ON r.entity_id=p.resource_id

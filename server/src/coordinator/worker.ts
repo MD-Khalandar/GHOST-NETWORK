@@ -1,22 +1,22 @@
 import type { Database } from "../database.js";
-import { CloudCoordinator } from "./coordinator.js";
+import { AssistanceTeam } from "./team.js";
 import { CoordinatorFailure, UUID, type ProposalModel } from "./types.js";
 import { CoordinatorStore } from "./store.js";
 import { randomUUID } from "node:crypto";
 import { inputHashSql } from "./candidates.js";
 
-/** Durable queue inside the existing server. One model call at a time across instances. */
+/** Durable queue inside the existing server. One leased SOS, at most two scoped provider calls. */
 export class CoordinatorWorker {
   private timer?: ReturnType<typeof setInterval>;
   private active?: Promise<void>;
   private stopped = true;
   private wakeAgain = false;
   readonly store: CoordinatorStore;
-  private readonly coordinator: CloudCoordinator;
+  private readonly coordinator: AssistanceTeam;
   constructor(private readonly database: Database, readonly model: ProposalModel, private readonly now = Date.now,
     private readonly maxCallsPerHour = 120,private readonly autoReview?:()=>Promise<boolean>) {
     this.store = new CoordinatorStore(database);
-    this.coordinator = new CloudCoordinator(this.store, model, now, maxCallsPerHour);
+    this.coordinator = new AssistanceTeam(this.store, model, now, maxCallsPerHour);
   }
   start() {
     this.stopped = false;
@@ -43,6 +43,8 @@ export class CoordinatorWorker {
     if (!rows.length) throw new CoordinatorFailure("REQUEST_UNAVAILABLE");
     if (rows[0].queued) return true;
     if (rows[0].requested_at_ms !== null && rows[0].requested_at_ms !== undefined && this.now() - Number(rows[0].requested_at_ms) < 30000) return false;
+    // Explicit operator reruns may reconsider a no-match result; automatic scans reuse it.
+    await this.database.query("UPDATE coordinator_tasks SET input_hash=NULL WHERE request_id=$1 AND status='no_match'",[requestId]);
     await this.database.query(`INSERT INTO coordinator_jobs(request_id, input_revision, requested_at_ms)
       VALUES ($1,$2,$3) ON CONFLICT (request_id) DO UPDATE SET queued = TRUE,
       requested_at_ms = EXCLUDED.requested_at_ms, next_attempt_at_ms = 0, attempts = 0`, [requestId, rows[0].cloud_revision, this.now()]);
@@ -67,6 +69,7 @@ export class CoordinatorWorker {
   }
   private async tick() {
     if(await this.autoReview?.())this.wakeAgain=true;
+    await this.store.closeTasks(this.now());
     if(!this.model.available)return;
     await this.discover();
     for (let index = 0; index < 5 && !this.stopped; index++) {
@@ -96,6 +99,7 @@ export class CoordinatorWorker {
       try {
         const result = await this.coordinator.run(job.request_id, token);
         if(await this.autoReview?.())this.wakeAgain=true;
+        if(result.proposal_ids.length)this.wakeAgain=true;
         if (result.code === "MODEL_BUDGET_EXHAUSTED") {
           // A budget pause is not a failed delivery or an exhausted retry. Keep
           // the job durable until the next hourly window.
@@ -123,7 +127,7 @@ export class CoordinatorWorker {
       JOIN sos_reports s ON s.request_id = j.request_id WHERE j.queued AND s.state = 1 AND s.expires_at_ms > $1
       ORDER BY j.requested_at_ms LIMIT 30`, [this.now()]);
     return { configured: this.model.available, model: this.model.name, budget: await this.store.modelBudget(this.now(), this.maxCallsPerHour),
-      queued_total: Number(rows[0]?.total_queued ?? 0), queued: rows.map(row => ({ request_id: row.request_id, attempts: row.attempts,
+      followups:await this.store.followups(this.now()),queued_total: Number(rows[0]?.total_queued ?? 0), queued: rows.map(row => ({ request_id: row.request_id, attempts: row.attempts,
       next_attempt_at_ms: Number(row.next_attempt_at_ms) })), runs: await this.store.history() };
   }
 }

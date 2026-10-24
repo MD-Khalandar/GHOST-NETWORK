@@ -1,6 +1,7 @@
 import { CoordinatorStore } from "./store.js";
 import { CoordinatorFailure, MAX_PROPOSALS, UUID, type MatchContext, type MatchDraft,
-  type ProposalModel, type RunResult } from "./types.js";
+  type ProposalModel, type RunResult, type Specialist } from "./types.js";
+import { waitingStatus } from "./followup.js";
 
 function object(value: unknown, keys: string[]): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value) &&
@@ -9,7 +10,7 @@ function object(value: unknown, keys: string[]): value is Record<string, unknown
 
 export function validateSuggestions(context: MatchContext, output: unknown): MatchDraft[] {
   const invalid = (): never => { throw new CoordinatorFailure("INVALID_MODEL_OUTPUT"); };
-  if (!object(output, ["matches"]) || !Array.isArray(output.matches) || output.matches.length > MAX_PROPOSALS) return invalid();
+  if (!object(output, ["matches"]) || !Array.isArray(output.matches) || output.matches.length > (context.specialist?1:MAX_PROPOSALS)) return invalid();
   const seen = new Set<string>();
   return output.matches.map((draft: unknown) => {
     if (!object(draft, ["request_id", "resource_kind", "resource_id", "quantity", "explanation"]) ||
@@ -34,24 +35,34 @@ export class CloudCoordinator {
     if (!Number.isSafeInteger(maxCallsPerHour) || maxCallsPerHour < 1 || maxCallsPerHour > 1000000) throw new Error("Invalid AI call budget");
   }
 
-  async run(requestId: string, leaseOwner?: string): Promise<RunResult> {
+  async run(requestId: string, leaseOwner?: string,specialist?:Specialist): Promise<RunResult> {
     if (!UUID.test(requestId)) return { run_id: null, status: "error", code: "REQUEST_UNAVAILABLE", proposal_ids: [] };
     let runId: string | null = null;
     try {
-      runId = await this.store.start(requestId, this.model.name, this.now());
+      const context = specialist?await this.store.context(requestId,this.now(),specialist):undefined;
+      if(context) {
+        const waiting=waitingStatus(context);
+        if(waiting || !context.resources.length) {
+          await this.store.task(context,waiting??"no_candidates",this.now());
+          return {run_id:null,status:"completed",code:null,proposal_ids:[]};
+        }
+        if(await this.store.unchanged(context))return {run_id:null,status:"completed",code:null,proposal_ids:[]};
+      }
+      runId = await this.store.start(requestId, this.model.name, this.now(),specialist);
+      if(context)await this.store.task(context,"searching",this.now(),runId);
       if (!this.model.available) throw new CoordinatorFailure("MODEL_UNAVAILABLE");
-      const context = await this.store.context(requestId, this.now());
-      await this.store.recordCandidates(runId, context.resources.length);
+      const inputs = context??await this.store.context(requestId, this.now());
+      await this.store.recordCandidates(runId, inputs.resources.length);
       let suggestions: unknown = { matches: [] };
-      if (context.resources.length) {
+      if (inputs.resources.length) {
         if (!await this.store.reserveModelCall(this.now(), this.maxCallsPerHour)) throw new CoordinatorFailure("MODEL_BUDGET_EXHAUSTED");
-        try { suggestions = await this.model.suggest(context); }
+        try { suggestions = await this.model.suggest(inputs); }
         catch (error) {
           throw error instanceof CoordinatorFailure ? error : new CoordinatorFailure("MODEL_ERROR");
         }
       }
-      const drafts = validateSuggestions(context, suggestions);
-      const ids = await this.store.save(runId, context, drafts, this.now(), leaseOwner);
+      const drafts = validateSuggestions(inputs, suggestions);
+      const ids = await this.store.save(runId, inputs, drafts, this.now(), leaseOwner);
       return { run_id: runId, status: "completed", code: null, proposal_ids: ids };
     } catch (error) {
       const code = error instanceof CoordinatorFailure ? error.code : "STORAGE_UNAVAILABLE";

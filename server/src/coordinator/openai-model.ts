@@ -1,4 +1,4 @@
-import { instructions, suggestionTool, readModelResponse } from "./model-common.js";
+import { specialistInstructions, specialistTool, readModelResponse } from "./model-common.js";
 import { CoordinatorFailure, type MatchContext, type ProposalModel } from "./types.js";
 
 export interface OpenAIModelOptions { apiKey?: string; model?: string; fetch?: typeof fetch }
@@ -23,9 +23,9 @@ export class OpenAIProposalModel implements ProposalModel {
       const response = await this.transport("https://api.openai.com/v1/responses", {
         method: "POST", redirect: "error", signal: AbortSignal.timeout(30000),
         headers: { Authorization: `Bearer ${this.apiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ model: this.name, store: false, instructions,
+        body: JSON.stringify({ model: this.name, store: false, instructions:specialistInstructions(context),
           input: [{ role: "user", content: JSON.stringify({ untrusted_records: context }) }],
-          tools: [suggestionTool], tool_choice: { type: "function", name: "suggest_matches" },
+          tools: [specialistTool(context)], tool_choice: { type: "function", name: "suggest_matches" },
           parallel_tool_calls: false, max_output_tokens: 6000 }),
       });
       const body = await readModelResponse(response);

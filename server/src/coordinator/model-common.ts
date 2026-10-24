@@ -1,4 +1,4 @@
-import { CoordinatorFailure, MAX_PROPOSALS } from "./types.js";
+import { CoordinatorFailure, MAX_PROPOSALS,type MatchContext } from "./types.js";
 
 export interface ModelOptions { apiKey?: string; model?: string; fetch?: typeof fetch }
 
@@ -13,11 +13,29 @@ Suggest at most ten distinct resources, only when suitable; an empty list is val
 For helpers use quantity null. For supplies with unknown quantity use null; never invent stock.
 For known stock suggest a positive integer no greater than reported quantity, in that offer's unit.
 Explain suitability and uncertainty concisely. Do not give medical advice, promise assistance, or claim approval, reservation or confirmation.
-These are alternatives for human review. Operator approval and owner acceptance are separate required steps.
+Suggestions may send invitations automatically or wait for operator review. Owner acceptance and server checks are still required.
 Call suggest_matches once. It only returns suggestions; it cannot allocate or send anything.`;
 
+export function specialistInstructions(context:MatchContext):string {
+  if(!context.specialist)return instructions;
+  return `${instructions}\nYou are the ${context.specialist==="helper"?"helper and transport":"supply"} specialist.
+Your scoped candidates are your only search tool results. Choose at most ONE next suitable option, or none.
+Use the supplied follow_up facts: states 1 invited, 2 committed, 3 declined, 4 cancelled, 5 expired,
+6 whole SOS reported resolved, 7 this arrangement confirmed received by requester.
+Do not repeat failed invitations or replace pending/committed help. Receipt of one arrangement does not close the SOS.
+After a receipt, suggest more only when the SOS explicitly still has an unmet need considering the recorded quantities and units.
+Never infer a missing target quantity, subtract incompatible units, or assume one receipt met every need.
+When fulfillment is uncertain, return no matches so the operator/requester can clarify.\n`;
+}
+export function specialistTool(context:MatchContext) {
+  if(!context.specialist)return suggestionTool;
+  return {...suggestionTool,parameters:{...suggestionTool.parameters,properties:{matches:{...suggestionTool.parameters.properties.matches,
+    maxItems:1,items:{...suggestionTool.parameters.properties.matches.items,properties:{...suggestionTool.parameters.properties.matches.items.properties,
+      resource_kind:{type:"string",enum:[context.specialist==="helper"?"helper":"offer"]}}}}}}};
+}
+
 export const suggestionTool = {
-  type: "function", name: "suggest_matches", description: "Submit possible matches for server validation and human review only.", strict: true,
+  type: "function", name: "suggest_matches", description: "Submit possible matches for server validation; cannot allocate resources or send invitations.", strict: true,
   parameters: {
     type: "object", additionalProperties: false, required: ["matches"], properties: {
       matches: { type: "array", maxItems: MAX_PROPOSALS, items: {

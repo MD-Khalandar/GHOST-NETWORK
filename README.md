@@ -237,6 +237,15 @@ rechecks; unrelated uploads and delayed originals do not rerun unchanged inputs.
 Operators can use **Find help with AI** on an SOS to request another run. Without model settings,
 the dashboard reports AI unavailable and the existing SOS/relay flow still works.
 
+The coordinator uses two AI specialists: **People and transport** and **Supplies**.
+Each can suggest one next option, using its own candidates and the request's
+assistance history. **Request follow-up** tracks invitations, commitments, receipts
+and searches for alternatives after declined or expired arrangements. It waits while
+help is pending and does not assume a receipt fulfilled the entire SOS. Progress
+and no-match results survive server restarts; unchanged inputs do not keep spending
+AI calls. Each specialist call uses the existing shared hourly budget. No extra
+services, dependencies or provider configuration are needed.
+
 Only currently available helpers/supplies are candidates. Signed supply edits and
 withdrawals invalidate older proposals. Eligible suggestions send signed invitations
 automatically by default. Under **AI suggestions**, operators can turn on **Require

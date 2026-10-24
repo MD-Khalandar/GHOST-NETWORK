@@ -14,6 +14,7 @@ import { OpenAIProposalModel } from "./openai-model.js";
 import { CoordinatorStore, initializeCoordinator } from "./store.js";
 import type { MatchContext, MatchDraft, ProposalModel } from "./types.js";
 import { CoordinatorWorker } from "./worker.js";
+import { AssistanceTeam } from "./team.js";
 import { buildApp } from "../app.js";
 import { tokenHash } from "../security.js";
 
@@ -51,7 +52,13 @@ async function fixture(path?: string, lifetime = 60000) {
     quantity, explanation: "Reported water availability in the same area; owner must verify access and availability.",
   });
   const model = (suggest: (context: MatchContext) => Promise<unknown> = async () => ({ matches: [draft()] })): ProposalModel =>
-    ({ available: true, name: "configured-test-model", suggest });
+    ({ available: true, name: "configured-test-model", suggest:async context=>{
+      const output=await suggest(context);
+      // The test model obeys scoped specialist instructions; unscoped validation tests retain raw output.
+      if(context.specialist && output && typeof output==="object" && "matches" in output && Array.isArray(output.matches))
+        return {...output,matches:output.matches.filter(m=>m.resource_kind===(context.specialist==="helper"?"helper":"offer"))};
+      return output;
+    } });
   return { pg, database, requestId, offerId, origin, helper, supplier, store, draft, model, publishHelper, publishOffer, upload, packet };
 }
 
@@ -89,20 +96,19 @@ test("scheduling ignores unrelated uploads and old replays, but detects type cha
   const job = async () => (await f.pg.query<any>("SELECT * FROM coordinator_jobs WHERE request_id = $1", [f.requestId])).rows[0];
   try {
     worker.start(); await until(async () => (await job())?.queued === false); await worker.stop();
-    const initial = await job(); assert.equal(calls, 1);
+    const initial = await job(); assert.equal(calls, 2);
     await f.upload([f.packet(f.supplier, 5, { offer_id: randomUUID(), owner_node_id: Buffer.from(f.supplier.nodeId, "hex"), resource_type: 2, quantity: 10, consent })]);
     await f.publishHelper(f.helper, 1, now - 2000);
     worker.start(); await worker.stop();
     assert.equal((await job()).input_revision, initial.input_revision);
-    assert.equal((await job()).queued, false); assert.equal(calls, 1);
+    assert.equal((await job()).queued, false); assert.equal(calls, 2);
     await f.upload([f.packet(f.helper, 3, { owner_node_id: Buffer.from(f.helper.nodeId, "hex"),
       help_types: [1], availability: 1, coarse_area: "Station", consent }, now)]);
-    worker.start(); await until(async () => calls === 2 && (await job()).queued === false); await worker.stop();
+    worker.start(); await until(async () => Number((await job()).input_revision)>Number(initial.input_revision) && (await job()).queued === false); await worker.stop();
     clock = now + 50001; // The water offer expires; the food offer remains irrelevant.
-    worker.start(); await until(async () => (await f.store.history()).length === 3 && (await job()).queued === false); await worker.stop();
+    worker.start(); await until(async () => (await f.pg.query<any>("SELECT status FROM coordinator_tasks WHERE specialist='supply'")).rows[0]?.status==='no_candidates' && (await job()).queued === false); await worker.stop();
     assert.equal(calls, 2); // No model call for the now-empty candidate set.
-    const history = await f.store.history();
-    assert.equal(history[0].candidate_count, 0); assert.equal(history[0].proposal_count, 0);
+    assert.equal((await f.store.history()).length,2); // Empty/cache-only steps do not create model runs.
     assert.ok(Number((await job()).input_revision) > Number(initial.input_revision));
   } finally { await worker.stop(); await f.pg.close(); }
 });
@@ -117,7 +123,7 @@ test("a candidate change discovered during inference survives completion of the 
   }), () => now);
   const other = new CoordinatorWorker(f.database, f.model(), () => now);
   try {
-    worker.start(); await until(async () => calls === 1);
+    worker.start(); await until(async () => calls === 2);
     await f.publishHelper(f.helper, 2, now);
     other.start(); await other.stop(); // Discovers a new input while the first worker holds the lease.
     release();
@@ -138,7 +144,7 @@ test("queue totals exceed the preview limit and bounded batches drain without wa
     assert.equal(status.queued.length, 30); assert.equal(status.queued_total, 36);
     worker.start();
     await until(async () => (await f.pg.query<{ remaining: number }>("SELECT COUNT(*)::integer AS remaining FROM coordinator_jobs WHERE queued")).rows[0].remaining === 0);
-    assert.equal(calls, 36);
+    assert.equal(calls, 72); // One call per nonempty specialist, under one shared budget.
     assert.equal((await worker.status()).queued_total, 0);
   } finally { await worker.stop(); await f.pg.close(); }
 });
@@ -180,11 +186,12 @@ test("review pagination handles equal timestamps, request filters and batched fr
 
 test("the shared AI budget is atomic across instances and defers queued work until its next hourly window", async () => {
   const f = await fixture(undefined, 7200000); let clock = now; let calls = 0;
+  await f.database.query("UPDATE resource_events SET expires_at_ms=$1,data=data || jsonb_build_object('available_until_ms',$1::bigint) WHERE kind<>3",[now+7200000]);
   const model = f.model(async () => { calls++; return { matches: [] }; });
   let worker = new CoordinatorWorker(f.database, model, () => clock, 1);
   const job = async () => (await f.pg.query<any>("SELECT * FROM coordinator_jobs WHERE request_id=$1", [f.requestId])).rows[0];
   try {
-    worker.start(); await until(async () => (await job())?.queued === false); await worker.stop();
+    worker.start(); await until(async () => Number((await job())?.next_attempt_at_ms)>clock); await worker.stop();
     assert.equal(calls, 1);
     clock += 31000;
     worker = new CoordinatorWorker(f.database, model, () => clock, 1); // Replacement worker retains the server's consumed budget.
@@ -266,7 +273,7 @@ test("server automatically queues runs, restricts operator retry, and exposes st
     assert.equal((await app.inject({ method: "POST", url, headers: headers("operator") })).statusCode, 429);
     clock += 31000;
     assert.equal((await app.inject({ method: "POST", url, headers: headers("operator") })).statusCode, 202);
-    await until(async () => (await f.store.history()).filter(r => r.status === "completed").length === 2);
+    await until(async () => (await f.store.history()).filter(r => r.status === "completed").length === 3);
     const review = await app.inject({ url: "/v1/dashboard/proposals", headers: headers("viewer") });
     assert.equal(review.statusCode, 200); assert.equal(review.json().items.length, 1);
     assert.equal(review.json().items[0].freshness, "current"); assert.equal(review.headers["cache-control"], "no-store");
@@ -277,7 +284,7 @@ test("server automatically queues runs, restricts operator retry, and exposes st
       original_offer_envelope: Buffer.from(original.immutable_envelope), original_offer_signature: Buffer.from(original.origin_signature) }, now);
     assert.equal((await app.inject({ method: "POST", url: "/v1/sync/upload", headers: headers("gateway"),
       payload: { idempotency_key: randomUUID(), packets: [withdrawal] } })).statusCode, 200);
-    await until(async () => (await f.store.history()).filter(r => r.status === "completed").length === 3);
+    await until(async () => (await f.pg.query<any>("SELECT status FROM coordinator_tasks WHERE specialist='supply'")).rows[0]?.status==='no_candidates');
     assert.equal((await app.inject({ url: "/v1/dashboard/proposals", headers: headers("viewer") })).json().items[0].freshness, "stale");
     assert.equal(calls, 3);
     const state = await app.inject({ url: "/v1/dashboard/runs", headers: headers("operator") });
@@ -323,7 +330,7 @@ test("durable jobs resume with a new worker, retries are bounded and lost leases
     good.start(); competitor.start();
     await until(async () => (await f.store.listProposals()).length === 1);
     await good.stop(); await competitor.stop();
-    assert.equal(calls, 1);
+    assert.equal(calls, 2);
     await f.pg.query("UPDATE coordinator_jobs SET queued = TRUE, next_attempt_at_ms = 0, attempts = 0");
     // Keep this fixture available across the retry delays.
     await f.pg.query("UPDATE sos_reports SET expires_at_ms = $1", [clock + 600000]);
@@ -475,6 +482,37 @@ test("missing model configuration and model failures are honest, durable states 
     assert.doesNotMatch(JSON.stringify(rows), /private-token|secret-provider-body/);
     assert.deepEqual(await f.store.listProposals(), []);
   } finally { await f.pg.close(); }
+});
+
+test("specialist failures and cross-role outputs cannot discard a valid other-specialist proposal",async()=>{
+  const f=await fixture();try{
+    const team=new AssistanceTeam(f.store,{available:true,name:"isolated-specialists",suggest:async context=>{
+      if(context.specialist==="helper")throw new Error("private-provider-error");
+      return {matches:[f.draft()]};
+    }},()=>now);
+    const partial=await team.run(f.requestId);
+    assert.equal(partial.code,"MODEL_ERROR");assert.equal(partial.proposal_ids.length,1);
+    assert.equal((await f.store.listProposals()).length,1);
+    const bad=new AssistanceTeam(f.store,{available:true,name:"bad-specialist",suggest:async()=>({matches:[f.draft()]})},()=>now);
+    assert.equal((await bad.run(f.requestId)).code,"INVALID_MODEL_OUTPUT");
+    assert.equal((await f.store.listProposals()).length,1);
+    assert.doesNotMatch(JSON.stringify(await f.store.history()),/private-provider-error/);
+  }finally{await f.pg.close();}
+});
+
+test("specialist progress and no-match memory survive server/database replacement without repeat calls",async()=>{
+  const path=await mkdtemp(join(tmpdir(),"ghost-team-"));let pg:PGlite|undefined;
+  try{
+    const f=await fixture(path);pg=f.pg;let calls=0;
+    const model:ProposalModel={available:true,name:"memory-test",suggest:async()=>{calls++;return {matches:[]};}};
+    assert.equal((await new AssistanceTeam(f.store,model,()=>now).run(f.requestId)).status,"completed");assert.equal(calls,2);
+    await pg.close();pg=new PGlite(path);const database=adapter(pg);
+    await initializeDatabase(database);await initializeCoordinator(database);
+    const restored=new CoordinatorStore(database);
+    assert.equal((await new AssistanceTeam(restored,model,()=>now).run(f.requestId)).status,"completed");assert.equal(calls,2);
+    assert.equal((await restored.followups(now)).length,2);
+    assert.ok((await restored.followups(now)).every(p=>p.status==="no_match"));
+  }finally{await pg?.close();assert.ok(path.startsWith(join(tmpdir(),"ghost-team-")));await rm(path,{recursive:true,force:true});}
 });
 
 test("no eligible resources completes with zero proposals without invoking inference", async () => {
