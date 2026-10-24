@@ -54,7 +54,7 @@ fun HomeScreen(state: FoundationState, onSendSos: () -> Unit, onOpenRequests: ()
         }
         item("offer-help") {
             InfoCard("Can you help?", "Volunteer your skills or offer supplies. Availability does not commit you to an assignment.") {
-                TextButton(onOfferHelp, Modifier.heightIn(min = 48.dp)) { Text("Offer help") }
+                TextButton(onOfferHelp, Modifier.heightIn(min = 48.dp)) { Text("Manage your help") }
             }
         }
         local.error?.let { item("error") { InfoCard("Something went wrong", it.userMessage()) } }

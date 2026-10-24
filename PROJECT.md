@@ -48,7 +48,11 @@ locations with pan/zoom and links markers to request details. OpenStreetMap tile
 need internet and reveal the viewed area to the tile provider, without sending
 SOS text or access tokens. Viewer/operator tokens stay in tab memory; gateway tokens
 cannot read it. Local browser checks pass against signed uploads.
-Home's Offer help form saves signed volunteer profiles and supply offers in Room.
+Navigation is Home, Requests, Offer help and Connections. Requests shows each SOS's
+upload status and an optional explanation; the old Help status tab is removed.
+Offer help lists owned volunteer availability and supplies separately from forms,
+and loads the saved volunteer name, skill, area and sharing choices when updating.
+It saves signed volunteer profiles and supply offers in Room.
 Publications relay to supporting phones and upload with separate online consent;
 verified server receipts return through the mesh. Help types, area, quantity/unit
 and six-hour availability appear in dashboard Helpers/Supplies lists. The latest

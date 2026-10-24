@@ -281,7 +281,7 @@ class LocalSosRepositoryTest {
         repository.resources.publish(draft).getOrThrow()
         assertEquals(1, db.resources().count())
         assertTrue(repository.resources.publish(draft.copy(quantity = "-1")).isFailure)
-        val helper = ResourceDraft(name = "Volunteer", helpType = HelpType.FIRST_AID, publicSharing = false, cloudConsent = true)
+        val helper = ResourceDraft(name = "Volunteer", helpType = HelpType.FIRST_AID, area = "Station", publicSharing = false, cloudConsent = true)
         repository.resources.publish(helper).getOrThrow()
         assertEquals(1, repository.cloudOutgoing().size)
         db.close(); databases.remove(db)
@@ -289,6 +289,18 @@ class LocalSosRepositoryTest {
         val summaries = restored.resources.observeSummaries().first()
         assertEquals(2, summaries.size)
         assertEquals(LocalCloudState.NOT_SHARED, summaries.single { it.helper }.cloudState)
+        val savedProfile = summaries.single { it.helper }.editDraft!!
+        assertEquals(helper.name, savedProfile.name)
+        assertEquals(helper.helpType, savedProfile.helpType)
+        assertEquals(helper.area, savedProfile.area)
+        assertFalse(savedProfile.publicSharing)
+        assertTrue(savedProfile.cloudConsent)
+        restored.resources.publish(savedProfile.copy(available = false)).getOrThrow()
+        val unavailable = restored.resources.observeSummaries().first().single { it.helper }
+        assertFalse(unavailable.available)
+        assertEquals(helper.name, unavailable.editDraft!!.name)
+        assertEquals(helper.helpType, unavailable.editDraft!!.helpType)
+        assertEquals(helper.area, unavailable.editDraft!!.area)
         assertEquals(ResourceType.WATER, restored.resources.observeOffers().first().single().resourceType)
         assertEquals(10, restored.resources.observeOffers().first().single().quantity)
     }

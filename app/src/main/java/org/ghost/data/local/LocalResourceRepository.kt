@@ -18,25 +18,35 @@ class LocalResourceRepository(private val db: GhostDatabase, private val identit
     fun observeSummaries(): Flow<List<ResourceSummary>> = timedRows().map { (rows, time) ->
         rows.distinctBy { (if (it.kind == 3) "helper:" else "offer:") + it.entityId }.map { row ->
             val data = envelope(row).payloadBytes
+            val helper = if (row.kind == 3) HelperProfilePublishV1.parseFrom(data) else null
             val offer = if (row.kind != 3) offer(row) else null
             val withdrawn = row.kind == 6 && OfferUpdateV1.parseFrom(data).stateValue == 2
-            val title = if (row.kind == 3) HelperProfilePublishV1.parseFrom(data).let {
+            val title = if (helper != null) helper.let {
                 (it.displayName.takeIf(String::isNotBlank) ?: "Helper") + " · " + it.helpTypesList.joinToString { type -> type.name.removePrefix("HELP_TYPE_").lowercase().replace('_', ' ') }
             } else offer!!.let {
                 it.resourceType.name.removePrefix("RESOURCE_TYPE_").lowercase().replace('_', ' ') +
                     if (it.hasQuantity()) " · ${it.quantity} ${it.unit}" else ""
             }
-            val area = if (row.kind == 3) HelperProfilePublishV1.parseFrom(data).coarseArea else offer!!.coarseArea
-            val available = !withdrawn && row.expiresAt > time && (row.kind != 3 || HelperProfilePublishV1.parseFrom(data).availabilityValue == 1)
+            val area = helper?.coarseArea ?: offer!!.coarseArea
+            val available = !withdrawn && row.expiresAt > time && (helper == null || helper.availabilityValue == 1)
+            val editor = when {
+                row.owned && helper != null -> ResourceDraft(row.entityId, name = helper.displayName, area = helper.coarseArea,
+                    helpType = when (val type = helper.helpTypesValueList.firstOrNull()) {
+                        1 -> HelpType.FIRST_AID; 6 -> HelpType.WATER
+                        else -> HelpType.entries.getOrElse((type ?: 7) - 1) { HelpType.OTHER_HELP }
+                    }, available = available, publicSharing = row.publicSharing, cloudConsent = row.cloudConsent, baseEventId = row.eventId)
+                row.owned && offer != null && available -> ResourceDraft(row.entityId, supply = true, area = offer.coarseArea,
+                    resourceType = ResourceType.entries[offer.resourceTypeValue - 1],
+                    quantity = if (offer.hasQuantity()) offer.quantity.toString() else "", unit = offer.unit,
+                    publicSharing = row.publicSharing, cloudConsent = row.cloudConsent, editing = true, baseEventId = row.eventId)
+                else -> null
+            }
             ResourceSummary(row.entityId, row.owner, row.owned, row.kind == 3, title, area.takeIf(String::isNotBlank), available, row.expiresAt,
                 when { row.cloudAck != null -> LocalCloudState.ACCEPTED
                     !row.publicSharing || !row.cloudConsent -> LocalCloudState.NOT_SHARED
                     row.expiresAt <= time -> LocalCloudState.EXPIRED
                     row.cloudError != null -> LocalCloudState.REJECTED
-                    else -> LocalCloudState.QUEUED }, withdrawn, if (row.owned && offer != null && available)
-                    ResourceDraft(row.entityId, supply = true, area = offer.coarseArea, resourceType = ResourceType.entries[offer.resourceTypeValue - 1],
-                        quantity = if (offer.hasQuantity()) offer.quantity.toString() else "", unit = offer.unit,
-                        publicSharing = row.publicSharing, cloudConsent = row.cloudConsent, editing = true, baseEventId = row.eventId) else null)
+                    else -> LocalCloudState.QUEUED }, withdrawn, editor)
         }
     }.flowOn(Dispatchers.IO)
 

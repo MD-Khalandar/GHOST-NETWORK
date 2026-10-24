@@ -7,7 +7,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import org.ghost.design.GhostTheme
 import org.ghost.domain.model.*
 import org.ghost.feature.home.HomeScreen
-import org.ghost.feature.mission.MissionScreen
+import org.ghost.feature.home.OfferHelpScreen
 import org.ghost.feature.network.NetworkScreen
 import org.ghost.app.LocalUiState
 import org.ghost.transport.nearby.NearbyState
@@ -61,15 +61,9 @@ private fun EmptyPreview() = PreviewFrame { RequestsScreen(FoundationPreviewFixt
 @Composable
 private fun StalePreview() = PreviewFrame { RequestsScreen(FoundationPreviewFixtures.stale, {}) }
 
-@Preview(name = "Mission · disconnected", widthDp = 360, heightDp = 800)
+@Preview(name = "Offer help", widthDp = 360, heightDp = 800)
 @Composable
-private fun MissionPreview() = PreviewFrame { MissionScreen(FoundationPreviewFixtures.empty, {}) }
-
-@Preview(name = "Mission · awaiting operator", widthDp = 360, heightDp = 800)
-@Composable
-private fun ApprovalPreview() = PreviewFrame { MissionScreen(FoundationPreviewFixtures.loaded.copy(
-    mission = CloudCoordinationState(CloudCoordinationStatus.AWAITING_OPERATOR, version = 1),
-), {}) }
+private fun OfferHelpPreview() = PreviewFrame { OfferHelpScreen(LocalUiState(), null, simulated = true) }
 
 @Preview(name = "Network · error", widthDp = 360, heightDp = 800)
 @Composable

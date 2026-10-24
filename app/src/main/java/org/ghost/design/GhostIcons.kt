@@ -21,9 +21,10 @@ object GhostIcons {
         moveTo(9f, 8f); lineTo(15f, 8f); moveTo(9f, 12f); lineTo(15f, 12f)
         moveTo(9f, 16f); lineTo(13f, 16f)
     }
-    val Mission = icon("Mission") {
-        moveTo(5f, 21f); lineTo(5f, 3f); lineTo(19f, 3f); lineTo(16f, 8f)
-        lineTo(19f, 13f); lineTo(5f, 13f)
+    val OfferHelp = icon("Offer help") {
+        moveTo(9f, 3f); lineTo(15f, 3f); lineTo(15f, 9f); lineTo(21f, 9f)
+        lineTo(21f, 15f); lineTo(15f, 15f); lineTo(15f, 21f); lineTo(9f, 21f)
+        lineTo(9f, 15f); lineTo(3f, 15f); lineTo(3f, 9f); lineTo(9f, 9f); close()
     }
     val Network = icon("Network") {
         moveTo(10f, 4f); lineTo(14f, 4f); lineTo(14f, 8f); lineTo(10f, 8f); close()

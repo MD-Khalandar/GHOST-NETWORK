@@ -18,6 +18,7 @@ data class LocalUiState(
     val gateway: GatewayUiState = GatewayUiState(),
     val topology: TopologySnapshot = TopologySnapshot(),
     val resources: List<ResourceSummary> = emptyList(),
+    val resourcesLoaded: Boolean = false,
 )
 
 fun LocalUiState.meshStatus(): String = when {

@@ -41,7 +41,9 @@ class GhostAppUiTest {
         var withdrawn: org.ghost.domain.model.ResourceDraft? = null
         val actions = LocalActions({}, { _, done -> done() }, { _, _ -> }, {}, {}, {},
             publishResource = { value, done -> saved = value; done() }, withdrawResource = { value, done -> withdrawn = value; done() })
-        compose.setContent { GhostTheme { org.ghost.feature.home.ResourceFormDialog(LocalUiState(resources = listOf(resource)), actions, {}) } }
+        compose.setContent { GhostTheme { GhostApp(FoundationPreviewFixtures.loaded, {},
+            local = LocalUiState(resources = listOf(resource), resourcesLoaded = true), actions = actions) } }
+        compose.onNode(hasText("Offer help") and hasClickAction()).performClick()
         compose.onNodeWithText("Edit offer").performScrollTo().performClick()
         compose.onNodeWithText("Edit supply offer").assertIsDisplayed()
         compose.onNodeWithText("Quantity (optional)").performScrollTo().performTextReplacement("7")
@@ -56,11 +58,11 @@ class GhostAppUiTest {
         var saved: org.ghost.domain.model.ResourceDraft? = null
         val actions = LocalActions({}, { _, done -> done() }, { _, _ -> }, {}, {}, {},
             publishResource = { value, done -> saved = value; done() })
-        compose.setContent { GhostTheme { GhostApp(FoundationPreviewFixtures.loaded, {}, actions = actions) } }
-        compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("Offer help"))
-        compose.onNodeWithText("Offer help").performClick()
+        compose.setContent { GhostTheme { GhostApp(FoundationPreviewFixtures.loaded, {}, actions = actions,
+            local = LocalUiState(resourcesLoaded = true)) } }
+        compose.onNode(hasText("Offer help") and hasClickAction()).performClick()
         assertNull(saved)
-        compose.onNodeWithText("Supplies").performClick()
+        compose.onNodeWithText("Add supplies").performScrollTo().performClick()
         compose.onNodeWithText("Quantity (optional)").performScrollTo().performTextInput("0")
         compose.onNodeWithText("Save and share help").performClick()
         assertNull(saved)
@@ -71,6 +73,43 @@ class GhostAppUiTest {
         compose.onNodeWithText("Save on this phone").performClick()
         assertEquals("12", saved!!.quantity)
         assertTrue(saved!!.supply); assertFalse(saved!!.publicSharing); assertTrue(saved!!.cloudConsent)
+    }
+
+    @Test
+    fun volunteerEditorWaitsForSavedProfileAndKeepsDetailsWhenAvailabilityChanges() {
+        val draft = org.ghost.domain.model.ResourceDraft(name = "Mira", area = "Station", helpType = org.ghost.domain.model.HelpType.FIRST_AID,
+            available = true, publicSharing = false, cloudConsent = true, baseEventId = "saved-profile")
+        val profile = org.ghost.domain.model.ResourceSummary("owner", "a".repeat(64), true, true, "Mira · first aid", "Station",
+            true, Long.MAX_VALUE, LocalCloudState.NOT_SHARED, editDraft = draft)
+        val local = mutableStateOf(LocalUiState())
+        var saved: org.ghost.domain.model.ResourceDraft? = null
+        val actions = LocalActions({}, { _, done -> done() }, { _, _ -> }, {}, {}, {},
+            publishResource = { value, done ->
+                saved = value
+                local.value = local.value.copy(resources = listOf(profile.copy(available = value.available, editDraft = value)))
+                done()
+            })
+        compose.setContent { GhostTheme { GhostApp(FoundationState(), {}, local = local.value, actions = actions) } }
+        compose.onNode(hasText("Offer help") and hasClickAction()).performClick()
+        compose.onNodeWithText("Opening saved help").assertIsDisplayed()
+        compose.onNodeWithText("Register as a volunteer").assertDoesNotExist()
+        compose.runOnIdle { local.value = LocalUiState(resources = listOf(profile), resourcesLoaded = true) }
+        compose.onNodeWithText("Update availability").performScrollTo().performClick()
+        compose.onNode(hasSetTextAction() and hasText("Mira")).assertExists()
+        compose.onNode(hasSetTextAction() and hasText("Station")).assertExists()
+        compose.onNodeWithText("first aid").assertIsSelected()
+        compose.onNodeWithText("Available to help").performScrollTo().performClick()
+        assertNull(saved)
+        compose.onNodeWithText("Save availability").performClick()
+        assertFalse(saved!!.available)
+        assertEquals(draft.name, saved!!.name); assertEquals(draft.area, saved!!.area)
+        assertEquals(draft.helpType, saved!!.helpType)
+        assertFalse(saved!!.publicSharing); assertTrue(saved!!.cloudConsent)
+        compose.onNodeWithText("Requests").performClick()
+        compose.onNode(hasText("Offer help") and hasClickAction()).performClick()
+        compose.onNodeWithText("Update availability").performScrollTo().performClick()
+        compose.onNode(hasSetTextAction() and hasText("Mira")).assertExists()
+        compose.onNodeWithText("Available to help").performScrollTo().assertIsOff()
     }
 
     @Test
@@ -87,8 +126,9 @@ class GhostAppUiTest {
         compose.onNodeWithText("Saved requests").assertIsDisplayed()
         compose.onNodeWithText("Saved on this phone only").performScrollTo().assertIsDisplayed()
 
-        compose.onNodeWithText("Help status").performClick()
-        compose.onNodeWithText("Online receipt not confirmed").performScrollTo().assertIsDisplayed()
+        compose.onNode(hasText("Offer help") and hasClickAction()).performClick().assertIsSelected()
+        compose.onNodeWithText("Your volunteer availability").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Help status").assertDoesNotExist()
         compose.onNodeWithText("Assistance confirmed").assertDoesNotExist()
 
         compose.onNode(hasText("Connections") and hasClickAction()).performClick()
@@ -210,7 +250,9 @@ class GhostAppUiTest {
     @Test
     fun newUiKeepsVerifiedServerReceiptsAndGatewaySetupAccessible() {
         val report = FoundationPreviewFixtures.loaded.requests.single().copy(createdHere = true, cloudState = LocalCloudState.ACCEPTED)
-        val state = FoundationPreviewFixtures.loaded.copy(simulated = false, requests = listOf(report),
+        val queued = report.copy(requestId = org.ghost.domain.model.RequestId("33333333-3333-4333-8333-333333333333"),
+            cloudState = LocalCloudState.QUEUED, description = "Another SOS waiting for a gateway")
+        val state = FoundationPreviewFixtures.loaded.copy(simulated = false, requests = listOf(report, queued),
             mission = CloudCoordinationState(CloudCoordinationStatus.UPLOADED))
         val actions = LocalActions({}, { _, done -> done() }, { _, _ -> }, {}, {}, {},
             saveGateway = { _, _, done -> done() })
@@ -218,8 +260,10 @@ class GhostAppUiTest {
             local = LocalUiState(gateway = GatewayUiState(cloudKeyPinned = true)), actions = actions) } }
         compose.onNodeWithText("Requests").performClick()
         compose.onNodeWithText("Received by server · receipt verified. Help is not confirmed.").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("Help status").performClick()
-        compose.onNodeWithText("Received by server").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Waiting to be saved online by a phone with internet. Help is not confirmed.").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("How getting help works").performScrollTo().performClick()
+        compose.onNodeWithText("Each request below shows its own sharing and server receipt status.").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Help status").assertDoesNotExist()
         compose.onNodeWithText("Assistance confirmed").assertDoesNotExist()
         compose.onNode(hasText("Connections") and hasClickAction()).performClick()
         compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("Configure gateway"))

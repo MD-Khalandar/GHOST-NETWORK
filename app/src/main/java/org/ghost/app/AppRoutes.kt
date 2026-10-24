@@ -4,7 +4,7 @@ package org.ghost.app
 enum class AppRoute {
     HOME,
     REQUESTS,
-    MISSION,
+    OFFER_HELP,
     NETWORK,
 }
 

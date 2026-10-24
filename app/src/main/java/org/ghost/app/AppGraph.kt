@@ -52,7 +52,7 @@ class AppGraph(application: Application) : AndroidViewModel(application) {
     val local: StateFlow<LocalUiState> = combine(repository.observeDraft(), operation, nearby.state, exchange.identities, exchange.message) {
         draft, state, network, identities, message -> state.copy(draft = draft, network = network, peerIdentities = identities, exchangeStatus = message)
     }.combine(gateway.state) { state, cloud -> state.copy(gateway = cloud) }
-        .combine(repository.resources.observeSummaries()) { state, resources -> state.copy(resources = resources) }
+        .combine(repository.resources.observeSummaries()) { state, resources -> state.copy(resources = resources, resourcesLoaded = true) }
         .combine(exchange.topology) { state, topology -> state.copy(topology = topology) }
         .combine(internet) { state, status -> state.copy(topology = state.topology.copy(
             localCapabilities = state.topology.localCapabilities.copy(internet = status))) }

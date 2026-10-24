@@ -21,16 +21,15 @@ import org.ghost.feature.foundation.FoundationState
 import org.ghost.feature.foundation.DeviceTrustState
 import org.ghost.feature.home.HomeScreen
 import org.ghost.feature.home.SosFormDialog
-import org.ghost.feature.home.ResourceFormDialog
+import org.ghost.feature.home.OfferHelpScreen
 import org.ghost.domain.model.SosDraft
-import org.ghost.feature.mission.MissionScreen
 import org.ghost.feature.network.NetworkScreen
 import org.ghost.feature.requests.RequestsScreen
 
 private val AppRoute.displayTitle: String get() = when (this) {
     AppRoute.HOME -> "Home"
     AppRoute.REQUESTS -> "Requests"
-    AppRoute.MISSION -> "Help status"
+    AppRoute.OFFER_HELP -> "Offer help"
     AppRoute.NETWORK -> "Connections"
 }
 
@@ -40,7 +39,6 @@ fun GhostApp(state: FoundationState, onRetry: () -> Unit, trust: DeviceTrustStat
              local: LocalUiState = LocalUiState(), actions: LocalActions? = null) {
     var route by rememberSaveable { mutableStateOf(AppRoute.HOME) }
     var showSosPreview by rememberSaveable { mutableStateOf(false) }
-    var showHelp by rememberSaveable { mutableStateOf(false) }
     val savedScreens = rememberSaveableStateHolder()
     val previewDraft = remember { SosDraft() }
     BackHandler(route != AppRoute.HOME) { route = AppRoute.HOME }
@@ -86,7 +84,7 @@ fun GhostApp(state: FoundationState, onRetry: () -> Unit, trust: DeviceTrustStat
                     val icon = when (destination) {
                         AppRoute.HOME -> GhostIcons.Home
                         AppRoute.REQUESTS -> GhostIcons.Requests
-                        AppRoute.MISSION -> GhostIcons.Mission
+                        AppRoute.OFFER_HELP -> GhostIcons.OfferHelp
                         AppRoute.NETWORK -> GhostIcons.Network
                     }
                     NavigationBarItem(selected = route == destination, onClick = { route = destination },
@@ -100,14 +98,13 @@ fun GhostApp(state: FoundationState, onRetry: () -> Unit, trust: DeviceTrustStat
             val modifier = Modifier.semantics { paneTitle = route.displayTitle }
             when (route) {
                 AppRoute.HOME -> HomeScreen(state, { showSosPreview = true }, { route = AppRoute.REQUESTS },
-                    { route = AppRoute.NETWORK }, onRetry, modifier, insets, local, actions, onOfferHelp = { showHelp = true })
+                    { route = AppRoute.NETWORK }, onRetry, modifier, insets, local, actions, onOfferHelp = { route = AppRoute.OFFER_HELP })
                 AppRoute.REQUESTS -> RequestsScreen(state, onRetry, modifier, insets)
-                AppRoute.MISSION -> MissionScreen(state, onRetry, modifier, insets)
+                AppRoute.OFFER_HELP -> OfferHelpScreen(local, actions, modifier, insets, state.simulated)
                 AppRoute.NETWORK -> NetworkScreen(state, onRetry, modifier, insets, trust, onRetryIdentity, local, actions)
             }
         }
     }
-    if (showHelp) ResourceFormDialog(local, actions, onClose = { showHelp = false })
     if (showSosPreview) {
         val draft = local.draft ?: if (actions == null) previewDraft else null
         if (draft == null) AlertDialog(onDismissRequest = { showSosPreview = false }, title = { Text("Opening your request…") },

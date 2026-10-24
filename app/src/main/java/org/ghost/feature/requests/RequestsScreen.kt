@@ -4,7 +4,10 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
+import androidx.compose.material3.TextButton
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import org.ghost.design.*
@@ -14,11 +17,23 @@ import org.ghost.domain.model.LocalCloudState
 @Composable
 fun RequestsScreen(state: FoundationState, onRetry: () -> Unit, modifier: Modifier = Modifier,
                    contentPadding: PaddingValues = PaddingValues(0.dp)) {
+    var showExplanation by rememberSaveable { mutableStateOf(false) }
     GhostScreen("Saved requests", "Requests for help saved on this phone.", modifier, contentPadding, state.simulated) {
         when {
             state.loading -> item { LoadingCard() }
             state.failed -> item { ErrorCard(onRetry) }
             else -> {
+                item("help-explanation") {
+                    TextButton({ showExplanation = !showExplanation }, modifier = Modifier.heightIn(min = 48.dp)) {
+                        Text(if (showExplanation) "Hide explanation" else "How getting help works")
+                    }
+                }
+                if (showExplanation) item("help-policy") {
+                    InfoCard("How getting help works", "Each request below shows its own sharing and server receipt status.") {
+                        Text("A server receipt confirms storage. AI suggestions are reviewed in the web dashboard; helper acceptance and confirmed assistance are not available yet.")
+                        Text("Nearby phones can pass requests along without internet. Saving online needs a configured gateway with internet and your online-sharing permission.")
+                    }
+                }
                 if (state.requests.isEmpty()) item("empty") {
                     InfoCard("No requests yet", "Ask for help from Home, or connect to GHOST to receive requests from nearby phones.")
                 }
