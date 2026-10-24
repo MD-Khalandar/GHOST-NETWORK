@@ -11,6 +11,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.*
 import org.ghost.contracts.v1.ConsentV1
 import org.ghost.contracts.v1.SosCreateV1
+import org.ghost.contracts.v1.CloudAckV1
 import org.ghost.domain.model.*
 import org.ghost.protocol.ProtocolException
 import org.ghost.protocol.WireCodec
@@ -39,7 +40,7 @@ class LocalSosRepositoryTest {
     }
     private fun open(name: String = "test-${UUID.randomUUID()}.db"): GhostDatabase {
         names.add(name)
-        return Room.databaseBuilder(context, GhostDatabase::class.java, name).addMigrations(GhostDatabase.MIGRATION_1_2, GhostDatabase.MIGRATION_2_3)
+        return Room.databaseBuilder(context, GhostDatabase::class.java, name).addMigrations(GhostDatabase.MIGRATION_1_2, GhostDatabase.MIGRATION_2_3, GhostDatabase.MIGRATION_3_4)
             .setJournalMode(RoomDatabase.JournalMode.TRUNCATE).build().also { databases.add(it) }
     }
     private fun payload(public: Boolean = true, id: String = UUID.randomUUID().toString()) = SosCreatePayload(
@@ -280,5 +281,51 @@ class LocalSosRepositoryTest {
         assertArrayEquals(receipt, upgradedDb.sos().delivery(row.packetId, b.nodeId.value)!!.receiptFromPeer)
         assertTrue(upgraded.outgoing(b.nodeId.value).isEmpty())
         assertEquals(row.packetId, upgraded.outgoing(c.nodeId.value).single().packetId)
+    }
+
+    @Test fun cloudReturnRejectsForgeriesAndStopsAfterFourRadioTransfersOrExpiry() = runBlocking {
+        val origin = key(); val cloud = key(); val gatewayKey = key(); val pin = cloud.publicKey.encoded
+        val source = LocalSosRepository(open(), { origin }, { time })
+        val gateway = LocalSosRepository(open(), { gatewayKey }, { time })
+        source.publish(payload().copy(consent = Consent(true, true))).getOrThrow()
+        val report = source.outgoing(gatewayKey.nodeId.value).single()
+        gateway.receiveSos(WireCodec.decode(report.wire), origin.nodeId.value)
+        val ack = SignedPackets.create(cloud, 7, CloudAckV1.newBuilder().setOriginEventId(report.eventId)
+            .setStatusValue(1).setCloudRevision(1).setReceivedAtMs(time).build().toByteString(), time,
+            destination = origin.nodeId.value, ttl = 60000)
+        val wrongDestination = SignedPackets.create(cloud, 7, CloudAckV1.newBuilder().setOriginEventId(report.eventId)
+            .setStatusValue(1).setCloudRevision(1).setReceivedAtMs(time).build().toByteString(), time,
+            destination = gatewayKey.nodeId.value).copy(relay = RelayMetadata(3, 1, gatewayKey.nodeId))
+        try { source.receiveCloudReturn(wrongDestination, gatewayKey.nodeId.value, pin); fail("Acknowledgement for another phone accepted") }
+        catch (_: IllegalArgumentException) { }
+        assertEquals(LocalCloudState.QUEUED, source.observeRequests().first().single().cloudState)
+        gateway.acceptCloudAck(report.eventId, ack, pin, 1)
+        val keys = List(4) { key() }; val dbs = List(4) { open() }
+        val relays = dbs.mapIndexed { i, db -> LocalSosRepository(db, { keys[i] }, { time }) }
+        val first = WireCodec.decode(gateway.outgoingCloudReturns(keys[0].nodeId.value).single().wire)
+        try { relays[0].receiveCloudReturn(first.copy(signature = "AA"), gatewayKey.nodeId.value, pin); fail("Forged return accepted") }
+        catch (_: ProtocolException) { }
+        try { relays[0].receiveCloudReturn(first, gatewayKey.nodeId.value, key().publicKey.encoded); fail("Wrong cloud key accepted") }
+        catch (_: ProtocolException) { }
+        try { relays[0].receiveCloudReturn(first, keys[3].nodeId.value, pin); fail("Wrong last hop accepted") }
+        catch (_: IllegalArgumentException) { }
+        assertEquals(0, dbs[0].sos().countReturns())
+        var sender = gateway; var senderKey = gatewayKey
+        for (i in 0..3) {
+            val packet = WireCodec.decode(sender.outgoingCloudReturns(keys[i].nodeId.value).single().wire)
+            assertEquals(ack.immutableEnvelopeBytesBase64, packet.immutableEnvelopeBytesBase64)
+            assertEquals(ack.signature, packet.signature)
+            assertEquals(RelayMetadata(3 - i, i + 1, senderKey.nodeId), packet.relay)
+            val receipt = relays[i].receiveCloudReturn(packet, senderKey.nodeId.value, pin)
+            val id = org.ghost.contracts.v1.ImmutableEnvelopeV1.parseFrom(WireCodec.unbase64(ack.immutableEnvelopeBytesBase64, 24576)).packetId
+            sender.receiveReceipt(WireCodec.decode(receipt), keys[i].nodeId.value, setOf(id))
+            assertTrue(sender.outgoingCloudReturns(keys[i].nodeId.value).isEmpty())
+            assertEquals(0, dbs[i].sos().count())
+            sender = relays[i]; senderKey = keys[i]
+        }
+        assertTrue(sender.outgoingCloudReturns(origin.nodeId.value).isEmpty())
+        val expired = LocalSosRepository(dbs[0], { keys[0] }, { time + 60000 })
+        assertTrue(expired.outgoingCloudReturns(origin.nodeId.value).isEmpty())
+        assertEquals(0, dbs[0].sos().countReturns())
     }
 }

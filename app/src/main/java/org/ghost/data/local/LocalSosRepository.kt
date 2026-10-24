@@ -158,9 +158,87 @@ class LocalSosRepository(
             require(row.publicSharing && row.cloudConsent)
             require(verified.envelope.destination.kindValue == 2 &&
                 verified.envelope.destination.nodeId.toByteArray().contentEquals(WireCodec.bytes(row.sender)))
-            dao.saveCloudAck(eventId, WireCodec.encode(packet))
+            storeCloudReturn(verified)
         }
         ack.cloudRevision
+    }
+
+    /** Seed the new return queue from acknowledgements saved by earlier app versions. */
+    suspend fun restoreCloudReturns(cloudKey: ByteArray) = withContext(Dispatchers.IO) {
+        for (row in dao.storedCloudAcks()) {
+            try {
+                val verified = PacketValidator(trustedCloudPublicKey = cloudKey).verify(WireCodec.decode(row.cloudAck!!), now())
+                db.withTransaction { storeCloudReturn(verified) }
+            } catch (cancelled: CancellationException) { throw cancelled }
+              catch (_: ProtocolException) { /* Expired or no longer pinned acknowledgements are not relayed. */ }
+        }
+    }
+
+    fun observeCloudReturns(): Flow<List<String>> = dao.observeReturns(now())
+
+    suspend fun outgoingCloudReturns(peerNode: String, excluded: Set<String> = emptySet()): List<CloudReturnRow> = withContext(Dispatchers.IO) {
+        dao.pruneReturns(now())
+        dao.outgoingReturns(now(), identity().nodeId.value, peerNode).asSequence()
+            .filterNot { it.packetId in excluded }.mapNotNull { prepareReturn(it, peerNode) }.take(20).toList()
+    }
+
+    suspend fun prepareCloudReturn(packetId: String, peerNode: String): CloudReturnRow? = withContext(Dispatchers.IO) {
+        if (dao.returnDelivery(packetId, peerNode) != null) return@withContext null
+        dao.cloudReturn(packetId)?.let { prepareReturn(it, peerNode) }
+    }
+
+    private fun prepareReturn(row: CloudReturnRow, peerNode: String): CloudReturnRow? {
+        val packet = WireCodec.decode(row.wire)
+        val localNode = identity().nodeId
+        if (row.expiresAt <= now() || row.destination == localNode.value || peerNode == localNode.value ||
+            packet.relay.remainingHops == 0 || packet.relay.previousNodeId?.value == peerNode) return null
+        return row.copy(wire = WireCodec.encode(packet.copy(relay = RelayMetadata(
+            packet.relay.remainingHops - 1, packet.relay.hopCount + 1, localNode))))
+    }
+
+    /** No original SOS is required to carry an authenticated return toward its destination. */
+    suspend fun receiveCloudReturn(packet: WirePacket, peerNode: String, cloudKey: ByteArray): ByteArray = withContext(Dispatchers.IO) {
+        val verified = PacketValidator(trustedCloudPublicKey = cloudKey).verify(packet, now())
+        require(packet.relay.hopCount > 0 && packet.relay.previousNodeId?.value == peerNode)
+        val local = identity()
+        require(peerNode != local.nodeId.value)
+        db.withTransaction {
+            val stored = storeCloudReturn(verified)
+            val delivery = dao.returnDelivery(stored.packetId, peerNode) ?: CloudReturnDeliveryRow(stored.packetId, peerNode)
+            val cached = delivery.receiptToPeer?.takeIf {
+                org.ghost.contracts.v1.ImmutableEnvelopeV1.parseFrom(WireCodec.unbase64(WireCodec.decode(it).immutableEnvelopeBytesBase64, PacketValidator.MAX_ENVELOPE)).expiresAtMs > now()
+            }
+            val receipt = cached ?: WireCodec.encode(SignedPackets.create(local, 12, DeliveryReceiptV1.newBuilder()
+                .setPacketId(stored.packetId).setRecipientNodeId(ByteString.copyFrom(WireCodec.bytes(local.nodeId.value)))
+                .setReceiptTypeValue(1).setObservedAtMs(now()).build().toByteString(), now(), destination = peerNode))
+            dao.saveReturnDelivery(delivery.copy(receiptToPeer = receipt))
+            receipt
+        }
+    }
+
+    /** Called inside the same transaction as the local projection and hop receipt. */
+    private suspend fun storeCloudReturn(verified: VerifiedPacket): CloudReturnRow {
+        val e = verified.envelope
+        require(e.kindValue == 7 && e.destination.kindValue == 2)
+        val ack = verified.payload as CloudAckV1
+        require(ack.statusValue in 1..2)
+        val destination = SigningIdentity.hex(e.destination.nodeId.toByteArray())
+        val report = dao.event(ack.originEventId)
+        if (report != null) require(report.publicSharing && report.cloudConsent && report.sender == destination)
+        require(dao.packet(e.packetId) == null && dao.event(e.eventId) == null) { "Conflicting packet identifier." }
+        dao.pruneReturns(now())
+        val existing = dao.cloudReturn(e.packetId) ?: dao.cloudReturnEvent(e.eventId)
+        val stored = if (existing != null) {
+            require(WireCodec.decode(existing.wire).immutableEnvelopeBytesBase64 == verified.packet.immutableEnvelopeBytesBase64) { "Conflicting cloud acknowledgement." }
+            existing
+        } else {
+            require(dao.countReturns() < 1000) { "Return queue full." }
+            CloudReturnRow(e.packetId, e.eventId, ack.originEventId, destination, e.expiresAtMs, WireCodec.encode(verified.packet)).also {
+                check(dao.insertReturn(it) != -1L)
+            }
+        }
+        if (report != null) dao.saveCloudAck(ack.originEventId, stored.wire)
+        return stored
     }
 
     /** Returns a signed persistence receipt only after the report and receipt have committed. */
@@ -180,6 +258,7 @@ class LocalSosRepository(
             .setRecipientNodeId(ByteString.copyFrom(WireCodec.bytes(key.nodeId.value))).setReceiptTypeValue(1).setObservedAtMs(now()).build().toByteString(),
             now(), destination = peerNode)
         db.withTransaction {
+            require(dao.cloudReturn(result.envelope.packetId) == null && dao.cloudReturnEvent(result.envelope.eventId) == null) { "Conflicting packet identifier." }
             val existing = dao.event(result.envelope.eventId) ?: dao.packet(result.envelope.packetId) ?: dao.request(p.requestId)
             if (existing != null) {
                 require(existing.publicSharing && WireCodec.decode(existing.wire).immutableEnvelopeBytesBase64 == packet.immutableEnvelopeBytesBase64) { "Conflicting report identifier." }
@@ -212,17 +291,23 @@ class LocalSosRepository(
         require(envelope.kindValue == 12)
         val p = DeliveryReceiptV1.parseFrom(envelope.payloadBytes)
         val original = dao.packet(p.packetId)
+        val returned = dao.cloudReturn(p.packetId)
         val key = identity()
-        require(original?.publicSharing == true && p.packetId in sentPacketIds && p.receiptTypeValue == 1) { "Receipt does not match a packet sent to this peer." }
+        require((original?.publicSharing == true || returned != null) && p.packetId in sentPacketIds && p.receiptTypeValue == 1) { "Receipt does not match a packet sent to this peer." }
         val valid = PacketValidator(lookup = AuthorityLookup { kind, id, _ ->
             if (kind == AuthorityKind.RECEIPT && id == p.packetId) Authority(peerNode) else null
         }).verify(packet, now())
         require(valid.envelope.destination.kindValue == 2 && valid.envelope.destination.nodeId.toByteArray().contentEquals(WireCodec.bytes(key.nodeId.value))) { "Receipt addressed to another phone." }
         db.withTransaction {
-            val delivery = dao.delivery(p.packetId, peerNode) ?: NeighborDeliveryRow(p.packetId, peerNode)
             val bytes = WireCodec.encode(packet)
-            dao.saveDelivery(delivery.copy(receiptFromPeer = bytes))
-            if (original.owned) dao.markReceived(p.packetId, peerNode, bytes)
+            if (returned != null) {
+                val delivery = dao.returnDelivery(p.packetId, peerNode) ?: CloudReturnDeliveryRow(p.packetId, peerNode)
+                dao.saveReturnDelivery(delivery.copy(receiptFromPeer = bytes))
+            } else {
+                val delivery = dao.delivery(p.packetId, peerNode) ?: NeighborDeliveryRow(p.packetId, peerNode)
+                dao.saveDelivery(delivery.copy(receiptFromPeer = bytes))
+                if (original!!.owned) dao.markReceived(p.packetId, peerNode, bytes)
+            }
         }
     }
 }

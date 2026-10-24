@@ -29,9 +29,11 @@ Configured Android gateways upload cloud-consented SOS reports while joined and
 foregrounded, retry failures, and persist verified cloud acknowledgements in Room.
 Gateway tokens use Keystore-encrypted settings. Local HTTP tests pass; deployed
 phone-to-cloud behavior and gateway credential persistence need device testing.
+Cloud acknowledgements now return through the mesh with their own durable queue,
+expiry and four-transfer budget. The original phone shows verified server receipt.
+Return routing has host exchange/restart tests; physical cloud-to-mesh testing remains.
 
-Next: return cloud acknowledgements through the mesh → dashboard
-and resource matching → approval, owner decisions and outage recovery.
+Next: dashboard and resource matching → approval, owner decisions and outage recovery.
 
 Keep public/cloud consent separate, preserve signed bytes, reject forged/duplicate
 events, and keep cloud/provider secrets server-side. Queued, received and confirmed are distinct.

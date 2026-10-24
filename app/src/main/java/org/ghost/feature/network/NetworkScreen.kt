@@ -55,7 +55,7 @@ fun NetworkScreen(state: FoundationState, onRetry: () -> Unit, modifier: Modifie
                 item("retry") { TextButton(onClick = { actions?.retrySends?.invoke() }, enabled = actions != null, modifier = Modifier.heightIn(min = 48.dp)) { Text("Retry queued sends") } }
                 item("sharing") {
                     InfoCard("Cloud gateway", local.gateway.message) {
-                        Text("Only SOS reports with cloud consent are uploaded. Signed server acknowledgements are saved on this gateway; return delivery to offline phones is next.")
+                        Text("Only SOS reports with cloud consent are uploaded. Signed server acknowledgements return through the mesh when phones meet. Server receipt does not mean assistance is arranged.")
                         TextButton({ setup = true }, enabled = actions?.saveGateway != null, modifier = Modifier.heightIn(min = 48.dp)) {
                             Text(if (local.gateway.configured) "Edit gateway setup" else "Configure gateway")
                         }

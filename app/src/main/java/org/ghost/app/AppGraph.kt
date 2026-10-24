@@ -20,15 +20,15 @@ import org.ghost.security.SigningIdentity
 
 class AppGraph(application: Application) : AndroidViewModel(application) {
     private val db = Room.databaseBuilder(application, GhostDatabase::class.java, "ghost.db")
-        .addMigrations(GhostDatabase.MIGRATION_1_2, GhostDatabase.MIGRATION_2_3).build()
+        .addMigrations(GhostDatabase.MIGRATION_1_2, GhostDatabase.MIGRATION_2_3, GhostDatabase.MIGRATION_3_4).build()
     private val identity by lazy { AndroidSigningIdentity().loadOrCreate() }
     val nearby = NearbyAdapter(application, viewModelScope)
     val repository = LocalSosRepository(db, { identity })
-    private val exchange = DirectExchange(viewModelScope, nearby, repository, { identity })
     private val gatewaySettings = GatewayConfigStore(application, BuildConfig.DEBUG)
     private val cloudKey = runCatching {
         BuildConfig.CLOUD_PUBLIC_KEY.takeIf { it.isNotEmpty() }?.let { WireCodec.unbase64(it, 91).also(SigningIdentity::decodePublicKey) }
     }.getOrNull()
+    private val exchange = DirectExchange(viewModelScope, nearby, repository, { identity }, cloudKey = cloudKey)
     private val gatewayClient = HttpGatewayClient { gatewaySettings.config.value }
     private val gateway = GatewaySync(viewModelScope, gatewaySettings.config, nearby.state.map { it.active }, gatewayClient, repository, cloudKey)
     val dependencies = GhostAppDependencies(nearby, gatewayClient, repository, UnavailableOffers, UploadCoordinationState(repository))
@@ -42,6 +42,11 @@ class AppGraph(application: Application) : AndroidViewModel(application) {
         .stateIn(viewModelScope, SharingStarted.Eagerly, LocalUiState())
 
     init {
+        viewModelScope.launch {
+            try { cloudKey?.let { repository.restoreCloudReturns(it) } }
+            catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { operation.update { it.copy(error = "Saved server acknowledgements could not be queued. Check storage and retry.") } }
+        }
         viewModelScope.launch {
             try { gatewaySettings.load() }
             catch (cancelled: CancellationException) { throw cancelled }
@@ -121,7 +126,7 @@ class AppGraph(application: Application) : AndroidViewModel(application) {
     private fun retrySends() {
         exchange.retry()
         viewModelScope.launch {
-            try { repository.retryCloudUploads(); gateway.retry() }
+            try { repository.retryCloudUploads(); cloudKey?.let { repository.restoreCloudReturns(it) }; gateway.retry(); exchange.flush() }
             catch (cancelled: CancellationException) { throw cancelled }
             catch (_: Exception) { operation.update { it.copy(error = "Cloud queue could not be reopened. Try again.") } }
         }

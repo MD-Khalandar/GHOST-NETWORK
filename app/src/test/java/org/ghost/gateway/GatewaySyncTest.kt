@@ -45,7 +45,7 @@ class GatewaySyncTest {
     private fun open(name: String = "gateway-${UUID.randomUUID()}.db"): GhostDatabase {
         names.add(name)
         return Room.databaseBuilder(context, GhostDatabase::class.java, name)
-            .addMigrations(GhostDatabase.MIGRATION_1_2, GhostDatabase.MIGRATION_2_3).build().also { databases.add(it) }
+            .addMigrations(GhostDatabase.MIGRATION_1_2, GhostDatabase.MIGRATION_2_3, GhostDatabase.MIGRATION_3_4).build().also { databases.add(it) }
     }
     private suspend fun publish(repo: LocalSosRepository, public: Boolean = true, cloud: Boolean = true) = repo.publish(
         SosCreatePayload(RequestId(UUID.randomUUID().toString()), SosCategory.WATER, "Need water", consent = Consent(public, cloud))).getOrThrow()
@@ -107,14 +107,18 @@ class GatewaySyncTest {
         assertEquals(WireCodec.decode(expected.wire).signature, uploads.single().packets.single().signature)
         assertEquals("sos-${expected.packetId}", uploads.single().idempotencyKey)
         assertTrue(runBlocking { gateway.cloudOutgoing().isEmpty() })
-        assertTrue(runBlocking { source.observeRequests().first().none { it.cloudState == LocalCloudState.ACCEPTED } }) // Return routing is a separate step.
+        assertTrue(runBlocking { source.observeRequests().first().none { it.cloudState == LocalCloudState.ACCEPTED } }) // No radio connection exists in this HTTP-only test.
         val receipt = runBlocking { db.sos().event(expected.eventId)!!.cloudAck!! }
+        // Earlier app versions saved only reports.cloudAck, without a return queue.
+        db.openHelper.writableDatabase.execSQL("DELETE FROM cloud_returns")
         workerScope.cancel(); runCurrent(); db.close(); databases.remove(db)
         val restoredDb = open(name)
         val restored = LocalSosRepository(restoredDb, { gatewayKey }, { time + 1000 })
+        runBlocking { restored.restoreCloudReturns(cloud.publicKey.encoded) }
         assertArrayEquals(receipt, runBlocking { restoredDb.sos().event(expected.eventId)!!.cloudAck })
         assertArrayEquals(expected.wire, runBlocking { restoredDb.sos().event(expected.eventId)!!.wire })
         assertTrue(runBlocking { restored.cloudOutgoing().isEmpty() })
+        assertEquals(1, runBlocking { restored.outgoingCloudReturns(origin.nodeId.value).size })
         assertEquals(LocalCloudState.ACCEPTED, runBlocking { restored.observeRequests().first().first { it.requestId.value == expected.requestId }.cloudState })
     }
 

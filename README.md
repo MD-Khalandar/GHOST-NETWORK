@@ -64,11 +64,14 @@ signed receipt before the next report goes out on that link. Missing receipts
 trigger up to three attempts per connection; **Retry queued sends** resumes them
 without forgetting saved receipts. Requests shows relay acknowledgements and
 the remaining transfer budget. Expired reports are never queued for another send.
-This relay handles public SOS reports and neighbor receipts. Returning cloud
-acknowledgements through the mesh is upcoming work.
+The relay also returns cloud-signed acknowledgements toward the original phone,
+using a separate four-transfer budget and the acknowledgement's own expiry.
+Phones can carry a return even without the original SOS. Signed bytes, hop
+receipts and queued returns survive restarts; forwarding stops at the destination.
 
 The server public signing key can be pinned with
-`-PghostCloudPublicKey=<base64url-SPKI>`. Empty configuration rejects cloud results.
+`-PghostCloudPublicKey=<base64url-SPKI>`. Every phone carrying or receiving cloud
+acknowledgements needs this same trusted key. Empty configuration rejects cloud results.
 Shared wire definitions live in `contracts/ghost.proto`; signature vectors use
 public test-only keys, never deployment credentials.
 
@@ -81,10 +84,11 @@ APK. Normal mesh phones need no gateway setup.
 Join the mesh and enable **Allow cloud coordination** when sending an SOS.
 While open, the configured gateway uploads eligible reports, including received
 reports, and retries temporary failures. **Received by server** appears only after
-a matching pinned signature is saved in Room. The offline sender cannot see this
-until return routing is implemented. Use HTTPS; debug builds also allow HTTP for
-LAN/emulator testing (`10.0.2.2` reaches the emulator host). This upload path has
-local HTTP/storage/signature tests; a deployed phone-to-cloud test is still needed.
+a matching pinned signature is saved in Room. An offline sender sees it after
+the signed acknowledgement reaches their phone through the mesh. Use HTTPS;
+debug builds also allow HTTP for LAN/emulator testing (`10.0.2.2` reaches the
+emulator host). Upload and return paths have host HTTP/storage/exchange tests;
+deployed phone-to-cloud-to-mesh testing is still needed.
 
 ## Server
 

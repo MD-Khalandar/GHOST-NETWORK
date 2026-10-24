@@ -9,11 +9,13 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.test.*
 import org.ghost.contracts.v1.ImmutableEnvelopeV1
+import org.ghost.contracts.v1.CloudAckV1
 import org.ghost.data.local.GhostDatabase
 import org.ghost.data.local.LocalSosRepository
 import org.ghost.domain.model.*
 import org.ghost.protocol.PacketValidator
 import org.ghost.protocol.WireCodec
+import org.ghost.protocol.SignedPackets
 import org.ghost.security.SigningIdentity
 import org.ghost.transport.api.*
 import org.junit.After
@@ -37,6 +39,9 @@ class DirectExchangeTest {
     private var dropReceipts = 0
     private var stallTarget: String? = null
     private val baseTime = 1792860000000L
+    private var wallOffset = 0L
+    private fun newKey(): SigningIdentity = KeyPairGenerator.getInstance("EC").apply { initialize(ECGenParameterSpec("secp256r1")) }
+        .generateKeyPair().let { SigningIdentity(it.private, it.public) }
 
     private inner class Radio(val name: String) : GhostTransport {
         override val id = "test-radio"
@@ -64,18 +69,19 @@ class DirectExchangeTest {
         }
     }
     private inner class Phone(val key: SigningIdentity, val db: GhostDatabase, val repo: LocalSosRepository,
-                              val radio: Radio, val engine: DirectExchange)
+                              val radio: Radio, val engine: DirectExchange, val scope: CoroutineScope)
 
-    private fun TestScope.phone(name: String, databaseName: String = "mesh-${UUID.randomUUID()}.db", key: SigningIdentity? = null): Phone {
-        val signingKey = key ?: KeyPairGenerator.getInstance("EC").apply { initialize(ECGenParameterSpec("secp256r1")) }
-            .generateKeyPair().let { SigningIdentity(it.private, it.public) }
+    private fun TestScope.phone(name: String, databaseName: String = "mesh-${UUID.randomUUID()}.db", key: SigningIdentity? = null,
+                                cloudKey: ByteArray? = null): Phone {
+        val signingKey = key ?: newKey()
         names.add(databaseName)
         val db = Room.databaseBuilder(context, GhostDatabase::class.java, databaseName)
-            .addMigrations(GhostDatabase.MIGRATION_1_2, GhostDatabase.MIGRATION_2_3).build().also { databases.add(it) }
-        val repo = LocalSosRepository(db, { signingKey }, { baseTime + testScheduler.currentTime })
+            .addMigrations(GhostDatabase.MIGRATION_1_2, GhostDatabase.MIGRATION_2_3, GhostDatabase.MIGRATION_3_4).build().also { databases.add(it) }
+        val repo = LocalSosRepository(db, { signingKey }, { baseTime + wallOffset + testScheduler.currentTime })
         val radio = Radio(name)
-        val engine = DirectExchange(backgroundScope, radio, repo, { signingKey }, { baseTime + testScheduler.currentTime })
-        return Phone(signingKey, db, repo, radio, engine).also { nodes[name] = it }
+        val scope = CoroutineScope(backgroundScope.coroutineContext + Job(backgroundScope.coroutineContext[Job]))
+        val engine = DirectExchange(scope, radio, repo, { signingKey }, { baseTime + wallOffset + testScheduler.currentTime }, cloudKey)
+        return Phone(signingKey, db, repo, radio, engine, scope).also { nodes[name] = it }
     }
     private fun connect(a: String, b: String) {
         val first = nodes.getValue(a).radio; val second = nodes.getValue(b).radio
@@ -93,8 +99,8 @@ class DirectExchangeTest {
         }
         fail("Exchange did not reach the expected state: ${nodes.mapValues { it.value.engine.message.value }}")
     }
-    private fun Phone.publish(public: Boolean = true) = runBlocking { repo.publish(SosCreatePayload(
-        RequestId(UUID.randomUUID().toString()), SosCategory.WATER, "Need drinking water", consent = Consent(public, false))).getOrThrow() }
+    private fun Phone.publish(public: Boolean = true, cloud: Boolean = false) = runBlocking { repo.publish(SosCreatePayload(
+        RequestId(UUID.randomUUID().toString()), SosCategory.WATER, "Need drinking water", consent = Consent(public, cloud))).getOrThrow() }
     private fun sends(from: String, to: String, kind: Int = 1) = packets.count { it == Triple(from, to, kind) }
 
     @After fun close() { databases.forEach { it.close() }; names.forEach { context.deleteDatabase(it) } }
@@ -167,5 +173,65 @@ class DirectExchangeTest {
         advanceTimeBy(120000); runCurrent()
         assertEquals(0, runBlocking { b.db.sos().count() })
         assertEquals(1, sends("A", "B")); assertEquals(1, sends("A", "C"))
+    }
+
+    @Test fun cloudAcknowledgementSurvivesRestartAndReturnsViaAPhoneWithoutTheOriginalSos() = runTest {
+        val cloud = newKey(); val pin = cloud.publicKey.encoded
+        val a = phone("A", cloudKey = pin); val bName = "return-restart-${UUID.randomUUID()}.db"
+        val b = phone("B", bName, cloudKey = pin); val g = phone("G", cloudKey = pin)
+        connect("A", "B"); connect("B", "G")
+        until { b.engine.identities.value.size == 2 }
+        a.publish(cloud = true); a.engine.flush()
+        until { g.db.sos().count() == 1 }
+        val original = runBlocking { g.repo.cloudOutgoing().single() }
+        a.radio.disconnect("B"); runCurrent()
+        val ack = SignedPackets.create(cloud, 7, CloudAckV1.newBuilder().setOriginEventId(original.eventId)
+            .setStatusValue(1).setCloudRevision(1).setReceivedAtMs(baseTime).build().toByteString(), baseTime,
+            destination = a.key.nodeId.value, ttl = 86400000)
+        val ackId = ImmutableEnvelopeV1.parseFrom(WireCodec.unbase64(ack.immutableEnvelopeBytesBase64, 24576)).packetId
+        runBlocking { g.repo.acceptCloudAck(original.eventId, ack, pin, 1) }
+        until { b.db.sos().cloudReturn(ackId) != null && g.db.sos().returnDelivery(ackId, b.key.nodeId.value)?.receiptFromPeer != null }
+        assertEquals(LocalCloudState.QUEUED, runBlocking { a.repo.observeRequests().first().single().cloudState })
+
+        b.radio.disconnect("G"); b.scope.cancel(); runCurrent(); b.db.close(); databases.remove(b.db)
+        // The SOS has expired, but the independently expiring server acknowledgement can still return.
+        wallOffset += 21600001
+        val restored = phone("B", bName, b.key, pin)
+        val carrier = phone("X", cloudKey = pin)
+        connect("B", "X")
+        until { carrier.db.sos().cloudReturn(ackId) != null }
+        assertEquals(0, runBlocking { carrier.db.sos().count() })
+        connect("X", "A")
+        until { a.repo.observeRequests().first().single().cloudState == LocalCloudState.ACCEPTED &&
+            carrier.db.sos().returnDelivery(ackId, a.key.nodeId.value)?.receiptFromPeer != null }
+        val received = WireCodec.decode(runBlocking { a.db.sos().event(original.eventId)!!.cloudAck!! })
+        assertEquals(ack.immutableEnvelopeBytesBase64, received.immutableEnvelopeBytesBase64)
+        assertEquals(ack.signature, received.signature)
+        assertEquals(RelayMetadata(1, 3, carrier.key.nodeId), received.relay)
+        assertArrayEquals(original.wire, runBlocking { g.db.sos().event(original.eventId)!!.wire })
+        assertTrue(runBlocking { a.repo.outgoingCloudReturns(restored.key.nodeId.value).isEmpty() })
+        assertEquals(1, sends("G", "B", 7)); assertEquals(1, sends("B", "X", 7)); assertEquals(1, sends("X", "A", 7))
+        assertEquals(0, sends("X", "B", 7))
+    }
+
+    @Test fun aLostReturnReceiptRetriesTheSameCloudPacketAndReconnectDoesNotResendIt() = runTest {
+        val cloud = newKey(); val pin = cloud.publicKey.encoded
+        val a = phone("A", cloudKey = pin); val g = phone("G", cloudKey = pin)
+        connect("A", "G"); a.publish(cloud = true)
+        until { g.db.sos().count() == 1 && a.repo.observeRequests().first().single().localDelivery == LocalDelivery.RECEIVED_BY_PHONE }
+        val report = runBlocking { g.repo.cloudOutgoing().single() }
+        val ack = SignedPackets.create(cloud, 7, CloudAckV1.newBuilder().setOriginEventId(report.eventId)
+            .setStatusValue(1).setCloudRevision(1).setReceivedAtMs(baseTime).build().toByteString(), baseTime, destination = a.key.nodeId.value)
+        val id = ImmutableEnvelopeV1.parseFrom(WireCodec.unbase64(ack.immutableEnvelopeBytesBase64, 24576)).packetId
+        dropReceipts = 1
+        runBlocking { g.repo.acceptCloudAck(report.eventId, ack, pin, 1) }
+        until { a.repo.observeRequests().first().single().cloudState == LocalCloudState.ACCEPTED && sends("A", "G", 12) == 1 }
+        advanceTimeBy(20000); runCurrent()
+        until { g.db.sos().returnDelivery(id, a.key.nodeId.value)?.receiptFromPeer != null }
+        assertEquals(2, sends("G", "A", 7))
+        g.radio.disconnect("A"); runCurrent(); connect("A", "G")
+        until { a.engine.identities.value.isNotEmpty() && g.engine.identities.value.isNotEmpty() }
+        advanceTimeBy(20000); runCurrent()
+        assertEquals(2, sends("G", "A", 7))
     }
 }

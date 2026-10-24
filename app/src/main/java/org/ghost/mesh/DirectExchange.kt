@@ -20,7 +20,8 @@ import org.ghost.transport.api.*
  */
 class DirectExchange(private val scope: CoroutineScope, private val transport: GhostTransport,
     private val repository: LocalSosRepository, private val identity: () -> SigningIdentity,
-    private val now: () -> Long = System::currentTimeMillis) {
+    private val now: () -> Long = System::currentTimeMillis, private val cloudKey: ByteArray? = null) {
+    private data class Outgoing(val packetId: String, val wire: ByteArray, val cloudReturn: Boolean)
     private class Session(val scope: CoroutineScope, val startedAt: Long) {
         val challenge = ByteArray(32).also { SecureRandom().nextBytes(it) }
         var nodeId: String? = null
@@ -29,7 +30,7 @@ class DirectExchange(private val scope: CoroutineScope, private val transport: G
         val incoming = Channel<ByteArray>(16)
         val controls = Channel<WirePacket>(16)
         val pending = mutableListOf<WirePacket>()
-        val sent = mutableSetOf<String>()
+        val sent = mutableMapOf<String, Boolean>() // packet ID -> server return rather than SOS
         val confirmed = mutableSetOf<String>()
         val attempts = mutableMapOf<String, Int>()
         val lastAttempt = mutableMapOf<String, Long>()
@@ -65,6 +66,10 @@ class DirectExchange(private val scope: CoroutineScope, private val transport: G
         }
         scope.launch {
             repository.observeRequests().catch { mutableMessage.value = "Local storage unavailable. Relay is waiting." }
+                .collect { flush() }
+        }
+        scope.launch {
+            repository.observeCloudReturns().catch { mutableMessage.value = "Return queue unavailable. Saved acknowledgements will wait." }
                 .collect { flush() }
         }
         scope.launch {
@@ -169,7 +174,7 @@ class DirectExchange(private val scope: CoroutineScope, private val transport: G
         }
         val node = session.nodeId
         if (node == null) {
-            require(envelope.kindValue in setOf(1, 12) && session.pending.size < 4)
+            require(envelope.kindValue in setOf(1, 7, 12) && session.pending.size < 4)
             session.pending.add(packet); return
         }
         when (envelope.kindValue) {
@@ -183,12 +188,26 @@ class DirectExchange(private val scope: CoroutineScope, private val transport: G
                 flush()
             }
             12 -> {
-                repository.receiveReceipt(packet, node, session.sent.toSet())
+                repository.receiveReceipt(packet, node, session.sent.keys.toSet())
                 if (!current(peer, session)) return
                 val id = DeliveryReceiptV1.parseFrom(envelope.payloadBytes).packetId
                 session.confirmed.add(id)
                 session.receipts[id]?.complete(Unit)
-                mutableMessage.value = "Signed receipt received. The next phone saved the SOS."
+                mutableMessage.value = if (session.sent[id] == true) "Signed receipt received. The next phone saved the server acknowledgement."
+                    else "Signed receipt received. The next phone saved the SOS."
+            }
+            7 -> {
+                val pin = cloudKey
+                if (pin == null) { mutableMessage.value = "Cloud signing key is not configured. Server acknowledgement ignored."; return }
+                val receipt = repository.receiveCloudReturn(packet, node, pin)
+                if (!current(peer, session)) return
+                session.confirmed.add(envelope.packetId)
+                session.receipts[envelope.packetId]?.complete(Unit)
+                control(peer, session, WireCodec.decode(receipt))
+                mutableMessage.value = if (envelope.destination.nodeId.toByteArray().contentEquals(WireCodec.bytes(identity().nodeId.value)))
+                    "Received by server. The signed acknowledgement reached this phone."
+                    else "Signed server acknowledgement saved for relay to its destination."
+                flush()
             }
             else -> throw ProtocolException(Rejection.UNSUPPORTED_KIND)
         }
@@ -202,31 +221,44 @@ class DirectExchange(private val scope: CoroutineScope, private val transport: G
                 try {
                     val active = repository.activePacketIds()
                     if (!current(peer, session)) return@launch
-                    session.sent.retainAll(active); session.confirmed.retainAll(active)
+                    session.sent.keys.retainAll(active); session.confirmed.retainAll(active)
                     session.attempts.keys.retainAll(active); session.lastAttempt.keys.retainAll(active)
                     val excluded = session.confirmed + session.attempts.filterValues { it >= MAX_ATTEMPTS }.keys +
                         session.lastAttempt.filterValues { now() - it < RETRY_DELAY }.keys
-                    for (candidate in repository.outgoing(session.nodeId!!, excluded)) {
+                    val reports = repository.outgoing(session.nodeId!!, excluded).map { Outgoing(it.packetId, it.wire, false) }
+                    val returns = if (cloudKey != null) repository.outgoingCloudReturns(session.nodeId!!, excluded)
+                        .map { Outgoing(it.packetId, it.wire, true) } else emptyList()
+                    // Interleave return traffic with SOS so neither queue starves the other.
+                    val candidates = buildList {
+                        for (index in 0 until maxOf(reports.size, returns.size)) {
+                            reports.getOrNull(index)?.let(::add)
+                            returns.getOrNull(index)?.let(::add)
+                        }
+                    }
+                    for (candidate in candidates) {
                         if (!current(peer, session)) break
                         // Reload because a receipt or expiry can arrive during a batch.
-                        val row = repository.prepareOutgoing(candidate.packetId, session.nodeId!!) ?: continue
+                        val row = if (candidate.cloudReturn) repository.prepareCloudReturn(candidate.packetId, session.nodeId!!)
+                            ?.let { Outgoing(it.packetId, it.wire, true) }
+                        else repository.prepareOutgoing(candidate.packetId, session.nodeId!!)?.let { Outgoing(it.packetId, it.wire, false) }
+                        if (row == null) continue
                         if (!current(peer, session) || row.packetId in session.confirmed) continue
                         val completion = CompletableDeferred<Unit>()
                         session.receipts[row.packetId] = completion
-                        session.sent.add(row.packetId)
+                        session.sent[row.packetId] = row.cloudReturn
                         session.attempts[row.packetId] = (session.attempts[row.packetId] ?: 0) + 1
                         session.lastAttempt[row.packetId] = now()
                         try {
                             val result = transport.send(peer, WireCodec.decode(row.wire))
                             if (result.code == SendResultCode.ACCEPTED_BY_TRANSPORT) {
-                                repository.markSent(row.packetId)
+                                if (!row.cloudReturn) repository.markSent(row.packetId)
                                 // One unacknowledged report per neighbor bounds pressure.
                                 // The receive worker verifies and commits the receipt.
                                 if (withTimeoutOrNull(RETRY_DELAY) { completion.await(); true } != true)
-                                    mutableMessage.value = "Receipt pending. The SOS stays saved for retry."
-                            } else mutableMessage.value = "Send interrupted. The SOS stays saved for retry."
+                                    mutableMessage.value = "Receipt pending. The ${if (row.cloudReturn) "server acknowledgement" else "SOS"} stays saved for retry."
+                            } else mutableMessage.value = "Send interrupted. The packet stays saved for retry."
                             if (row.packetId !in session.confirmed && session.attempts.getValue(row.packetId) >= MAX_ATTEMPTS)
-                                mutableMessage.value = "Automatic retries paused for an SOS. Use Retry queued sends or reconnect."
+                                mutableMessage.value = "Automatic retries paused for ${if (row.cloudReturn) "a server acknowledgement" else "an SOS"}. Use Retry queued sends or reconnect."
                             if (result.code != SendResultCode.ACCEPTED_BY_TRANSPORT) break
                         } finally {
                             if (session.receipts[row.packetId] === completion) session.receipts.remove(row.packetId)
