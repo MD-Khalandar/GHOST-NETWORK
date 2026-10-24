@@ -9,9 +9,12 @@ export async function initializeAssistance(c: SqlConnection) {
     proposal_id UUID PRIMARY KEY, request_id UUID NOT NULL, resource_id TEXT NOT NULL,
     owner_node_id TEXT NOT NULL, requester_node_id TEXT NOT NULL, resource_kind INTEGER NOT NULL,
     resource_event_id UUID NOT NULL, request_event_id UUID NOT NULL, version INTEGER NOT NULL,
-    state INTEGER NOT NULL CHECK(state BETWEEN 1 AND 6), quantity INTEGER, unit TEXT NOT NULL,
+    state INTEGER NOT NULL CHECK(state BETWEEN 1 AND 7), quantity INTEGER, unit TEXT NOT NULL,
     deadline_ms BIGINT NOT NULL, data JSONB NOT NULL, operator_id TEXT NOT NULL,
     updated_at_ms BIGINT NOT NULL)`);
+  // Upgrade existing deployments without changing stored arrangements.
+  await c.query("ALTER TABLE assistance_cases DROP CONSTRAINT IF EXISTS assistance_cases_state_check");
+  await c.query("ALTER TABLE assistance_cases ADD CONSTRAINT assistance_cases_state_check CHECK(state BETWEEN 1 AND 7)");
   await c.query("CREATE INDEX IF NOT EXISTS assistance_resource ON assistance_cases(resource_id, state)");
   await c.query(`CREATE TABLE IF NOT EXISTS assistance_events (
     revision BIGSERIAL PRIMARY KEY, packet_id UUID UNIQUE NOT NULL, proposal_id UUID NOT NULL,
@@ -63,7 +66,7 @@ export async function reconcileAssistance(c: SqlConnection, signer: SigningIdent
 }
 export async function checkCommittedEdit(c: SqlConnection, resourceId: string, quantity: number | null, unit: string) {
   const {rows} = await c.query(`SELECT COALESCE(SUM(quantity),0) AS used,
-    COUNT(*) FILTER(WHERE unit<>$2) AS other_units FROM assistance_cases WHERE resource_id=$1 AND state IN(2,6)`,[resourceId,unit]);
+    COUNT(*) FILTER(WHERE unit<>$2) AS other_units FROM assistance_cases WHERE resource_id=$1 AND state IN(2,6,7)`,[resourceId,unit]);
   if (number(rows[0].used)>0 && (quantity===null || quantity<number(rows[0].used) || number(rows[0].other_units)>0))
     throw new AssistanceConflict("SUPPLIES_ALREADY_COMMITTED");
 }
@@ -79,15 +82,17 @@ export async function applyAssistanceDecision(c: SqlConnection, signer: SigningI
   }
   await reconcileAssistance(c,signer,now);
   const row = (await c.query("SELECT * FROM assistance_cases WHERE proposal_id=$1 FOR UPDATE",[p.proposal_id])).rows[0];
-  if (!row || row.owner_node_id!==e.sender_node_id.toString("hex")) throw new AssistanceConflict("INVALID_DECISION_OWNER");
-  if (number(row.version)!==p.version || (p.decision===3 ? row.state!==2 : row.state!==1)) throw new AssistanceConflict("INVITATION_NO_LONGER_CURRENT");
-  let state = p.decision===1 ? 2 : p.decision===2 ? 3 : 4;
-  let reason = p.decision===1 ? "Owner accepted; server confirmed commitment" : p.decision===2 ? "Owner declined" : "Owner cancelled the commitment";
+  if (!row || (p.decision===4 ? row.requester_node_id : row.owner_node_id)!==e.sender_node_id.toString("hex"))
+    throw new AssistanceConflict("INVALID_DECISION_OWNER");
+  if (number(row.version)!==p.version || (p.decision>=3 ? row.state!==2 : row.state!==1)) throw new AssistanceConflict("INVITATION_NO_LONGER_CURRENT");
+  let state = p.decision===1 ? 2 : p.decision===2 ? 3 : p.decision===4 ? 7 : 4;
+  let reason = p.decision===1 ? "Owner accepted; server confirmed commitment" : p.decision===2 ? "Owner declined" :
+    p.decision===4 ? "Requester confirmed this assistance received" : "Owner cancelled the commitment";
   if (state===2) {
     const current = (await c.query(`SELECT * FROM resource_events WHERE entity_id=$1 ORDER BY created_at_ms DESC,event_id DESC LIMIT 1`,[row.resource_id])).rows[0];
     const data=current?.data;
     const committed=(await c.query(`SELECT COALESCE(SUM(quantity),0) AS used,COUNT(*) FILTER(WHERE state=2) AS count FROM assistance_cases
-      WHERE resource_id=$1 AND state IN(2,6)`,[row.resource_id])).rows[0];
+      WHERE resource_id=$1 AND state IN(2,6,7)`,[row.resource_id])).rows[0];
     const usable=current && current.event_id===row.resource_event_id && number(current.expires_at_ms)>now &&
       (row.resource_kind===1 ? data.availability===1 && number(committed.count)===0 :
         (data.state??1)===1 && data.quantity!==null && data.unit===row.unit &&
@@ -118,7 +123,7 @@ export class AssistanceService {
         (p.resource_kind==="helper" ? data.availability!==1 : (data.state??1)!==1 || data.quantity===null || p.quantity===null)))
         throw new AssistanceConflict("PROPOSAL_STALE_OR_QUANTITY_UNKNOWN");
       const used=(await c.query(`SELECT COALESCE(SUM(quantity),0) AS used,COUNT(*) FILTER(WHERE state=2) AS count FROM assistance_cases
-        WHERE resource_id=$1 AND state IN(2,6)`,[p.resource_id])).rows[0];
+        WHERE resource_id=$1 AND state IN(2,6,7)`,[p.resource_id])).rows[0];
       if(approve && (p.resource_kind==="helper" ? number(used.count)>0 : number(p.quantity)>number(data.quantity)-number(used.used)))
         throw new AssistanceConflict("RESOURCE_ALREADY_COMMITTED");
       const payload={request_id:p.request_id,resource_id:p.resource_id,resource_kind:p.resource_kind==="helper"?1:2,

@@ -254,6 +254,14 @@ invitations and commitments in **Requests**; owners can **Cancel commitment** un
 while the connection service is active; download cursors and signed packets persist in Room.
 An owner tap, a server commitment and physical assistance are separate states.
 
+After receiving the agreed help, the requester can tap **Confirm help received**
+on that commitment under **Requests** and confirm. This completes only that
+arrangement; the SOS stays open until cancelled or marked resolved. The signed
+confirmation queues offline, and both phones/dashboard show **Help received
+(confirmed by requester)** after the server records it. Supplies count as used;
+volunteers become available again. All participating relay phones need this version.
+This records the requester's report, not independent evidence of delivery.
+
 Supply cards show last-known available/reserved/used quantities. Edits preserve
 committed amounts and units; offline phones may learn newer reservations later, so
 the server checks again. **Withdraw offer** stops new matching once delivered and

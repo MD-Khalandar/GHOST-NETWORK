@@ -56,8 +56,10 @@ class LocalAssistanceRepository(private val db:GhostDatabase,private val identit
             val rows=dao.proposal(id)
             val row=rows.firstOrNull{it.kind==16 && it.destination==local} ?: error("Invitation not found.")
             val e=envelope(row);val p=AssistanceStatusV1.parseFrom(e.payloadBytes)
-            require(p.version==version && p.deadlineMs>now() && SigningIdentity.hex(p.ownerNodeId.toByteArray())==local){"This invitation is no longer current."}
-            require(if(decision==3)p.state==2 else p.state==1)
+            require(decision in 1..4)
+            val actor=if(decision==4)p.requesterNodeId else p.ownerNodeId
+            require(p.version==version && p.deadlineMs>now() && SigningIdentity.hex(actor.toByteArray())==local){"This arrangement is no longer current or belongs to another person."}
+            require(if(decision>=3)p.state==2 else p.state==1)
             require(rows.none{it.kind==17 && it.version==version}){"A decision is already waiting for server confirmation."}
             val proof=WireCodec.decode(row.wire)
             val payload=AssistanceDecisionV1.newBuilder().setProposalId(id).setVersion(version).setDecision(decision)

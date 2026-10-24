@@ -290,7 +290,8 @@ enum ReceiptTypeV1 {
   RECEIPT_TYPE_READ_BY_RECIPIENT = 2;
 }
 
-// Status: 1 invited, 2 committed, 3 declined, 4 cancelled, 5 expired, 6 requester resolved.
+// Status: 1 invited, 2 committed, 3 declined, 4 cancelled, 5 expired,
+// 6 requester resolved the SOS, 7 requester confirmed this assistance received.
 // A commitment is not proof that supplies or assistance have been delivered.
 message AssistanceStatusV1 {
   string proposal_id = 1;
@@ -313,7 +314,7 @@ message AssistanceStatusV1 {
 message AssistanceDecisionV1 {
   string proposal_id = 1;
   uint32 version = 2;
-  uint32 decision = 3; // 1 accept, 2 decline, 3 cancel own commitment
+  uint32 decision = 3; // 1 accept, 2 decline, 3 cancel own commitment, 4 requester confirms received
   bytes status_envelope = 4;
   bytes status_signature = 5;
 }

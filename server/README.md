@@ -177,7 +177,9 @@ and writes an invitation; unknown supply quantities require a new known-stock
 publication before approval. Repeated reviews do not create duplicate invitations.
 `GET /v1/dashboard/assistance` lists the latest 100 arrangements for viewers/operators.
 States: 1 invited, 2 committed, 3 declined/rejected, 4 cancelled, 5 expired,
-6 requester-reported resolved. A commitment does not prove physical delivery.
+6 requester-reported SOS resolved, 7 requester-confirmed assistance received.
+A commitment does not prove physical delivery. State 7 records a requester's report,
+not independent verification; it completes only this arrangement and leaves the SOS open.
 
 Gateway-only `GET /v1/sync/download?cursor=0&limit=30` returns signed coordination
 packets and `next_cursor`; limit is 1?50. These are public-consented relay messages
@@ -198,7 +200,12 @@ Invitations expire within one hour/source expiry. New resource versions invalida
 pending invitations; withdrawal stops new matches but retains existing commitments.
 Edits below committed/used stock or with changed units return 409
 `SUPPLIES_ALREADY_COMMITTED`. Owner cancellation/SOS cancellation/expiry release
-active reservations. Requester resolution records supplies as used rather than
+active reservations. Requester-signed ASSISTANCE_DECISION choice 4 requires a current
+committed status addressed to the requester and records state 7. Other choices still
+require the resource owner. Confirmation consumes reserved supplies or frees a
+volunteer; duplicate decisions do not consume twice. Confirmed receipt survives SOS
+closure and expiry. The startup migration extends existing state constraints in place.
+Requester resolution records supplies as used rather than
 returning them to available stock, and frees volunteers. Signed lifecycle updates
 are stored atomically with the change for later download/mesh delivery. Cleanup
 runs on uploads and coordination polling; there is no independent fulfilment proof.

@@ -9,6 +9,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Database } from "./database.js";
+import { initializeAssistance } from "./assistance.js";
 
 const key=()=>SigningIdentity.fromPem(generateKeyPairSync("ec",{namedCurve:"prime256v1"}).privateKey.export({format:"pem",type:"pkcs8"}).toString());
 async function fixture(path?: string) {
@@ -81,6 +82,49 @@ test("operator approval, signed owner acceptance and download confirmation reser
     const after=(await f.app.inject({url:"/v1/dashboard/offers",headers:f.headers("viewer")})).json().items[0];
     assert.equal(after.reserved_quantity,0);assert.equal(after.consumed_quantity,7);assert.equal(after.available_quantity,3);
     await f.status(id,6,f.requester.nodeId);
+  }finally{await f.app.close();}
+});
+
+test("only the requester can confirm individual assistance received; stock is consumed once and the SOS stays open",async()=>{
+  const f=await fixture();try{
+    const id=await f.proposal();await f.review(id);
+    assert.equal((await f.upload(f.decision(await f.status(id,1,f.requester.nodeId),4,f.requester))).statusCode,400);
+    await f.upload(f.decision(await f.status(id)));
+    const proof=await f.status(id,2,f.requester.nodeId);
+    assert.equal((await f.upload(f.decision(proof,4,f.supplier))).statusCode,400);
+    assert.equal((await f.upload(f.decision(proof,4,f.other))).statusCode,400);
+    assert.equal((await f.upload(f.decision(await f.status(id,2),4))).statusCode,400);
+    assert.equal((await f.upload(f.decision(proof,3,f.requester))).statusCode,400);
+    const received=f.decision(proof,4,f.requester);
+    f.failStatus(true);
+    assert.equal((await f.upload(received,"receipt-retry")).statusCode,503);
+    assert.equal((await f.pg.query<any>("SELECT state FROM assistance_cases WHERE proposal_id=$1",[id])).rows[0].state,2);
+    f.failStatus(false);
+    assert.equal((await f.upload(received,"receipt-retry")).statusCode,200);
+    const count=Number((await f.pg.query<any>("SELECT COUNT(*) AS count FROM assistance_events")).rows[0].count);
+    assert.equal((await f.upload(received)).statusCode,200);
+    assert.equal(Number((await f.pg.query<any>("SELECT COUNT(*) AS count FROM assistance_events")).rows[0].count),count);
+    await f.status(id,7);await f.status(id,7,f.requester.nodeId);
+    assert.equal((await f.pg.query<any>("SELECT state FROM sos_reports WHERE request_id=$1",[f.requestId])).rows[0].state,1);
+    const balance=(await f.app.inject({url:"/v1/dashboard/offers",headers:f.headers("viewer")})).json().items[0];
+    assert.equal(balance.reserved_quantity,0);assert.equal(balance.consumed_quantity,7);assert.equal(balance.available_quantity,3);
+    assert.equal((await f.pg.query<any>("SELECT data FROM coordinator_resource_available WHERE entity_id=$1",[f.offerId])).rows[0].data.quantity,3);
+    assert.equal((await f.upload(f.decision(proof,4,f.requester))).statusCode,409);
+    assert.equal((await f.upload(f.decision(await f.status(id,2),3))).statusCode,409);
+    f.advance();await f.upload(f.closure(5));
+    assert.equal((await f.pg.query<any>("SELECT state FROM assistance_cases WHERE proposal_id=$1",[id])).rows[0].state,7);
+    assert.equal((await f.app.inject({url:"/v1/dashboard/offers",headers:f.headers("viewer")})).json().items[0].consumed_quantity,7);
+  }finally{await f.app.close();}
+});
+
+test("confirming volunteer help received releases its commitment without closing the SOS",async()=>{
+  const f=await fixture();try{
+    await f.upload(f.packet(f.supplier,3,{owner_node_id:Buffer.from(f.supplier.nodeId,"hex"),help_types:[6],availability:1,consent:f.consent}));
+    const id=await f.proposal(f.requestId,f.supplier.nodeId,"helper",null);await f.review(id);
+    await f.upload(f.decision(await f.status(id)));
+    assert.equal((await f.upload(f.decision(await f.status(id,2,f.requester.nodeId),4,f.requester))).statusCode,200);
+    assert.equal((await f.pg.query<any>("SELECT data FROM coordinator_resource_available WHERE entity_id=$1",[f.supplier.nodeId])).rows[0].data.availability,1);
+    assert.equal((await f.pg.query<any>("SELECT state FROM sos_reports WHERE request_id=$1",[f.requestId])).rows[0].state,1);
   }finally{await f.app.close();}
 });
 
@@ -176,7 +220,13 @@ test("assistance state, signed outbox and decision deduplication survive a datab
   const path=await mkdtemp(join(tmpdir(),"ghost-assistance-"));const f=await fixture(path);
   let closed=false;let restored:ReturnType<typeof buildApp>|undefined;
   try{
-    const id=await f.proposal();await f.review(id);const decision=f.decision(await f.status(id));
+    const id=await f.proposal();await f.review(id);
+    assert.equal((await f.upload(f.decision(await f.status(id)))).statusCode,200);
+    // Simulate the constraint installed by the previous server, then run its upgrade.
+    await f.pg.query("ALTER TABLE assistance_cases DROP CONSTRAINT assistance_cases_state_check");
+    await f.pg.query("ALTER TABLE assistance_cases ADD CONSTRAINT assistance_cases_state_check CHECK(state BETWEEN 1 AND 6)");
+    await f.pg.transaction(c=>initializeAssistance(c));
+    const decision=f.decision(await f.status(id,2,f.requester.nodeId),4,f.requester);
     assert.equal((await f.upload(decision)).statusCode,200);
     const before=(await f.app.inject({url:"/v1/sync/download?cursor=0&limit=50",headers:f.headers()})).json();
     await f.app.close();closed=true;
@@ -187,8 +237,8 @@ test("assistance state, signed outbox and decision deduplication survive a datab
     assert.equal(after.statusCode,200);assert.deepEqual(after.json(),before);
     const duplicate=await restored.inject({method:"POST",url:"/v1/sync/upload",headers:f.headers(),payload:{idempotency_key:"after-restart",packets:[decision]}});
     assert.equal(duplicate.statusCode,200,duplicate.body);
-    assert.equal((await pg.query<any>("SELECT state FROM assistance_cases WHERE proposal_id=$1",[id])).rows[0].state,2);
-    assert.equal((await pg.query("SELECT * FROM assistance_decisions")).rows.length,1);
+    assert.equal((await pg.query<any>("SELECT state FROM assistance_cases WHERE proposal_id=$1",[id])).rows[0].state,7);
+    assert.equal((await pg.query("SELECT * FROM assistance_decisions")).rows.length,2);
     const sources=(await pg.query<any>("SELECT data FROM coordinator_resource_available WHERE entity_id=$1",[f.offerId])).rows;
     assert.equal(sources[0].data.quantity,3);
   }finally{if(restored)await restored.close();if(!closed)await f.app.close();await rm(path,{recursive:true,force:true});}

@@ -196,7 +196,7 @@ class AppGraph(application: Application) : AndroidViewModel(application) {
             if(!operation.value.saving)viewModelScope.launch {
                 operation.update{it.copy(saving=true,error=null)}
                 try{repository.assistance.decide(id,version,decision,requireNotNull(cloudKey))
-                    operation.update{it.copy(saving=false,notice="Decision saved. Waiting for server confirmation.")};exchange.flush()}
+                    operation.update{it.copy(saving=false,notice=if(decision==4)"Receipt confirmation saved. Waiting for the server to record it." else "Decision saved. Waiting for server confirmation.")};exchange.flush()}
                 catch(cancelled:CancellationException){throw cancelled}
                 catch(error:Exception){operation.update{it.copy(saving=false,error=if(error is IllegalArgumentException)error.message else "Could not save the decision. Refresh and retry.")}}
             }

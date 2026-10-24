@@ -132,6 +132,14 @@ supplies as used and frees volunteers. Invitations expire within an hour/source
 expiry. Local signatures, Room/mesh/HTTP, concurrency, rollback and restart tests
 cover the loop. Physical three-phone and deployed PostgreSQL testing remain.
 
+Requesters can confirm receipt of each active commitment after a confirmation dialog.
+An owner cannot confirm their own delivery. The signed decision queues offline and
+returns through the existing mesh/gateway path; pending is distinct from recorded
+receipt. Server state 7 records requester-confirmed receipt, counts supplies as used,
+frees volunteers and leaves the SOS open. Replays cannot consume stock twice;
+later SOS closure/expiry cannot release consumed stock. Existing server databases
+upgrade in place; participating phones need this version to understand receipt updates.
+
 Connect now starts a connected-device foreground service with a persistent GHOST
 notification and Disconnect action. One process-wide runtime is shared by activities
 and the service; switching apps, locking or destroying a screen no longer stops
@@ -142,7 +150,7 @@ new Connect tap. Service/activity/notification lifecycle tests pass locally; han
 battery/lock-screen behavior still needs testing.
 
 Next: field-test assistance/background connections and GPS acquisition. Server
-commitment and requester-reported resolution do not independently prove delivery.
+commitment, requester-reported resolution and receipt do not independently prove delivery.
 
 Validate signed sharing consent, preserve signed bytes, reject forged/duplicate
 events, and keep cloud/provider secrets server-side. Queued, received and confirmed are distinct.

@@ -68,7 +68,9 @@ fun RequestsScreen(state: FoundationState, onRetry: () -> Unit, modifier: Modifi
                             LocalCloudState.EXPIRED -> "Closure sharing window ended; original SOS has also expired."
                             LocalCloudState.NOT_SHARED -> "Closure not shared online."
                         } else when (request.cloudState) {
-                            LocalCloudState.ACCEPTED -> "Received by server · receipt verified. Help is not confirmed."
+                            LocalCloudState.ACCEPTED -> if(local.assistance.any{!it.owner && it.requestId==request.requestId.value && it.state==7})
+                                "Received by server · receipt verified. See confirmed receipt of help below."
+                                else "Received by server · receipt verified. Help is not confirmed."
                             LocalCloudState.QUEUED -> "Waiting to be saved online by a phone with internet. Help is not confirmed."
                             LocalCloudState.REJECTED -> "Server couldn't save this request. Check gateway setup and try again."
                             LocalCloudState.EXPIRED -> "Too old to upload. Help is not confirmed."

@@ -19,7 +19,9 @@ import org.ghost.feature.foundation.fixtureTime
             item.state==3->"Declined"
             item.state==4->"Cancelled"
             item.state==5->"Expired"
-            else->"Requester marked the SOS resolved" })
+            item.state==6->"Requester marked the SOS resolved"
+            item.state==7->"Help received (confirmed by requester)"
+            else->"Unknown assistance status" })
         Text(if(item.resourceKind==1)"Volunteer assistance" else "${item.quantity ?: "Unknown"} ${item.unit}")
         if(item.area.isNotBlank())Text("Reported area: ${item.area}")
         Text("Decision/commitment deadline: ${fixtureTime(item.deadline)}")
@@ -31,9 +33,12 @@ import org.ghost.feature.foundation.fixtureTime
                 TextButton({deciding=2},enabled=!busy){Text("Decline request")}
             } else if(item.state==2)TextButton({deciding=3},enabled=!busy){Text("Cancel commitment")}
         }
+        if(!item.owner && item.state==2 && !expired && !closedLocally && !item.pending && actions?.decideAssistance!=null)
+            Button({deciding=4},enabled=!busy){Text("Confirm help received")}
     }
-    deciding?.let {decision-> AlertDialog(onDismissRequest={deciding=null},title={Text(when(decision){1->"Commit to this request?";2->"Decline this request?";else->"Cancel your commitment?"})},
+    deciding?.let {decision-> AlertDialog(onDismissRequest={deciding=null},title={Text(when(decision){1->"Commit to this request?";2->"Decline this request?";4->"Confirm help received?";else->"Cancel your commitment?"})},
         text={Text(if(decision==1)"The server will check availability before confirming. This does not mark assistance delivered."
+            else if(decision==4)"Confirm only after you receive the agreed help or supplies. This completes this arrangement and counts its supplies as used. Your SOS stays open. Confirmation waits for a connection to the server."
             else "Your decision will reach the server and requester when a connection is available.")},
         confirmButton={TextButton({actions?.decideAssistance?.invoke(item.id,item.version,decision);deciding=null},enabled=!busy){Text("Confirm")}},
         dismissButton={TextButton({deciding=null}){Text("Keep current state")}}) }

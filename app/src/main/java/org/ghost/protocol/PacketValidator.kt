@@ -146,21 +146,22 @@ class PacketValidator(
             16 -> AssistanceStatusV1.parseFrom(data).also { p ->
                 check(uuid(p.proposalId) && p.version > 0 && uuid(p.requestId) && p.resourceKind in 1..2 &&
                     (if(p.resourceKind==1) p.resourceId.matches(NODE) else uuid(p.resourceId)) && p.ownerNodeId.size()==32 &&
-                    p.requesterNodeId.size()==32 && p.state in 1..6 &&
+                    p.requesterNodeId.size()==32 && p.state in 1..7 &&
                     (e.destination.nodeId==p.ownerNodeId || e.destination.nodeId==p.requesterNodeId) &&
                     (!p.hasQuantity() || p.quantity in 1..1000000) && text(p.unit,40) && text(p.description,2000,true) &&
                     text(p.area,120) && text(p.explanation,1000) && text(p.reason,120) && p.deadlineMs>0)
             }
             17 -> AssistanceDecisionV1.parseFrom(data).also { p ->
-                check(uuid(p.proposalId) && p.version>0 && p.decision in 1..3 &&
+                check(uuid(p.proposalId) && p.version>0 && p.decision in 1..4 &&
                     p.statusEnvelope.size()<=MAX_ENVELOPE && p.statusSignature.size()<=72)
                 check(ImmutableEnvelopeV1.parseFrom(p.statusEnvelope).kindValue==16)
                 val proof=PacketValidator(trustedCloudPublicKey).verify(WirePacket(WireCodec.base64(p.statusEnvelope.toByteArray()),
                     WireCodec.base64(p.statusSignature.toByteArray()),org.ghost.domain.model.RelayMetadata(4,0)),now)
                 val status=proof.payload as AssistanceStatusV1
-                check(status.ownerNodeId==e.senderNodeId && proof.envelope.destination.nodeId==e.senderNodeId,Rejection.INVALID_ACTOR)
+                check((if(p.decision==4) status.requesterNodeId else status.ownerNodeId)==e.senderNodeId &&
+                    proof.envelope.destination.nodeId==e.senderNodeId,Rejection.INVALID_ACTOR)
                 check(e.destination.kindValue==1 && status.proposalId==p.proposalId && status.version==p.version &&
-                    (if(p.decision==3) status.state==2 else status.state==1) && e.expiresAtMs<=proof.envelope.expiresAtMs)
+                    (if(p.decision>=3) status.state==2 else status.state==1) && e.expiresAtMs<=proof.envelope.expiresAtMs)
                 authority=Authority(sender,true)
             }
             12 -> DeliveryReceiptV1.parseFrom(data).also { p ->

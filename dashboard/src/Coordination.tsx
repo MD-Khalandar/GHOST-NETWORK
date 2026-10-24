@@ -165,9 +165,9 @@ export default function Coordination({ csrfToken, onAccessLost, operator=false }
     </nav>
     {status && !items.length && <div className="empty-state"><h2>No suggestions on this page</h2><p>{status.queued_total ? "Requests are queued for the AI coordinator." : "Check the recent run results below. Operators can request a fresh check from an open SOS."}</p></div>}
     {cases.length>0 && <div className="help-note"><h2>Assistance coordination</h2><p>Latest 100 arrangements. Phone delivery can wait for a gateway or mesh route.</p>
-      {cases.map(item=><div className="resource-card" key={item.proposal_id}><strong>{["","Invitation awaiting owner","Commitment confirmed by server","Declined / rejected","Cancelled","Expired","Requester reported resolved"][item.state]}</strong>
+      {cases.map(item=><div className="resource-card" key={item.proposal_id}><strong>{["","Invitation awaiting owner","Commitment confirmed by server","Declined / rejected","Cancelled","Expired","Requester reported resolved","Help received (confirmed by requester)"][item.state]}</strong>
         <p>SOS {item.request_id} ? Resource {item.resource_id}</p><p>{item.quantity===null?"Volunteer assistance":`${item.quantity} ${item.unit}`} ? deadline {time(item.deadline_ms)}</p>
-        <p className="subtle">This status does not confirm physical delivery or that an offline requester has received the update.</p></div>)}
+        <p className="subtle">{item.state===7 ? "Receipt is reported by the requester. Other phones update when this status reaches them." : "This status does not confirm physical delivery or that an offline requester has received the update."}</p></div>)}
     </div>}
     {status && <div className="help-note"><h2>Recent AI runs</h2>
       <p>{status.queued_total} requests waiting or running · latest 20 runs</p>

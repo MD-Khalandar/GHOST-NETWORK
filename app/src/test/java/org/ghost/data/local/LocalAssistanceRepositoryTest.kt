@@ -73,6 +73,47 @@ class LocalAssistanceRepositoryTest {
         ownerDb.close();databases.remove(ownerDb)
         assertEquals(upload.packetId,LocalSosRepository(open(ownerName),{c},{time+2000}).cloudOutgoing().single().packetId)
     }
+    @Test fun requesterReceiptSurvivesOfflineRelayAndRestart()=runBlocking {
+        val cloud=key();val owner=key();val requester=key();val relay=key();val pin=cloud.publicKey.encoded
+        val name="receipt-${UUID.randomUUID()}.db";val db=open(name)
+        val requestRepo=LocalSosRepository(db,{requester},{time+1000})
+        val ownerRepo=LocalSosRepository(open(),{owner},{time+1000})
+        val carrier=LocalSosRepository(open(),{relay},{time+1000})
+        val id=UUID.randomUUID().toString()
+        val proof=status(cloud,owner,requester,id,requester.nodeId.value,2,2)
+        requestRepo.assistance.store(proof,pin)
+        ownerRepo.assistance.store(status(cloud,owner,requester,id,owner.nodeId.value,2,2),pin)
+        assertTrue(runCatching{ownerRepo.assistance.decide(id,2,4,pin)}.isFailure)
+        assertTrue(runCatching{requestRepo.assistance.decide(id,2,3,pin)}.isFailure)
+        requestRepo.assistance.decide(id,2,4,pin)
+        assertTrue(requestRepo.assistance.observe().first().single().pending)
+        assertEquals(2,requestRepo.assistance.observe().first().single().state)
+        assertTrue(runCatching{requestRepo.assistance.decide(id,2,4,pin)}.isFailure)
+        db.close();databases.remove(db)
+        val reopened=LocalSosRepository(open(name),{requester},{time+2000})
+        val pending=reopened.cloudOutgoing().single()
+        assertEquals(4,(PacketValidator(pin).verify(WireCodec.decode(pending.wire),time+2000,forCloud=true).payload as AssistanceDecisionV1).decision)
+        val outgoing=reopened.assistance.outgoing(relay.nodeId.value,emptySet()).single{it.kind==17}
+        repeat(2){carrier.assistance.receive(WireCodec.decode(outgoing.wire),requester.nodeId.value,pin)}
+        assertEquals(1,carrier.cloudOutgoing().size)
+        val original=ImmutableEnvelopeV1.parseFrom(WireCodec.unbase64(proof.immutableEnvelopeBytesBase64,24576))
+        val forged=SignedPackets.create(owner,17,AssistanceDecisionV1.newBuilder().setProposalId(id).setVersion(2).setDecision(4)
+            .setStatusEnvelope(original.toByteString()).setStatusSignature(ByteString.copyFrom(WireCodec.unbase64(proof.signature,72))).build().toByteString(),time+1000,ttl=10000)
+        assertTrue(runCatching{PacketValidator(pin).verify(forged,time+2000,forCloud=true)}.isFailure)
+        ownerRepo.resources.publish(ResourceDraft(id="d9db115d-a859-476a-9b26-dcf783c69729",supply=true,
+            resourceType=ResourceType.WATER,quantity="10",unit="litres")).getOrThrow()
+        carrier.assistance.store(status(cloud,owner,requester,id,requester.nodeId.value,7,3),pin)
+        val returned=carrier.assistance.outgoing(requester.nodeId.value,emptySet()).first{it.version==3}
+        reopened.assistance.receive(WireCodec.decode(returned.wire),relay.nodeId.value,pin)
+        ownerRepo.assistance.store(status(cloud,owner,requester,id,owner.nodeId.value,7,3),pin)
+        reopened.assistance.store(proof,pin)
+        val shown=reopened.assistance.observe().first().single()
+        assertEquals(7,shown.state);assertFalse(shown.pending)
+        val stock=ownerRepo.resources.observeSummaries().first().single()
+        assertEquals(0,stock.reservedQuantity);assertEquals(7,stock.usedQuantity);assertEquals(3,stock.remainingQuantity)
+        assertTrue(ownerRepo.resources.updateOffer(stock.editDraft!!.copy(quantity="6")).isFailure)
+    }
+
     @Test fun invalidDownloadPagesRollBackAndAuthenticatedExpiryDoesNotBlockLaterPages()=runBlocking {
         val cloud=key();val owner=key();val requester=key();val pin=cloud.publicKey.encoded
         val db=open();val repo=LocalAssistanceRepository(db,{owner},{time+1000})

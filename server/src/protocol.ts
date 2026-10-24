@@ -173,21 +173,22 @@ function validate(packet: WirePacket, options: ValidationOptions): VerifiedPacke
     case 16:
       payloadCheck(uuid(p.proposal_id) && integer(p.version, 1, 2147483647) && uuid(p.request_id) &&
         [1,2].includes(p.resource_kind) && (p.resource_kind === 1 ? /^[a-f0-9]{64}$/.test(p.resource_id) : uuid(p.resource_id)) &&
-        p.owner_node_id?.length === 32 && p.requester_node_id?.length === 32 && integer(p.state, 1, 6) &&
+        p.owner_node_id?.length === 32 && p.requester_node_id?.length === 32 && integer(p.state, 1, 7) &&
         [hex(p.owner_node_id), hex(p.requester_node_id)].includes(hex(e.destination.node_id)) &&
         (p.quantity === undefined || integer(p.quantity, 1, 1000000)) && text(p.unit,40) && text(p.description,2000,true) &&
         text(p.area,120) && text(p.explanation,1000) && text(p.reason,120) && integer(p.deadline_ms,1));
       break;
     case 17: {
-      payloadCheck(uuid(p.proposal_id) && integer(p.version,1,2147483647) && integer(p.decision,1,3) &&
+      payloadCheck(uuid(p.proposal_id) && integer(p.version,1,2147483647) && integer(p.decision,1,4) &&
         p.status_envelope?.length <= MAX_ENVELOPE_BYTES && p.status_signature?.length <= 72);
       payloadCheck(decode("ImmutableEnvelopeV1", p.status_envelope).kind === 16);
       const proof = validatePacket({ immutable_envelope_bytes: p.status_envelope.toString("base64url"),
         signature: p.status_signature.toString("base64url"), relay: { remaining_hops:4,hop_count:0 } },
         { nowMs:options.nowMs, trustedCloudNodeId:options.trustedCloudNodeId });
-      check(hex(proof.payload.owner_node_id) === sender && hex(proof.envelope.destination.node_id) === sender, "INVALID_ACTOR");
+      check(hex(p.decision === 4 ? proof.payload.requester_node_id : proof.payload.owner_node_id) === sender &&
+        hex(proof.envelope.destination.node_id) === sender, "INVALID_ACTOR");
       payloadCheck(e.destination.kind === 1 && proof.payload.proposal_id === p.proposal_id && proof.payload.version === p.version &&
-        (p.decision === 3 ? proof.payload.state === 2 : proof.payload.state === 1) &&
+        (p.decision >= 3 ? proof.payload.state === 2 : proof.payload.state === 1) &&
         e.expires_at_ms <= proof.envelope.expires_at_ms);
       authority = { ownerNodeId:sender,cloudProcessingAllowed:true };
       break;

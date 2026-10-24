@@ -52,7 +52,7 @@ export async function initializeCoordinator(database: Database): Promise<void> {
           GREATEST(0,(r.data->>'quantity')::integer-COALESCE(a.used,0))) ELSE r.data END AS data,
         r.created_at_ms,r.expires_at_ms,r.received_at_ms,r.cloud_revision,r.cloud_ack
       FROM coordinator_resource_latest r LEFT JOIN (
-        SELECT resource_id,COUNT(*) FILTER(WHERE state=2) AS busy,SUM(quantity)::integer AS used FROM assistance_cases WHERE state IN(2,6)
+        SELECT resource_id,COUNT(*) FILTER(WHERE state=2) AS busy,SUM(quantity)::integer AS used FROM assistance_cases WHERE state IN(2,6,7)
         GROUP BY resource_id) a ON a.resource_id=r.entity_id`);
     await connection.query(`CREATE TABLE IF NOT EXISTS coordinator_model_budget (
       window_start_ms BIGINT PRIMARY KEY, calls INTEGER NOT NULL CHECK (calls > 0)

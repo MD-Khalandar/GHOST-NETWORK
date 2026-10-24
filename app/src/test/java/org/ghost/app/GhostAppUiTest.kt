@@ -30,6 +30,28 @@ import org.robolectric.annotation.GraphicsMode
 @Config(sdk = [35], qualifiers = "w360dp-h800dp-mdpi")
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class GhostAppUiTest {
+    @Test fun requesterConfirmsReceiptOnlyAfterReviewAndPendingDoesNotClaimDelivery() {
+        val item=mutableStateOf(org.ghost.data.local.AssistanceSummary("arrangement",2,"request","supply",false,
+            2,"Need drinking water","Station",7,"litres",System.currentTimeMillis()+3600000,"",false,null,2))
+        var chosen:Int?=null
+        val actions=LocalActions({}, {_,done->done()}, {_,_->}, {}, {}, {}, decideAssistance={_,_,decision->chosen=decision})
+        compose.setContent { GhostTheme { org.ghost.feature.home.AssistanceCard(item.value,actions,false) } }
+        compose.onNodeWithText("Confirm help received").performClick()
+        assertNull(chosen)
+        compose.onNodeWithText("Confirm help received?").assertIsDisplayed()
+        compose.onNodeWithText("Confirm").performClick()
+        compose.runOnIdle { assertEquals(4,chosen);item.value=item.value.copy(pending=true) }
+        compose.onNodeWithText("Your decision is saved; waiting for server confirmation").assertIsDisplayed()
+        compose.onNodeWithText("Help received (confirmed by requester)").assertDoesNotExist()
+        compose.onNodeWithText("Confirm help received").assertDoesNotExist()
+        compose.runOnIdle { item.value=item.value.copy(state=7,version=3,pending=false) }
+        compose.onNodeWithText("Help received (confirmed by requester)").assertIsDisplayed()
+        compose.onNodeWithText("Confirm help received").assertDoesNotExist()
+        compose.runOnIdle { item.value=item.value.copy(state=2,owner=true) }
+        compose.onNodeWithText("Confirm help received").assertDoesNotExist()
+        compose.onNodeWithText("Cancel commitment").assertExists()
+    }
+
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
 
     @Test fun requesterConfirmsCancellationOrResolutionAndOtherPhonesCannotCloseIt() {
