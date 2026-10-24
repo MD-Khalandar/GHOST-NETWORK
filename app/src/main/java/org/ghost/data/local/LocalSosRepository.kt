@@ -95,7 +95,8 @@ class LocalSosRepository(
 
     /** With a neighbor, prepare one transfer without changing the stored signed envelope. */
     suspend fun outgoing(peerNode: String? = null, excludedPacketIds: Set<String> = emptySet()): List<ReportRow> = withContext(Dispatchers.IO) {
-        val rows = dao.outgoing(now()).filterNot { it.packetId in excludedPacketIds }
+        dao.pruneDeliveries(now())
+        val rows = dao.outgoing(now(), peerNode).filterNot { it.packetId in excludedPacketIds }
         if (peerNode == null) return@withContext rows
         val localNode = identity().nodeId
         rows.asSequence().mapNotNull { row ->
@@ -130,14 +131,6 @@ class LocalSosRepository(
             val existing = dao.event(result.envelope.eventId) ?: dao.packet(result.envelope.packetId) ?: dao.request(p.requestId)
             if (existing != null) {
                 require(existing.publicSharing && WireCodec.decode(existing.wire).immutableEnvelopeBytesBase64 == packet.immutableEnvelopeBytesBase64) { "Conflicting report identifier." }
-                // A duplicate can arrive from a different neighbor or loop back to its author.
-                // Only reuse a cached receipt when this phone signed it for this neighbor.
-                val cached = existing.receipt?.let { bytes ->
-                    val e = org.ghost.contracts.v1.ImmutableEnvelopeV1.parseFrom(WireCodec.unbase64(WireCodec.decode(bytes).immutableEnvelopeBytesBase64, PacketValidator.MAX_ENVELOPE))
-                    bytes.takeIf { e.expiresAtMs > now() && e.senderNodeId.toByteArray().contentEquals(WireCodec.bytes(key.nodeId.value)) &&
-                        e.destination.kindValue == 2 && e.destination.nodeId.toByteArray().contentEquals(WireCodec.bytes(peerNode)) }
-                }
-                cached ?: WireCodec.encode(receipt)
             } else {
                 require(origin != key.nodeId.value) { "Unknown report signed by this phone." }
                 dao.pruneReceived(now())
@@ -147,8 +140,18 @@ class LocalSosRepository(
                     SosCategory.entries[p.categoryValue - 1].name, p.description, if (p.hasPeopleCount()) p.peopleCount else null,
                     if (p.hasCoarseArea()) p.coarseArea else null, result.envelope.createdAtMs, now(), result.envelope.expiresAtMs,
                     false, true, p.consent.cloudProcessingAllowed, WireCodec.encode(receivedPacket), receipt = bytes)) != -1L)
-                bytes
             }
+            // Save the report, neighbor knowledge and reply together before acknowledging.
+            val delivery = dao.delivery(result.envelope.packetId, peerNode)
+                ?: NeighborDeliveryRow(result.envelope.packetId, peerNode)
+            val cached = (delivery.receiptToPeer ?: existing?.receipt)?.let { bytes ->
+                val e = org.ghost.contracts.v1.ImmutableEnvelopeV1.parseFrom(WireCodec.unbase64(WireCodec.decode(bytes).immutableEnvelopeBytesBase64, PacketValidator.MAX_ENVELOPE))
+                bytes.takeIf { e.expiresAtMs > now() && e.senderNodeId.toByteArray().contentEquals(WireCodec.bytes(key.nodeId.value)) &&
+                    e.destination.kindValue == 2 && e.destination.nodeId.toByteArray().contentEquals(WireCodec.bytes(peerNode)) }
+            }
+            val response = cached ?: WireCodec.encode(receipt)
+            dao.saveDelivery(delivery.copy(receiptToPeer = response))
+            response
         }
     }
 
@@ -163,8 +166,11 @@ class LocalSosRepository(
             if (kind == AuthorityKind.RECEIPT && id == p.packetId) Authority(peerNode) else null
         }).verify(packet, now())
         require(valid.envelope.destination.kindValue == 2 && valid.envelope.destination.nodeId.toByteArray().contentEquals(WireCodec.bytes(key.nodeId.value))) { "Receipt addressed to another phone." }
-        // Origin reports keep their delivery status. Relay acknowledgements stop this
-        // session's retries; durable delivery history for every neighbor is a later step.
-        if (original.owned) dao.markReceived(p.packetId, peerNode, WireCodec.encode(packet))
+        db.withTransaction {
+            val delivery = dao.delivery(p.packetId, peerNode) ?: NeighborDeliveryRow(p.packetId, peerNode)
+            val bytes = WireCodec.encode(packet)
+            dao.saveDelivery(delivery.copy(receiptFromPeer = bytes))
+            if (original.owned) dao.markReceived(p.packetId, peerNode, bytes)
+        }
     }
 }

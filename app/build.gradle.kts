@@ -42,6 +42,7 @@ android {
     sourceSets {
         getByName("main").proto { srcDir("$rootDir/contracts") }
         getByName("test").resources.directories.add("$rootDir/contracts/fixtures")
+        getByName("test").resources.directories.add("$projectDir/schemas")
     }
 
     testOptions {

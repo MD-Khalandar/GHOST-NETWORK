@@ -15,7 +15,8 @@ import org.ghost.security.AndroidSigningIdentity
 import org.ghost.transport.nearby.NearbyAdapter
 
 class AppGraph(application: Application) : AndroidViewModel(application) {
-    private val db = Room.databaseBuilder(application, GhostDatabase::class.java, "ghost.db").build()
+    private val db = Room.databaseBuilder(application, GhostDatabase::class.java, "ghost.db")
+        .addMigrations(GhostDatabase.MIGRATION_1_2).build()
     private val identity by lazy { AndroidSigningIdentity().loadOrCreate() }
     val nearby = NearbyAdapter(application)
     val repository = LocalSosRepository(db, { identity })

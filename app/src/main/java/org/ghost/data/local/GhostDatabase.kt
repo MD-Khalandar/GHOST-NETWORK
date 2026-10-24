@@ -1,6 +1,8 @@
 package org.ghost.data.local
 
 import androidx.room.*
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.flow.Flow
 import org.ghost.domain.model.SosDraft
 
@@ -30,6 +32,17 @@ data class ReportRow(
 @Entity(tableName = "draft")
 data class DraftRow(@PrimaryKey val id: Int = 1, val value: String)
 
+/** A row means this authenticated neighbor already holds the packet. */
+@Entity(tableName = "neighbor_deliveries", primaryKeys = ["packetId", "peerNodeId"], foreignKeys = [
+    ForeignKey(entity = ReportRow::class, parentColumns = ["packetId"], childColumns = ["packetId"], onDelete = ForeignKey.CASCADE),
+])
+data class NeighborDeliveryRow(
+    val packetId: String,
+    val peerNodeId: String,
+    val receiptFromPeer: ByteArray? = null,
+    val receiptToPeer: ByteArray? = null,
+)
+
 @Dao
 interface SosDao {
     @Query("SELECT * FROM reports ORDER BY receivedAt DESC LIMIT 1000") fun observe(): Flow<List<ReportRow>>
@@ -39,8 +52,13 @@ interface SosDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE) suspend fun insert(row: ReportRow): Long
     @Query("SELECT COUNT(*) FROM reports") suspend fun count(): Int
     @Query("SELECT COUNT(*) FROM reports WHERE owned = 1 AND expiresAt > :now") suspend fun activeOwned(now: Long): Int
-    @Query("SELECT * FROM reports WHERE publicSharing = 1 AND expiresAt > :now ORDER BY owned DESC, createdAt LIMIT 1000")
-    suspend fun outgoing(now: Long): List<ReportRow>
+    @Query("SELECT * FROM reports WHERE publicSharing = 1 AND expiresAt > :now AND (:peerNode IS NULL OR NOT EXISTS (SELECT 1 FROM neighbor_deliveries d WHERE d.packetId = reports.packetId AND d.peerNodeId = :peerNode)) ORDER BY owned DESC, createdAt LIMIT 1000")
+    suspend fun outgoing(now: Long, peerNode: String? = null): List<ReportRow>
+    @Query("SELECT * FROM neighbor_deliveries WHERE packetId = :packetId AND peerNodeId = :peerNode")
+    suspend fun delivery(packetId: String, peerNode: String): NeighborDeliveryRow?
+    @Upsert suspend fun saveDelivery(row: NeighborDeliveryRow)
+    @Query("DELETE FROM neighbor_deliveries WHERE packetId IN (SELECT packetId FROM reports WHERE expiresAt <= :now)")
+    suspend fun pruneDeliveries(now: Long)
     @Query("UPDATE reports SET sentAt = :now WHERE packetId = :packetId AND owned = 1") suspend fun markSent(packetId: String, now: Long)
     @Query("UPDATE reports SET receivedBy = :recipient, receipt = :receipt WHERE packetId = :packetId AND owned = 1") suspend fun markReceived(packetId: String, recipient: String, receipt: ByteArray)
     @Query("DELETE FROM reports WHERE owned = 0 AND expiresAt <= :now") suspend fun pruneReceived(now: Long)
@@ -49,5 +67,17 @@ interface SosDao {
     @Upsert suspend fun saveDraft(row: DraftRow)
 }
 
-@Database(entities = [ReportRow::class, DraftRow::class], version = 1, exportSchema = true)
-abstract class GhostDatabase : RoomDatabase() { abstract fun sos(): SosDao }
+@Database(entities = [ReportRow::class, DraftRow::class, NeighborDeliveryRow::class], version = 2, exportSchema = true)
+abstract class GhostDatabase : RoomDatabase() {
+    abstract fun sos(): SosDao
+
+    companion object {
+        val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS neighbor_deliveries (packetId TEXT NOT NULL, peerNodeId TEXT NOT NULL, receiptFromPeer BLOB, receiptToPeer BLOB, PRIMARY KEY(packetId, peerNodeId), FOREIGN KEY(packetId) REFERENCES reports(packetId) ON UPDATE NO ACTION ON DELETE CASCADE)")
+                // Preserve the last signed acknowledgement available in version 1.
+                db.execSQL("INSERT INTO neighbor_deliveries (packetId, peerNodeId, receiptFromPeer) SELECT packetId, receivedBy, receipt FROM reports WHERE owned = 1 AND publicSharing = 1 AND receivedBy IS NOT NULL AND receipt IS NOT NULL")
+            }
+        }
+    }
+}
