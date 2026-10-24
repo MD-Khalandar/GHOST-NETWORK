@@ -35,10 +35,14 @@ not been separately verified here.
 Server SOS uploads now persist in PostgreSQL with consent/signature checks,
 transactional deduplication and stored signed cloud acknowledgements. Local
 embedded-PostgreSQL tests pass; external deployment has not been verified.
-Configured Android gateways upload cloud-consented SOS reports while joined and
-foregrounded, retry failures, and persist verified cloud acknowledgements in Room.
-Gateway tokens use Keystore-encrypted settings. Local HTTP tests pass; deployed
-phone-to-cloud behavior and gateway credential persistence need device testing.
+Connect to GHOST now joins nearby phones and automatically connects online over
+Wi-Fi while foregrounded. Builds include the server URL and trusted public key;
+phones prove their existing Keystore identity with signed one-use challenges and
+receive renewable upload-only sessions. Credentials stay encrypted on the phone;
+the server stores their hashes. Manual gateway settings are legacy technical details.
+Only consented reports upload; verified server acknowledgements persist in Room.
+Handshake, renewal, offline/foreground gating and upload tests pass locally;
+physical one-click enrollment and credential persistence still need device testing.
 Cloud acknowledgements now return through the mesh with their own durable queue,
 expiry and four-transfer budget. The original phone shows verified server receipt.
 Return routing has host exchange/restart tests; physical cloud-to-mesh testing remains.

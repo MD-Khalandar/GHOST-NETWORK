@@ -15,11 +15,12 @@ import org.ghost.gateway.api.*
 class GatewayFailure(val code: String, val retryable: Boolean, val authentication: Boolean = false) : Exception(code)
 
 /** Bounded HTTPS upload. Redirects never receive the gateway bearer token. */
-class HttpGatewayClient(private val config: () -> GatewayConfig?) : GatewayClient {
+class HttpGatewayClient(private val openConnection: (java.net.URL) -> HttpURLConnection = { it.openConnection() as HttpURLConnection },
+                        private val config: () -> GatewayConfig?) : GatewayClient {
     override val reachability = MutableStateFlow(GatewayReachability.UNKNOWN)
     val reachabilityCheckedAt = MutableStateFlow(0L)
     fun resetReachability() { reachability.value = GatewayReachability.UNKNOWN; reachabilityCheckedAt.value = 0 }
-    private fun recordReachability(status: GatewayReachability) {
+    internal fun recordReachability(status: GatewayReachability) {
         reachability.value = status
         reachabilityCheckedAt.value = System.currentTimeMillis()
     }
@@ -30,7 +31,7 @@ class HttpGatewayClient(private val config: () -> GatewayConfig?) : GatewayClien
         try {
             require(request.packets.size in 1..50)
             currentCoroutineContext().ensureActive()
-            val socket = URI("${settings.serverUrl}/v1/sync/upload").toURL().openConnection() as HttpURLConnection
+            val socket = openConnection(URI("${settings.serverUrl}/v1/sync/upload").toURL())
             connection = socket
             withTimeout(20000) {
                 val transfer = async(Dispatchers.IO) { post(socket, settings, request) }

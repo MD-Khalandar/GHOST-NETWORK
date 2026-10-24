@@ -8,13 +8,14 @@ import org.ghost.domain.model.*
 import org.ghost.protocol.WireCodec
 
 data class GatewayUiState(val configured: Boolean = false, val serverUrl: String = "", val cloudKeyPinned: Boolean = false,
-                          val uploading: Boolean = false, val message: String = "Optional: configure this phone as a cloud gateway.")
+                          val uploading: Boolean = false, val message: String = "Connect to GHOST to share nearby and online.",
+                          val automatic: Boolean = false, val active: Boolean = false, val online: Boolean = false)
 
 /** Foreground uploads use durable report queues; no separate background service. */
 @OptIn(ExperimentalCoroutinesApi::class)
 class GatewaySync(scope: CoroutineScope, configs: StateFlow<GatewayConfig?>, enabled: Flow<Boolean>,
                   private val client: HttpGatewayClient, private val repository: LocalSosRepository,
-                  private val cloudKey: ByteArray?) {
+                  private val cloudKey: ByteArray?, private val onAuthenticationFailure: () -> Unit = {}) {
     private val mutableState = MutableStateFlow(GatewayUiState(cloudKeyPinned = cloudKey != null))
     val state = mutableState.asStateFlow()
     private val retry = MutableStateFlow(0)
@@ -49,6 +50,7 @@ class GatewaySync(scope: CoroutineScope, configs: StateFlow<GatewayConfig?>, ena
                                 if (failure != null) {
                                     val error = failure as? GatewayFailure ?: GatewayFailure("NETWORK_UNAVAILABLE", true)
                                     if (error.authentication || (!error.retryable && error.code in setOf("INVALID_RESPONSE", "HTTP_ERROR", "NOT_CONFIGURED"))) {
+                                        if (error.authentication) onAuthenticationFailure()
                                         mutableState.update { it.copy(uploading = false, message = "Gateway setup or server response needs attention. Update setup or retry.") }
                                         awaitCancellation()
                                     }

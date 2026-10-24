@@ -29,6 +29,19 @@ To load a local environment file after building, run from the repository root:
 node --env-file=server/.env server/dist/index.js
 ```
 
+Phone enrollment is automatic once a configured app joins GHOST over Wi-Fi.
+`POST /v1/gateway/challenge` accepts a P-256 public key and returns a server-signed,
+60-second challenge. `POST /v1/gateway/enroll` verifies the device's signature over
+the exact challenge bytes, consumes it once, and returns a server-signed 24-hour
+upload credential. No preissued token is required for ordinary phones. Pending
+challenges are bounded and enrollment is rate-limited; database-backed device
+credentials store only token hashes. Expired sessions must enroll again; renewal
+replaces the previous session. A device row with `revoked = TRUE` blocks both its
+session and re-enrollment. Key possession does not establish a person's identity.
+These devices have gateway permissions only; dashboard/operator roles still require
+separate administrator-issued credentials. Existing static gateway tokens continue
+to work for compatibility. Use HTTPS outside debug LAN testing.
+
 `POST /v1/sync/upload` accepts a gateway bearer token and
 `{"idempotency_key":"unique-batch-id","packets":[...]}` (1–50 signed SOS_CREATE,
 HELPER_PROFILE_PUBLISH, OFFER_PUBLISH, OFFER_UPDATE or terminal SOS_UPDATE packets). Both public sharing

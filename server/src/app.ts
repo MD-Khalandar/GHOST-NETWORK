@@ -9,6 +9,7 @@ import { initializeCoordinator } from "./coordinator/store.js";
 import { CoordinatorWorker } from "./coordinator/worker.js";
 import { OpenAIProposalModel } from "./coordinator/openai-model.js";
 import { CoordinatorFailure, UUID, type ProposalModel } from "./coordinator/types.js";
+import { GatewayEnrollment, initializeEnrollment, registerEnrollment } from "./enrollment.js";
 
 export interface AppSecurity { principals?: readonly Principal[]; cloudSigningKeyPem?: string; lookup?: AuthorityLookup; now?: () => number; database?: Database;
   proposalModel?: ProposalModel }
@@ -24,15 +25,18 @@ export function buildApp(security: AppSecurity = {}): FastifyInstance {
       message: "Request could not be processed", retryable: false,
     });
   });
-  // The signer is only available on the server. No signing HTTP endpoint exists.
+  // The signer stays on the server. Enrollment signs fixed, domain-separated messages only.
   const signer = security.cloudSigningKeyPem ? SigningIdentity.fromPem(security.cloudSigningKeyPem) : undefined;
   if (security.database && !signer) throw new Error("Cloud signing key is required with storage");
   const store = security.database && signer ? new SosStore(security.database, signer, security.now) : undefined;
+  const enrollment = security.database && signer ? new GatewayEnrollment(security.database, signer, security.now) : undefined;
+  registerEnrollment(app, enrollment);
+  const authorized = new WeakMap<object, Principal>();
   const coordinator = security.database ? new CoordinatorWorker(security.database,
     security.proposalModel ?? new OpenAIProposalModel(), security.now) : undefined;
   if (security.database) {
     const database = security.database;
-    app.addHook("onReady", async () => { await initializeDatabase(database); await initializeCoordinator(database); coordinator!.start(); });
+    app.addHook("onReady", async () => { await initializeDatabase(database); await initializeEnrollment(database); await initializeCoordinator(database); coordinator!.start(); });
     app.addHook("preClose", async () => { await coordinator!.stop(); });
     app.addHook("onClose", () => database.close());
   }
@@ -50,12 +54,15 @@ export function buildApp(security: AppSecurity = {}): FastifyInstance {
   for (const route of routes) {
     app.route({ ...route, onRequest: async (request, reply) => {
       reply.header("Cache-Control", "no-store");
-      const principal = authenticate(request.headers.authorization, principals);
+      let principal = authenticate(request.headers.authorization, principals);
+      try { principal ??= await enrollment?.authenticate(request.headers.authorization); }
+      catch { return reply.code(503).send({ code: "AUTH_UNAVAILABLE", retryable: true }); }
       if (!principal) return reply.code(401).send({ code: "UNAUTHENTICATED", message: "Authentication required", retryable: false });
       if (!route.roles.includes(principal.role)) return reply.code(403).send({ code: "FORBIDDEN", message: "Role is not authorized", retryable: false });
+      authorized.set(request, principal);
     }, handler: async (request, reply) => {
       if (route.url === "/v1/auth/session") {
-        const p = authenticate(request.headers.authorization, principals)!;
+        const p = authorized.get(request)!;
         return { id: p.id, role: p.role, ...(p.gateway_node_id ? { gateway_node_id: p.gateway_node_id } : {}) };
       }
       if (route.url === "/v1/dashboard/runs" || route.url === "/v1/dashboard/proposals" || route.url.endsWith("/coordinate")) {
@@ -119,7 +126,7 @@ export function buildApp(security: AppSecurity = {}): FastifyInstance {
             return verified;
           });
           if (!store) return reply.code(503).send({ code: "STORAGE_UNAVAILABLE", message: "SOS storage is not configured", retryable: true });
-          const principal = authenticate(request.headers.authorization, principals)!;
+          const principal = authorized.get(request)!;
           const response = await store.upload(principal.id, body.idempotency_key, packets);
           coordinator?.wake();
           return response;

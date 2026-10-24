@@ -97,26 +97,41 @@ using a separate four-transfer budget and the acknowledgement's own expiry.
 Phones can carry a return even without the original SOS. Signed bytes, hop
 receipts and queued returns survive restarts; forwarding stops at the destination.
 
-The server public signing key can be pinned with
-`-PghostCloudPublicKey=<base64url-SPKI>`. Every phone carrying or receiving cloud
-acknowledgements needs this same trusted key. Empty configuration rejects cloud results.
-Shared wire definitions live in `contracts/ghost.proto`; signature vectors use
-public test-only keys, never deployment credentials.
+For one-click online connection, the server operator prepares the APK once. With
+`server/.env` configured, run from the project root:
 
-For a cloud gateway, build with the deployed server's public signing key using
-`-PghostCloudPublicKey=<base64url-SPKI>`. In **Connections → Configure gateway**, enter
-the server address and a gateway bearer token supplied by the server operator.
-The token is stored encrypted with Android Keystore; it is never baked into the
-APK. Normal mesh phones need no gateway setup.
+```sh
+node scripts/configure-client.mjs
+source scripts/env.sh
+./gradlew assembleDebug
+```
 
-Join the mesh and enable **Allow online help coordination** when sending an SOS.
-While open, the configured gateway uploads eligible reports, including received
-reports, and retries temporary failures. **Received by server** appears only after
-a matching pinned signature is saved in Room. An offline sender sees it after
-the signed acknowledgement reaches their phone through the mesh. Use HTTPS;
-debug builds also allow HTTP for LAN/emulator testing (`10.0.2.2` reaches the
-emulator host). Upload and return paths have host HTTP/storage/exchange tests;
-deployed phone-to-cloud-to-mesh testing is still needed.
+The script derives only the public key from the existing server key and picks the
+Mac's current LAN address. It writes ignored `.local/phone-server-test/client.properties`;
+it never changes server credentials or exports private keys. Re-run after a LAN
+address change and rebuild. For a hosted deployment pass its stable HTTPS address:
+`node scripts/configure-client.mjs https://your-ghost-server.example`.
+Build properties `ghostServerUrl` and `ghostCloudPublicKey` (or environment variables
+`GHOST_SERVER_URL` / `GHOST_CLOUD_PUBLIC_KEY`) override these local public settings.
+Release builds require HTTPS and a nonempty trusted public key.
+
+Install the same configured APK on participating phones. Tap **Connect to GHOST**,
+allow first-use Android permissions, and keep the app open. Nearby connections
+start automatically; Wi-Fi enables server connection and device enrollment without
+entering URLs or tokens. A local server must be reachable on that Wi-Fi; internet
+alone cannot reach a private LAN address. Provider and server private keys stay
+server-side. Dashboard/operator authentication remains separate.
+
+The phone checks both enrollment replies against its trusted server key and proves
+possession of its existing Android Keystore identity. An expiring upload-only
+credential is stored encrypted and renewed automatically, including after a 401.
+Disconnection, backgrounding or leaving Wi-Fi pauses online transfers; reconnecting
+resumes them. Sharing choices are unchanged: only public, online-consented reports
+upload, and **Received by server** requires a verified, saved acknowledgement.
+No connection status creates an SOS or confirms assistance. Manual gateway tokens
+remain available only under **Connections → Technical details** in legacy builds
+without bundled automatic connection settings. Wire definitions remain in
+`contracts/ghost.proto`; fixtures contain test-only keys.
 
 ## Helpers and supplies
 

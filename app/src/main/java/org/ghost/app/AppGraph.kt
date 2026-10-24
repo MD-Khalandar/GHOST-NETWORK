@@ -14,6 +14,8 @@ import org.ghost.mesh.DirectExchange
 import org.ghost.mesh.Connectivity
 import org.ghost.mesh.NodeCapabilities
 import org.ghost.mesh.observeInternet
+import org.ghost.mesh.observeWifi
+import org.ghost.mesh.openWifiConnection
 import org.ghost.gateway.api.GatewayReachability
 import org.ghost.security.AndroidSigningIdentity
 import org.ghost.transport.nearby.NearbyAdapter
@@ -33,8 +35,16 @@ class AppGraph(application: Application) : AndroidViewModel(application) {
     private val cloudKey = runCatching {
         BuildConfig.CLOUD_PUBLIC_KEY.takeIf { it.isNotEmpty() }?.let { WireCodec.unbase64(it, 91).also(SigningIdentity::decodePublicKey) }
     }.getOrNull()
-    private val gatewayClient = HttpGatewayClient { gatewaySettings.config.value }
-    private val gateway = GatewaySync(viewModelScope, gatewaySettings.config, nearby.state.map { it.active }, gatewayClient, repository, cloudKey)
+    private val gatewayClient = HttpGatewayClient(openConnection = { openWifiConnection(application, it) }) { gatewaySettings.config.value }
+    private val connectionActive = MutableStateFlow(false)
+    private val wifi = observeWifi(application).stateIn(viewModelScope, SharingStarted.Eagerly, false)
+    private val automaticGateway = AutomaticGateway(viewModelScope, gatewaySettings, BuildConfig.SERVER_URL,
+        cloudKey?.let { GatewayEnrollmentClient(it, { identity }, BuildConfig.DEBUG,
+            openConnection = { url -> openWifiConnection(application, url) }) }, connectionActive, wifi,
+        gatewayClient::recordReachability)
+    private val gateway = GatewaySync(viewModelScope, gatewaySettings.config,
+        combine(connectionActive, wifi) { active, connected -> active && connected }, gatewayClient, repository, cloudKey,
+        onAuthenticationFailure = { automaticGateway.retry(clearSession = true) })
     private val internet = observeInternet(application).stateIn(viewModelScope, SharingStarted.Eagerly, Connectivity.UNKNOWN)
     private val exchange = DirectExchange(viewModelScope, nearby, repository, { identity }, cloudKey = cloudKey, capabilities = {
         val configured = gateway.state.value.configured && cloudKey != null
@@ -52,6 +62,11 @@ class AppGraph(application: Application) : AndroidViewModel(application) {
     val local: StateFlow<LocalUiState> = combine(repository.observeDraft(), operation, nearby.state, exchange.identities, exchange.message) {
         draft, state, network, identities, message -> state.copy(draft = draft, network = network, peerIdentities = identities, exchangeStatus = message)
     }.combine(gateway.state) { state, cloud -> state.copy(gateway = cloud) }
+        .combine(automaticGateway.state) { state, connection -> state.copy(gateway = state.gateway.copy(
+            automatic = connection.available, active = connection.active, online = connection.online,
+            serverUrl = BuildConfig.SERVER_URL.ifBlank { state.gateway.serverUrl },
+            message = if (connection.available && (!connection.online || !state.gateway.uploading &&
+                state.gateway.message.startsWith("Checking saved"))) connection.message else state.gateway.message)) }
         .combine(repository.resources.observeSummaries()) { state, resources -> state.copy(resources = resources, resourcesLoaded = true) }
         .combine(exchange.topology) { state, topology -> state.copy(topology = topology) }
         .combine(internet) { state, status -> state.copy(topology = state.topology.copy(
@@ -64,11 +79,6 @@ class AppGraph(application: Application) : AndroidViewModel(application) {
             try { cloudKey?.let { repository.restoreCloudReturns(it) } }
             catch (cancelled: CancellationException) { throw cancelled }
             catch (_: Exception) { operation.update { it.copy(error = "Saved server acknowledgements could not be queued. Check storage and retry.") } }
-        }
-        viewModelScope.launch {
-            try { gatewaySettings.load() }
-            catch (cancelled: CancellationException) { throw cancelled }
-            catch (_: Exception) { operation.update { it.copy(error = "Gateway settings could not be opened. Reconfigure this phone's gateway.") } }
         }
         viewModelScope.launch {
             for (write in draftWrites) {
@@ -111,7 +121,9 @@ class AppGraph(application: Application) : AndroidViewModel(application) {
     private var meshStart: Job? = null
     fun startNearby() { meshEnabled = true; resumeNearby() }
     fun resumeNearby() {
-        if (!meshEnabled || meshStart?.isActive == true || nearby.state.value.active) return
+        if (!meshEnabled) return
+        connectionActive.value = true
+        if (meshStart?.isActive == true || nearby.state.value.active) return
         meshStart = viewModelScope.launch {
             try {
                 val name = withContext(Dispatchers.IO) { "GHOST ${identity.nodeId.value.take(8)}" }
@@ -120,7 +132,7 @@ class AppGraph(application: Application) : AndroidViewModel(application) {
               catch (_: Exception) { operation.value = LocalUiState(error = "Nearby could not start. Check the signing key, permissions and Google Play services.") }
         }
     }
-    fun pauseNearby() { meshStart?.cancel(); meshStart = null; nearby.close() }
+    fun pauseNearby() { connectionActive.value = false; meshStart?.cancel(); meshStart = null; nearby.close() }
     fun stopNearby() { meshEnabled = false; pauseNearby() }
     private fun saveGateway(url: String, token: String, saved: () -> Unit) {
         if (operation.value.saving) return
@@ -143,6 +155,7 @@ class AppGraph(application: Application) : AndroidViewModel(application) {
         }
     }
     private fun retrySends() {
+        automaticGateway.retry()
         exchange.retry()
         viewModelScope.launch {
             try { repository.retryCloudUploads(); cloudKey?.let { repository.restoreCloudReturns(it) }; gateway.retry(); exchange.flush() }
