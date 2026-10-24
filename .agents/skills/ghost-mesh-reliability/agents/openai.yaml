@@ -1,0 +1,6 @@
+interface:
+  display_name: "GHOST Mesh Reliability"
+  short_description: "Build and verify durable Nearby relay behavior"
+
+policy:
+  allow_implicit_invocation: true

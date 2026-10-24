@@ -1,0 +1,6 @@
+interface:
+  display_name: "GHOST Demo QA"
+  short_description: "Verify offline demo gates with actual evidence"
+
+policy:
+  allow_implicit_invocation: true

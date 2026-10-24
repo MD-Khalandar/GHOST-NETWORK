@@ -1,0 +1,35 @@
+# Machine-local tools and IDE settings
+.DS_Store
+.local/
+.gradle/
+.kotlin/
+.idea/
+local.properties
+*.iml
+
+# Build outputs and Android profiling captures
+**/build/
+.cxx/
+.externalNativeBuild/
+*.apk
+*.aab
+*.hprof
+/captures/
+
+# Local secrets and signing credentials
+.env
+.env.*
+!.env.example
+!.env.*.example
+keystore.properties
+*.jks
+*.keystore
+
+# Provision models separately from source
+*.litertlm
+*.litertlm.part
+
+# Python caches from repository tooling
+__pycache__/
+*.py[cod]
+.pytest_cache/

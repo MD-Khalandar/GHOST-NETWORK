@@ -1,0 +1,6 @@
+interface:
+  display_name: "GHOST UI Quality"
+  short_description: "Review Compose accessibility, consent, and status"
+
+policy:
+  allow_implicit_invocation: true
