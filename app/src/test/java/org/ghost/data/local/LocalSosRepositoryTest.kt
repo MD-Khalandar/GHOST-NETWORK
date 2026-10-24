@@ -39,7 +39,7 @@ class LocalSosRepositoryTest {
     }
     private fun open(name: String = "test-${UUID.randomUUID()}.db"): GhostDatabase {
         names.add(name)
-        return Room.databaseBuilder(context, GhostDatabase::class.java, name).addMigrations(GhostDatabase.MIGRATION_1_2)
+        return Room.databaseBuilder(context, GhostDatabase::class.java, name).addMigrations(GhostDatabase.MIGRATION_1_2, GhostDatabase.MIGRATION_2_3)
             .setJournalMode(RoomDatabase.JournalMode.TRUNCATE).build().also { databases.add(it) }
     }
     private fun payload(public: Boolean = true, id: String = UUID.randomUUID().toString()) = SosCreatePayload(
@@ -265,7 +265,9 @@ class LocalSosRepositoryTest {
             }
             schema.getValue("setupQueries").jsonArray.forEach { legacy.execSQL(it.jsonPrimitive.content) }
             legacy.execSQL("ATTACH DATABASE ? AS seed", arrayOf(context.getDatabasePath(seedName).absolutePath))
-            legacy.execSQL("INSERT INTO reports SELECT * FROM seed.reports")
+            val columns = schema.getValue("entities").jsonArray[0].jsonObject.getValue("fields").jsonArray
+                .joinToString(",") { "`${it.jsonObject.getValue("columnName").jsonPrimitive.content}`" }
+            legacy.execSQL("INSERT INTO reports ($columns) SELECT $columns FROM seed.reports")
             legacy.execSQL("INSERT INTO draft SELECT * FROM seed.draft")
             legacy.execSQL("DETACH DATABASE seed")
             legacy.version = 1

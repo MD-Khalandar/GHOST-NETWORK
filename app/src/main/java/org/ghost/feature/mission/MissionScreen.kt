@@ -26,7 +26,7 @@ fun MissionScreen(state: FoundationState, onRetry: () -> Unit, modifier: Modifie
             state.loading -> item { LoadingCard() }
             state.failed -> item { ErrorCard(onRetry) }
             else -> item("status") {
-                InfoCard(state.mission.status.label(), if (state.simulated) "Preview status." else "Cloud synchronization is not implemented yet. Reports remain saved on this phone.") {
+                InfoCard(state.mission.status.label(), if (state.simulated) "Preview status." else "Server receipt and assistance are separate. Matching and approvals are not implemented yet.") {
                     state.mission.message?.let { Text(it) }
                     state.mission.version?.let { Text("Proposal version $it") }
                 }

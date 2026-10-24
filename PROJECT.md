@@ -25,8 +25,12 @@ not been separately verified here.
 Server SOS uploads now persist in PostgreSQL with consent/signature checks,
 transactional deduplication and stored signed cloud acknowledgements. Local
 embedded-PostgreSQL tests pass; external deployment has not been verified.
+Configured Android gateways upload cloud-consented SOS reports while joined and
+foregrounded, retry failures, and persist verified cloud acknowledgements in Room.
+Gateway tokens use Keystore-encrypted settings. Local HTTP tests pass; deployed
+phone-to-cloud behavior and gateway credential persistence need device testing.
 
-Next: wire phone gateway uploads and return cloud acknowledgements → dashboard
+Next: return cloud acknowledgements through the mesh → dashboard
 and resource matching → approval, owner decisions and outage recovery.
 
 Keep public/cloud consent separate, preserve signed bytes, reject forged/duplicate

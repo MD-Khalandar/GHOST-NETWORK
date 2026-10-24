@@ -116,7 +116,7 @@ fun SosFormDialog(initial: SosDraft, busy: Boolean, error: String?, canSave: Boo
                     if (sharing) {
                         ConsentChoice("Share with mesh", draft.publicSharing, !busy) { update(draft.copy(publicSharing = it)) }
                         ConsentChoice("Allow cloud coordination", draft.cloudConsent, !busy) { update(draft.copy(cloudConsent = it)) }
-                        Text("These choices are remembered. Cloud uploads are not available yet.", style = MaterialTheme.typography.bodySmall)
+                        Text("These choices are remembered. Cloud uploads need a configured online gateway.", style = MaterialTheme.typography.bodySmall)
                     }
                     (validation ?: error)?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                     if (!canSave) Text("UI preview: saving is disabled.")

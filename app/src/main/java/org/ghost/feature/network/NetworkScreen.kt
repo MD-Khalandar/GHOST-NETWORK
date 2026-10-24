@@ -5,7 +5,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Button
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import org.ghost.design.*
@@ -28,6 +28,10 @@ fun NetworkScreen(state: FoundationState, onRetry: () -> Unit, modifier: Modifie
                   contentPadding: PaddingValues = PaddingValues(0.dp), trust: DeviceTrustState = DeviceTrustState(),
                   onRetryIdentity: (() -> Unit)? = null, local: LocalUiState = LocalUiState(), actions: LocalActions? = null) {
     val context = LocalContext.current
+    var setup by remember { mutableStateOf(false) }
+    if (setup) GatewaySetupDialog(local.gateway, local.saving, local.error, onClose = { setup = false },
+        onSave = { url, token -> actions?.saveGateway?.invoke(url, token) { setup = false } },
+        onRemove = { actions?.clearGateway?.invoke(); setup = false })
     GhostScreen("Network", "Nearby SOS relay. Keep Bluetooth and Wi-Fi on.", modifier, contentPadding, state.simulated) {
         when {
             state.loading -> item { LoadingCard() }
@@ -49,7 +53,14 @@ fun NetworkScreen(state: FoundationState, onRetry: () -> Unit, modifier: Modifie
                 (local.exchangeStatus ?: local.notice)?.let { message -> item("exchange") { InfoCard("Exchange status", message) } }
                 item("cloud") { InfoCard(state.cloud.label(), "Reachability alone does not confirm an uploaded report or assistance.") }
                 item("retry") { TextButton(onClick = { actions?.retrySends?.invoke() }, enabled = actions != null, modifier = Modifier.heightIn(min = 48.dp)) { Text("Retry queued sends") } }
-                item("sharing") { InfoCard("Gateway sharing is off", "Cloud uploads are not implemented yet. Receipts confirm saving by the next phone, not server delivery.") }
+                item("sharing") {
+                    InfoCard("Cloud gateway", local.gateway.message) {
+                        Text("Only SOS reports with cloud consent are uploaded. Signed server acknowledgements are saved on this gateway; return delivery to offline phones is next.")
+                        TextButton({ setup = true }, enabled = actions?.saveGateway != null, modifier = Modifier.heightIn(min = 48.dp)) {
+                            Text(if (local.gateway.configured) "Edit gateway setup" else "Configure gateway")
+                        }
+                    }
+                }
                 item("identity") {
                     InfoCard("Device signing identity", when (trust.identity) {
                         IdentityStatus.CHECKING -> "Checking this phone's signing key."

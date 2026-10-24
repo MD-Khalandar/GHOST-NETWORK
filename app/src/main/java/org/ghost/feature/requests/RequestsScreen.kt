@@ -9,6 +9,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import org.ghost.design.*
 import org.ghost.feature.foundation.*
+import org.ghost.domain.model.LocalCloudState
 
 @Composable
 fun RequestsScreen(state: FoundationState, onRetry: () -> Unit, modifier: Modifier = Modifier,
@@ -30,7 +31,13 @@ fun RequestsScreen(state: FoundationState, onRetry: () -> Unit, modifier: Modifi
                         Text(request.coarseArea ?: "Area not provided")
                         Text("Source ${request.sourceNodeId.value.take(8)} · reported ${fixtureTime(request.reportedAtMs)}",
                             style = MaterialTheme.typography.bodySmall)
-                        Text("Cloud acceptance and assistance are unconfirmed.", style = MaterialTheme.typography.bodySmall)
+                        Text(when (request.cloudState) {
+                            LocalCloudState.ACCEPTED -> "Received by server · signed acknowledgement saved. Assistance is unconfirmed."
+                            LocalCloudState.QUEUED -> "Queued for cloud upload. Assistance is unconfirmed."
+                            LocalCloudState.REJECTED -> "Cloud upload rejected. Check gateway setup and retry."
+                            LocalCloudState.EXPIRED -> "Cloud upload expired. Assistance is unconfirmed."
+                            LocalCloudState.NOT_SHARED -> "Not shared with cloud. Assistance is unconfirmed."
+                        }, style = MaterialTheme.typography.bodySmall)
                     }
                 }
                 items(state.offers, key = { "offer-${it.offerId.value}" }) { offer ->

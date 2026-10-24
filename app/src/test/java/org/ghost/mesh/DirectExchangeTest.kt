@@ -71,7 +71,7 @@ class DirectExchangeTest {
             .generateKeyPair().let { SigningIdentity(it.private, it.public) }
         names.add(databaseName)
         val db = Room.databaseBuilder(context, GhostDatabase::class.java, databaseName)
-            .addMigrations(GhostDatabase.MIGRATION_1_2).build().also { databases.add(it) }
+            .addMigrations(GhostDatabase.MIGRATION_1_2, GhostDatabase.MIGRATION_2_3).build().also { databases.add(it) }
         val repo = LocalSosRepository(db, { signingKey }, { baseTime + testScheduler.currentTime })
         val radio = Radio(name)
         val engine = DirectExchange(backgroundScope, radio, repo, { signingKey }, { baseTime + testScheduler.currentTime })

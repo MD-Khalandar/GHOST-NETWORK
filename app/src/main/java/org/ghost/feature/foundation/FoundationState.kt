@@ -37,7 +37,7 @@ fun GatewayReachability.label(): String = when (this) {
 fun CloudCoordinationStatus.label(): String = when (this) {
     CloudCoordinationStatus.NOT_CONNECTED -> "Cloud unavailable"
     CloudCoordinationStatus.WAITING_FOR_GATEWAY -> "Waiting for internet gateway"
-    CloudCoordinationStatus.UPLOADED -> "Uploaded to cloud"
+    CloudCoordinationStatus.UPLOADED -> "Received by server"
     CloudCoordinationStatus.AWAITING_OPERATOR -> "Waiting for operator approval"
     CloudCoordinationStatus.PROPOSAL_SENT -> "Proposal sent"
     CloudCoordinationStatus.RECEIVED_BY_PHONE -> "Received by phone"

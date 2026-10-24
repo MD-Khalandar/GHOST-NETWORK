@@ -28,8 +28,8 @@ source scripts/env.sh
 
 APK: `app/build/outputs/apk/debug/app-debug.apk`. With a phone connected, use
 `installDebug` and launch GHOST. SOS drafts, reports and queued packets are saved
-locally. Nearby runs while the app is open and can relay public SOS reports;
-cloud uploads are not implemented yet.
+locally. Nearby runs while the app is open and can relay public SOS reports.
+Configured gateway phones can upload reports with cloud consent.
 
 For two phones with Google Play services:
 
@@ -49,7 +49,7 @@ receive A's unchanged report. Forwarding stops after four transfers or expiry.
 Receipts confirm saving by the immediate neighbor. Each phone remembers which
 neighbors already hold a report across restarts and reconnects; unacknowledged
 sends remain eligible for retry. Duplicates are saved only once. Existing local
-data upgrades in place. Physical three-phone testing is still pending.
+data upgrades in place. The user reports the mesh works on physical phones.
 
 The mesh is open to nearby GHOST phones; connections have no manual code check.
 Signing verifies report integrity and key possession, not a person's identity.
@@ -64,13 +64,27 @@ signed receipt before the next report goes out on that link. Missing receipts
 trigger up to three attempts per connection; **Retry queued sends** resumes them
 without forgetting saved receipts. Requests shows relay acknowledgements and
 the remaining transfer budget. Expired reports are never queued for another send.
-This relay handles public SOS reports and neighbor receipts; cloud uploads and
-cloud responses returning through the mesh are separate upcoming work.
+This relay handles public SOS reports and neighbor receipts. Returning cloud
+acknowledgements through the mesh is upcoming work.
 
 The server public signing key can be pinned with
 `-PghostCloudPublicKey=<base64url-SPKI>`. Empty configuration rejects cloud results.
 Shared wire definitions live in `contracts/ghost.proto`; signature vectors use
 public test-only keys, never deployment credentials.
+
+For a cloud gateway, build with the deployed server's public signing key using
+`-PghostCloudPublicKey=<base64url-SPKI>`. In **Network → Configure gateway**, enter
+the server address and a gateway bearer token supplied by the server operator.
+The token is stored encrypted with Android Keystore; it is never baked into the
+APK. Normal mesh phones need no gateway setup.
+
+Join the mesh and enable **Allow cloud coordination** when sending an SOS.
+While open, the configured gateway uploads eligible reports, including received
+reports, and retries temporary failures. **Received by server** appears only after
+a matching pinned signature is saved in Room. The offline sender cannot see this
+until return routing is implemented. Use HTTPS; debug builds also allow HTTP for
+LAN/emulator testing (`10.0.2.2` reaches the emulator host). This upload path has
+local HTTP/storage/signature tests; a deployed phone-to-cloud test is still needed.
 
 ## Server
 

@@ -12,6 +12,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import org.ghost.contracts.v1.ConsentV1
+import org.ghost.contracts.v1.CloudAckV1
 import org.ghost.contracts.v1.DeliveryReceiptV1
 import org.ghost.contracts.v1.SosCreateV1
 import org.ghost.domain.model.*
@@ -57,7 +58,14 @@ class LocalSosRepository(
                     row.receivedBy != null -> LocalDelivery.RECEIVED_BY_PHONE
                     row.sentAt != null -> LocalDelivery.SENT_TO_NEIGHBOR
                     else -> LocalDelivery.QUEUED
-                }, row.owned, relay.hopCount, relay.remainingHops, status.acknowledgedNeighbors)
+                }, row.owned, relay.hopCount, relay.remainingHops, status.acknowledgedNeighbors,
+                when {
+                    row.cloudAck != null -> LocalCloudState.ACCEPTED
+                    !row.publicSharing || !row.cloudConsent -> LocalCloudState.NOT_SHARED
+                    expired -> LocalCloudState.EXPIRED
+                    row.cloudError != null -> LocalCloudState.REJECTED
+                    else -> LocalCloudState.QUEUED
+                })
         }
     }.flowOn(Dispatchers.IO)
     override suspend fun publish(payload: SosCreatePayload): Result<LocalPublishResult> = withContext(Dispatchers.IO) {
@@ -129,6 +137,31 @@ class LocalSosRepository(
             relay.remainingHops - 1, relay.hopCount + 1, localNode))))
     }
     suspend fun markSent(packetId: String) = withContext(Dispatchers.IO) { dao.markSent(packetId, now()) }
+
+    suspend fun cloudOutgoing(): List<ReportRow> = withContext(Dispatchers.IO) { dao.cloudOutgoing(now()) }
+    suspend fun prepareCloudUpload(eventId: String): ReportRow? = withContext(Dispatchers.IO) {
+        dao.event(eventId)?.takeIf { it.publicSharing && it.cloudConsent && it.cloudAck == null && it.cloudError == null && it.expiresAt > now() }
+    }
+    suspend fun retryCloudUploads() = withContext(Dispatchers.IO) { dao.retryCloudUploads(now()) }
+    suspend fun rejectCloudUpload(eventId: String, code: String) = withContext(Dispatchers.IO) {
+        require(code.matches(Regex("[A-Z_]{1,64}")))
+        dao.rejectCloudUpload(eventId, code)
+    }
+    /** HTTP status is not proof: only a pinned signature for this exact SOS is saved. */
+    suspend fun acceptCloudAck(eventId: String, packet: WirePacket, cloudKey: ByteArray, expectedRevision: Long): Long = withContext(Dispatchers.IO) {
+        val verified = PacketValidator(trustedCloudPublicKey = cloudKey).verify(packet, now())
+        require(verified.envelope.kindValue == 7)
+        val ack = verified.payload as CloudAckV1
+        require(ack.originEventId == eventId && ack.statusValue in 1..2 && ack.cloudRevision == expectedRevision)
+        db.withTransaction {
+            val row = dao.event(eventId) ?: error("Unknown SOS")
+            require(row.publicSharing && row.cloudConsent)
+            require(verified.envelope.destination.kindValue == 2 &&
+                verified.envelope.destination.nodeId.toByteArray().contentEquals(WireCodec.bytes(row.sender)))
+            dao.saveCloudAck(eventId, WireCodec.encode(packet))
+        }
+        ack.cloudRevision
+    }
 
     /** Returns a signed persistence receipt only after the report and receipt have committed. */
     suspend fun receiveSos(packet: WirePacket, peerNode: String): ByteArray = withContext(Dispatchers.IO) {

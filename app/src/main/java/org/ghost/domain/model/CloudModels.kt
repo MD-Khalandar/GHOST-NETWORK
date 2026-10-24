@@ -20,6 +20,7 @@ data class SyncUploadItemResult(
 @Serializable
 data class SyncUploadResponse(
     val results: List<SyncUploadItemResult>,
+    val packets: List<WirePacket> = emptyList(),
 )
 
 @Serializable
@@ -52,7 +53,10 @@ data class DashboardSosSummary(
     val relayHops: Int = 0,
     val remainingRelayHops: Int = 4,
     val acknowledgedNeighbors: Int = 0,
+    val cloudState: LocalCloudState = LocalCloudState.NOT_SHARED,
 )
+
+enum class LocalCloudState { NOT_SHARED, QUEUED, ACCEPTED, REJECTED, EXPIRED }
 
 @Serializable
 data class OfferSummary(

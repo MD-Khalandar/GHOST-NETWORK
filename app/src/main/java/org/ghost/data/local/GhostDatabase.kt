@@ -27,6 +27,8 @@ data class ReportRow(
     val receipt: ByteArray? = null,
     val sentAt: Long? = null,
     val receivedBy: String? = null,
+    val cloudAck: ByteArray? = null,
+    val cloudError: String? = null,
 )
 
 @Entity(tableName = "draft")
@@ -61,6 +63,14 @@ interface SosDao {
     suspend fun outgoingPacket(packetId: String, peerNode: String, now: Long): ReportRow?
     @Query("SELECT packetId FROM reports WHERE publicSharing = 1 AND expiresAt > :now")
     suspend fun activePacketIds(now: Long): List<String>
+    @Query("SELECT * FROM reports WHERE publicSharing = 1 AND cloudConsent = 1 AND cloudAck IS NULL AND cloudError IS NULL AND expiresAt > :now ORDER BY owned DESC, createdAt LIMIT 20")
+    suspend fun cloudOutgoing(now: Long): List<ReportRow>
+    @Query("UPDATE reports SET cloudAck = :ack, cloudError = NULL WHERE eventId = :eventId AND publicSharing = 1 AND cloudConsent = 1")
+    suspend fun saveCloudAck(eventId: String, ack: ByteArray)
+    @Query("UPDATE reports SET cloudError = :code WHERE eventId = :eventId AND cloudAck IS NULL")
+    suspend fun rejectCloudUpload(eventId: String, code: String)
+    @Query("UPDATE reports SET cloudError = NULL WHERE cloudError IS NOT NULL AND expiresAt > :now")
+    suspend fun retryCloudUploads(now: Long)
     @Query("SELECT * FROM neighbor_deliveries WHERE packetId = :packetId AND peerNodeId = :peerNode")
     suspend fun delivery(packetId: String, peerNode: String): NeighborDeliveryRow?
     @Upsert suspend fun saveDelivery(row: NeighborDeliveryRow)
@@ -76,11 +86,17 @@ interface SosDao {
     @Upsert suspend fun saveDraft(row: DraftRow)
 }
 
-@Database(entities = [ReportRow::class, DraftRow::class, NeighborDeliveryRow::class], version = 2, exportSchema = true)
+@Database(entities = [ReportRow::class, DraftRow::class, NeighborDeliveryRow::class], version = 3, exportSchema = true)
 abstract class GhostDatabase : RoomDatabase() {
     abstract fun sos(): SosDao
 
     companion object {
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE reports ADD COLUMN cloudAck BLOB")
+                db.execSQL("ALTER TABLE reports ADD COLUMN cloudError TEXT")
+            }
+        }
         val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("CREATE TABLE IF NOT EXISTS neighbor_deliveries (packetId TEXT NOT NULL, peerNodeId TEXT NOT NULL, receiptFromPeer BLOB, receiptToPeer BLOB, PRIMARY KEY(packetId, peerNodeId), FOREIGN KEY(packetId) REFERENCES reports(packetId) ON UPDATE NO ACTION ON DELETE CASCADE)")

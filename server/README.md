@@ -45,6 +45,7 @@ deduplicates by packet/event/request IDs and reuses the original acknowledgement
 
 Server build and tests use the commands above. Storage tests use embedded
 PostgreSQL (PGlite), including a file-backed restart; an external PostgreSQL
-deployment still needs verification. Phone uploads, acknowledgement delivery
-through the mesh, dashboard and coordination remain next work; their handlers
-still return 501. See [PROJECT.md](../PROJECT.md).
+deployment still needs verification. Android gateway uploads and local signed
+receipt storage are implemented. Acknowledgement delivery through the mesh,
+dashboard and coordination remain next work; download/dashboard handlers still
+return 501. See [PROJECT.md](../PROJECT.md).

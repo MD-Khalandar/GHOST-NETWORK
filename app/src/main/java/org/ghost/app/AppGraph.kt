@@ -13,24 +13,40 @@ import org.ghost.domain.model.*
 import org.ghost.mesh.DirectExchange
 import org.ghost.security.AndroidSigningIdentity
 import org.ghost.transport.nearby.NearbyAdapter
+import org.ghost.BuildConfig
+import org.ghost.gateway.*
+import org.ghost.protocol.WireCodec
+import org.ghost.security.SigningIdentity
 
 class AppGraph(application: Application) : AndroidViewModel(application) {
     private val db = Room.databaseBuilder(application, GhostDatabase::class.java, "ghost.db")
-        .addMigrations(GhostDatabase.MIGRATION_1_2).build()
+        .addMigrations(GhostDatabase.MIGRATION_1_2, GhostDatabase.MIGRATION_2_3).build()
     private val identity by lazy { AndroidSigningIdentity().loadOrCreate() }
     val nearby = NearbyAdapter(application, viewModelScope)
     val repository = LocalSosRepository(db, { identity })
     private val exchange = DirectExchange(viewModelScope, nearby, repository, { identity })
-    val dependencies = GhostAppDependencies(nearby, UnavailableGateway, repository, UnavailableOffers, UnavailableCoordination)
+    private val gatewaySettings = GatewayConfigStore(application, BuildConfig.DEBUG)
+    private val cloudKey = runCatching {
+        BuildConfig.CLOUD_PUBLIC_KEY.takeIf { it.isNotEmpty() }?.let { WireCodec.unbase64(it, 91).also(SigningIdentity::decodePublicKey) }
+    }.getOrNull()
+    private val gatewayClient = HttpGatewayClient { gatewaySettings.config.value }
+    private val gateway = GatewaySync(viewModelScope, gatewaySettings.config, nearby.state.map { it.active }, gatewayClient, repository, cloudKey)
+    val dependencies = GhostAppDependencies(nearby, gatewayClient, repository, UnavailableOffers, UploadCoordinationState(repository))
     private val operation = MutableStateFlow(LocalUiState())
     private data class DraftWrite(val draft: SosDraft, val complete: (() -> Unit)? = null)
     private val draftWrites = Channel<DraftWrite>(Channel.CONFLATED)
     val local: StateFlow<LocalUiState> = combine(repository.observeDraft(), operation, nearby.state, exchange.identities, exchange.message) {
         draft, state, network, identities, message -> state.copy(draft = draft, network = network, peerIdentities = identities, exchangeStatus = message)
-    }.catch { emit(LocalUiState(error = "Local storage could not be opened.")) }
+    }.combine(gateway.state) { state, cloud -> state.copy(gateway = cloud) }
+        .catch { emit(LocalUiState(error = "Local storage could not be opened.")) }
         .stateIn(viewModelScope, SharingStarted.Eagerly, LocalUiState())
 
     init {
+        viewModelScope.launch {
+            try { gatewaySettings.load() }
+            catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { operation.update { it.copy(error = "Gateway settings could not be opened. Reconfigure this phone's gateway.") } }
+        }
         viewModelScope.launch {
             for (write in draftWrites) {
                 try {
@@ -82,8 +98,36 @@ class AppGraph(application: Application) : AndroidViewModel(application) {
     }
     fun pauseNearby() { meshStart?.cancel(); meshStart = null; nearby.close() }
     fun stopNearby() { meshEnabled = false; pauseNearby() }
+    private fun saveGateway(url: String, token: String, saved: () -> Unit) {
+        if (operation.value.saving) return
+        operation.update { it.copy(saving = true, error = null) }
+        viewModelScope.launch {
+            try {
+                gatewaySettings.save(url, token)
+                repository.retryCloudUploads(); gateway.retry()
+                operation.update { it.copy(saving = false, error = null) }
+                saved()
+            } catch (cancelled: CancellationException) { throw cancelled }
+              catch (error: Exception) { operation.update { it.copy(saving = false, error = if (error is IllegalArgumentException) error.message else "Gateway settings could not be saved. Check Android Keystore and retry.") } }
+        }
+    }
+    private fun clearGateway() {
+        viewModelScope.launch {
+            try { gatewaySettings.clear(); operation.update { it.copy(error = null) } }
+            catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { operation.update { it.copy(error = "Gateway settings could not be removed. Try again.") } }
+        }
+    }
+    private fun retrySends() {
+        exchange.retry()
+        viewModelScope.launch {
+            try { repository.retryCloudUploads(); gateway.retry() }
+            catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { operation.update { it.copy(error = "Cloud queue could not be reopened. Try again.") } }
+        }
+    }
     fun actions(start: () -> Unit) = LocalActions({ draft -> if (!operation.value.saving) draftWrites.trySend(DraftWrite(draft)) },
-        ::saveDraft, ::publish, start, ::stopNearby, exchange::retry)
+        ::saveDraft, ::publish, start, ::stopNearby, ::retrySends, ::saveGateway, ::clearGateway)
 
     override fun onCleared() {
         // SDK stop calls are immediate; the app also stops links when its activity backgrounds.
