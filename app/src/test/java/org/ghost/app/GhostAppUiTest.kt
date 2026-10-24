@@ -82,6 +82,8 @@ class GhostAppUiTest {
         compose.onNodeWithText("Save changes").performClick()
         assertEquals(draft.id, saved!!.id); assertEquals("7", saved!!.quantity); assertTrue(saved!!.editing)
         compose.onNodeWithText("Withdraw offer").performScrollTo().performClick()
+        assertNull(withdrawn)
+        compose.onAllNodesWithText("Withdraw offer").onLast().performClick()
         assertEquals(draft.id, withdrawn!!.id); assertEquals(draft.baseEventId, withdrawn!!.baseEventId)
     }
 

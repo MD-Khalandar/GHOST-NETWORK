@@ -32,7 +32,7 @@ Other or missing areas remain eligible and imply neither distance nor access.
 Supply reads use the latest signed resource projection, so signed edits and
 withdrawals invalidate older proposals. Suggestions are validated for IDs,
 quantities, expiry and exact source versions again before atomic persistence.
-Unknown stock stays unknown. Suggestions do not reserve stock or confirm help.
+Unknown stock stays unknown. Suggestions do not reserve stock; approval needs a known supply quantity. Confirmed commitments reduce available candidates.
 
 The [Responses function-calling API](https://developers.openai.com/api/docs/guides/function-calling)
 receives untrusted records and one forced strict suggestion tool, with a 30-second
@@ -47,7 +47,15 @@ no model suggestions and saved suggestions. Queue totals and retry times are exp
 Polling refreshes the selected page. **Find help with AI** on an SOS requests an operator-only
 rerun. Viewers can read; gateways cannot access coordination routes.
 
-Approval, owner acceptance, conflict-free allocation and signed assistance delivery
-are still separate next steps. Future approval must recheck current sources and
-allocations inside its transaction. Local provider/HTTP/database tests do not prove
-live model or deployed PostgreSQL behavior.
+Operators approve/reject proposals in the review desk. Approval sends an invitation;
+the signed owner decision is validated before an atomic reservation. Durable signed
+status messages reach owner/requester through gateways and supporting mesh phones.
+The server rechecks open SOS, current resources, remaining stock and deadlines under
+one transaction lock shared with source uploads. Requests can share remaining supply;
+volunteers have one active commitment. Supply edits preserve committed/used stock
+and units. Withdrawal stops future matching without silently cancelling commitments.
+Owner cancellation and SOS cancellation release active reservations; requester
+resolution records supply as used and frees volunteers. The desk lists arrangements
+separately from pending proposals. See server README for routes and status values.
+Local tests do not prove live providers, physical handset delivery or deployed
+PostgreSQL behavior.

@@ -45,6 +45,15 @@ export async function initializeCoordinator(database: Database): Promise<void> {
       SELECT DISTINCT ON (entity_id) * FROM resource_events WHERE kind IN (3,5,6)
       ORDER BY entity_id, created_at_ms DESC, event_id DESC`);
     await connection.query("CREATE INDEX IF NOT EXISTS coordinator_effective_resource ON resource_events(entity_id, created_at_ms DESC, event_id DESC)");
+    await connection.query(`CREATE OR REPLACE VIEW coordinator_resource_available AS
+      SELECT r.event_id,r.packet_id,r.kind,r.entity_id,r.owner_node_id,r.immutable_envelope,r.origin_signature,
+        CASE WHEN r.kind=3 AND COALESCE(a.busy,0)>0 THEN r.data || '{"availability":2}'::jsonb
+        WHEN r.kind<>3 AND r.data->>'quantity' IS NOT NULL THEN r.data || jsonb_build_object('quantity',
+          GREATEST(0,(r.data->>'quantity')::integer-COALESCE(a.used,0))) ELSE r.data END AS data,
+        r.created_at_ms,r.expires_at_ms,r.received_at_ms,r.cloud_revision,r.cloud_ack
+      FROM coordinator_resource_latest r LEFT JOIN (
+        SELECT resource_id,COUNT(*) FILTER(WHERE state=2) AS busy,SUM(quantity)::integer AS used FROM assistance_cases WHERE state IN(2,6)
+        GROUP BY resource_id) a ON a.resource_id=r.entity_id`);
     await connection.query(`CREATE TABLE IF NOT EXISTS coordinator_model_budget (
       window_start_ms BIGINT PRIMARY KEY, calls INTEGER NOT NULL CHECK (calls > 0)
     )`);
@@ -88,8 +97,8 @@ async function readResources(connection: SqlConnection, now: number, ids?: strin
     const { rows } = await connection.query(`SELECT * FROM (
       SELECT DISTINCT ON (entity_id) entity_id, event_id, owner_node_id, kind, data,
         created_at_ms, expires_at_ms, cloud_revision
-      FROM ${kind === 5 ? "resource_offer_latest" : "resource_events"}
-      WHERE ($1 = 5 OR kind = $1) AND ($2::text[] IS NULL OR entity_id = ANY($2))
+      FROM coordinator_resource_available
+      WHERE (CASE WHEN $1=5 THEN kind IN(5,6) ELSE kind=$1 END) AND ($2::text[] IS NULL OR entity_id = ANY($2))
       ORDER BY entity_id, created_at_ms DESC, event_id DESC
     ) latest WHERE expires_at_ms > $3
       AND ($1 <> 3 OR data->>'availability' = '1')
@@ -219,8 +228,8 @@ export class CoordinatorStore {
       FROM coordinator_proposals p
       JOIN sos_reports s ON s.event_id = p.request_event_id
       JOIN resource_events r ON r.event_id = p.resource_event_id
-      LEFT JOIN coordinator_resource_latest current ON current.entity_id = p.resource_id
-      WHERE p.status = 'pending_review' AND ($2::bigint IS NULL OR (p.created_at_ms, p.proposal_id) < ($2, $3::uuid))
+      LEFT JOIN coordinator_resource_available current ON current.entity_id = p.resource_id
+      WHERE p.status = 'pending_review' AND NOT EXISTS (SELECT 1 FROM assistance_cases a WHERE a.proposal_id=p.proposal_id) AND ($2::bigint IS NULL OR (p.created_at_ms, p.proposal_id) < ($2, $3::uuid))
         AND ($4::uuid IS NULL OR p.request_id = $4)
       ORDER BY p.created_at_ms DESC, p.proposal_id DESC LIMIT $1`, [limit + 1, before?.createdAt ?? null, before?.id ?? null, requestId ?? null]);
     const items = rows.slice(0, limit).map(row => {

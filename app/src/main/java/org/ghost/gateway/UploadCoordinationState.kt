@@ -14,10 +14,10 @@ class UploadCoordinationState(private val repository: LocalSosRepository) : Clou
             LocalCloudState.REJECTED -> CloudCoordinationStatus.FAILED
             else -> CloudCoordinationStatus.NOT_CONNECTED
         }, requestId = latest?.requestId, message = when (latest?.cloudState) {
-            LocalCloudState.ACCEPTED -> "Server storage is confirmed. Assistance coordination is not implemented yet."
+            LocalCloudState.ACCEPTED -> "Server storage is confirmed. Assistance invitations and commitments appear in Requests when signed updates arrive."
             LocalCloudState.QUEUED -> "This SOS is waiting for a configured online gateway."
             LocalCloudState.REJECTED -> "Server rejected this upload. Check gateway setup and retry."
-            else -> "No server acknowledgement for this phone's SOS. Assistance coordination is not implemented yet."
+            else -> "No server acknowledgement for this phone's SOS. Assistance invitations and commitments appear in Requests when signed updates arrive."
         })
     }
 }

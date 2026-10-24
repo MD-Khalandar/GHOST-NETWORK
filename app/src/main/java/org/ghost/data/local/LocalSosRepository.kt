@@ -27,6 +27,7 @@ class LocalSosRepository(
     private val now: () -> Long = System::currentTimeMillis,
 ) : SosRepository {
     private val dao = db.sos()
+    val assistance = LocalAssistanceRepository(db, identity, now)
     val resources = LocalResourceRepository(db, identity, now)
     val closures = LocalSosClosureRepository(db, identity, now)
     private val writes = Mutex()
@@ -142,7 +143,7 @@ class LocalSosRepository(
         val localNode = identity().nodeId
         rows.asSequence().mapNotNull { prepare(it, peerNode, localNode) }.take(100).toList()
     }
-    suspend fun activePacketIds(): Set<String> = withContext(Dispatchers.IO) { (dao.activePacketIds(now()) + db.resources().active(now())).toSet() }
+    suspend fun activePacketIds(): Set<String> = withContext(Dispatchers.IO) { (dao.activePacketIds(now()) + db.resources().active(now()) + db.assistance().observe().first().filter { it.expiresAt>now() }.map {it.packetId}).toSet() }
 
     suspend fun prepareOutgoing(packetId: String, peerNode: String): ReportRow? = withContext(Dispatchers.IO) {
         dao.outgoingPacket(packetId, peerNode, now())?.let { prepare(it, peerNode, identity().nodeId) }
@@ -164,12 +165,14 @@ class LocalSosRepository(
     suspend fun markSent(packetId: String) = withContext(Dispatchers.IO) { dao.markSent(packetId, now()) }
 
     suspend fun cloudOutgoing(): List<UploadCandidate> = withContext(Dispatchers.IO) {
+        db.assistance().uploads(now()).map { UploadCandidate(it.eventId,it.packetId,it.wire) } +
         db.closures().uploads(now()).map { UploadCandidate(it.eventId, it.packetId, it.wire) } +
             dao.cloudOutgoing(now()).map { UploadCandidate(it.eventId, it.packetId, it.wire) } +
             db.resources().uploads(now()).map { UploadCandidate(it.eventId, it.packetId, it.wire) }
     }
     suspend fun prepareCloudUpload(eventId: String): UploadCandidate? = withContext(Dispatchers.IO) {
-        db.closures().event(eventId)?.takeIf { it.publicSharing && it.cloudConsent && it.cloudAck == null && it.cloudError == null && it.expiresAt > now() }
+        db.assistance().event(eventId)?.takeIf{it.kind==17 && it.cloudAck==null && it.cloudError==null && it.expiresAt>now()}
+            ?.let{UploadCandidate(it.eventId,it.packetId,it.wire)} ?: db.closures().event(eventId)?.takeIf { it.publicSharing && it.cloudConsent && it.cloudAck == null && it.cloudError == null && it.expiresAt > now() }
             ?.let { UploadCandidate(it.eventId, it.packetId, it.wire) }
             ?: dao.event(eventId)?.takeIf { it.publicSharing && it.cloudConsent && it.cloudAck == null && it.cloudError == null && it.expiresAt > now() && db.closures().latest(it.requestId) == null }
             ?.let { UploadCandidate(it.eventId, it.packetId, it.wire) }
@@ -177,9 +180,10 @@ class LocalSosRepository(
                 resources.isCurrentShared(it) }
                 ?.let { UploadCandidate(it.eventId, it.packetId, it.wire) }
     }
-    suspend fun retryCloudUploads() = withContext(Dispatchers.IO) { dao.retryCloudUploads(now()); db.resources().retry(now()); db.closures().retry(now()) }
+    suspend fun retryCloudUploads() = withContext(Dispatchers.IO) { db.assistance().retry(now()); dao.retryCloudUploads(now()); db.resources().retry(now()); db.closures().retry(now()) }
     suspend fun rejectCloudUpload(eventId: String, code: String) = withContext(Dispatchers.IO) {
         require(code.matches(Regex("[A-Z_]{1,64}")))
+        db.assistance().reject(eventId,code)
         dao.rejectCloudUpload(eventId, code)
         db.resources().reject(eventId, code)
         db.closures().reject(eventId, code)
@@ -194,10 +198,11 @@ class LocalSosRepository(
             val row = dao.event(eventId)
             val resource = db.resources().event(eventId)
             val closure = db.closures().event(eventId)
-            require(row != null || resource != null || closure != null) { "Unknown report" }
-            require(if (row != null) row.publicSharing && row.cloudConsent else if (resource != null) resource.publicSharing && resource.cloudConsent else closure!!.publicSharing && closure.cloudConsent)
+            val decision = db.assistance().event(eventId)?.takeIf{it.kind==17}
+            require(row != null || resource != null || closure != null || decision!=null) { "Unknown report" }
+            require(if (row != null) row.publicSharing && row.cloudConsent else if (resource != null) resource.publicSharing && resource.cloudConsent else if(closure!=null) closure.publicSharing && closure.cloudConsent else true)
             require(verified.envelope.destination.kindValue == 2 &&
-                verified.envelope.destination.nodeId.toByteArray().contentEquals(WireCodec.bytes(row?.sender ?: resource?.owner ?: closure!!.sender)))
+                verified.envelope.destination.nodeId.toByteArray().contentEquals(WireCodec.bytes(row?.sender ?: resource?.owner ?: closure?.sender ?: SigningIdentity.hex(org.ghost.contracts.v1.ImmutableEnvelopeV1.parseFrom(WireCodec.unbase64(WireCodec.decode(decision!!.wire).immutableEnvelopeBytesBase64,PacketValidator.MAX_ENVELOPE)).senderNodeId.toByteArray()))))
             storeCloudReturn(verified)
         }
         ack.cloudRevision
@@ -260,6 +265,7 @@ class LocalSosRepository(
     private suspend fun storeCloudReturn(verified: VerifiedPacket): CloudReturnRow {
         val e = verified.envelope
         require(e.kindValue == 7 && e.destination.kindValue == 2)
+        require(db.assistance().packet(e.packetId)==null && db.assistance().event(e.eventId)==null)
         val ack = verified.payload as CloudAckV1
         require(ack.statusValue in 1..2)
         val destination = SigningIdentity.hex(e.destination.nodeId.toByteArray())
@@ -285,6 +291,7 @@ class LocalSosRepository(
         if (report != null) dao.saveCloudAck(ack.originEventId, stored.wire)
         if (resource != null) db.resources().acknowledge(ack.originEventId, stored.wire)
         if (closure != null) db.closures().acknowledge(ack.originEventId, stored.wire)
+        db.assistance().event(ack.originEventId)?.let { require(it.kind==17); val original=org.ghost.contracts.v1.ImmutableEnvelopeV1.parseFrom(WireCodec.unbase64(WireCodec.decode(it.wire).immutableEnvelopeBytesBase64,PacketValidator.MAX_ENVELOPE));require(SigningIdentity.hex(original.senderNodeId.toByteArray())==destination);db.assistance().acknowledge(ack.originEventId,stored.wire) }
         return stored
     }
 
@@ -305,6 +312,7 @@ class LocalSosRepository(
             .setRecipientNodeId(ByteString.copyFrom(WireCodec.bytes(key.nodeId.value))).setReceiptTypeValue(1).setObservedAtMs(now()).build().toByteString(),
             now(), destination = peerNode)
         db.withTransaction {
+            require(db.assistance().packet(result.envelope.packetId)==null && db.assistance().event(result.envelope.eventId)==null)
             require(db.resources().packet(result.envelope.packetId) == null && db.resources().event(result.envelope.eventId) == null)
             require(db.closures().packet(result.envelope.packetId) == null && db.closures().event(result.envelope.eventId) == null)
             require(dao.cloudReturn(result.envelope.packetId) == null && dao.cloudReturnEvent(result.envelope.eventId) == null) { "Conflicting packet identifier." }
@@ -348,15 +356,16 @@ class LocalSosRepository(
         val returned = dao.cloudReturn(p.packetId)
         val resource = db.resources().packet(p.packetId)
         val closure = db.closures().packet(p.packetId)
+        val coordination = db.assistance().packet(p.packetId)
         val key = identity()
-        require((original?.publicSharing == true || returned != null || resource?.publicSharing == true || closure?.publicSharing == true) && p.packetId in sentPacketIds && p.receiptTypeValue == 1) { "Receipt does not match a packet sent to this peer." }
+        require((coordination!=null || original?.publicSharing == true || returned != null || resource?.publicSharing == true || closure?.publicSharing == true) && p.packetId in sentPacketIds && p.receiptTypeValue == 1) { "Receipt does not match a packet sent to this peer." }
         val valid = PacketValidator(lookup = AuthorityLookup { kind, id, _ ->
             if (kind == AuthorityKind.RECEIPT && id == p.packetId) Authority(peerNode) else null
         }).verify(packet, now())
         require(valid.envelope.destination.kindValue == 2 && valid.envelope.destination.nodeId.toByteArray().contentEquals(WireCodec.bytes(key.nodeId.value))) { "Receipt addressed to another phone." }
         db.withTransaction {
             val bytes = WireCodec.encode(packet)
-            if (returned != null) {
+            if(coordination!=null) { db.assistance().delivered(AssistanceDelivery(p.packetId,peerNode,bytes)) } else if (returned != null) {
                 val delivery = dao.returnDelivery(p.packetId, peerNode) ?: CloudReturnDeliveryRow(p.packetId, peerNode)
                 dao.saveReturnDelivery(delivery.copy(receiptFromPeer = bytes))
             } else if (closure != null) {

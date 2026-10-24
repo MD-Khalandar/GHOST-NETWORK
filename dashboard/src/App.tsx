@@ -72,7 +72,7 @@ export default function App() {
       </form></section> : <>
         <nav className="desk-tabs" aria-label="Desk sections">{([['sos', 'SOS requests'], ['helpers', 'Helpers'], ['offers', 'Supplies'], ['ai', 'AI suggestions']] as const).map(([value, title]) =>
           <button key={value} className="secondary-button" aria-current={tab === value ? "page" : undefined} onClick={() => setTab(value)}>{title}</button>)}</nav>
-        {tab === "ai" ? <Coordination token={session.token} onAccessLost={message => { clearSession(); setError(message); }}/>
+        {tab === "ai" ? <Coordination operator={session.role==="operator"} token={session.token} onAccessLost={message => { clearSession(); setError(message); }}/>
           : tab !== "sos" ? <Resources key={tab} kind={tab} token={session.token} onAccessLost={message => { clearSession(); setError(message); }}/> : <>
         <div className="inbox-toolbar"><div><strong>{reports.length} {reports.length === 1 ? "request" : "requests"} loaded</strong><span className="subtle">{updated ? `Last refreshed ${time(updated)}` : "Loading requests"}</span></div><button className="secondary-button" disabled={busy} onClick={() => void load()}>{busy ? "Loading…" : "Refresh requests"}</button></div>
         <div className="inbox-note"><span className="status-dot" aria-hidden="true"/><p>Only uploaded reports appear here. Phones still offline may hold other requests. Refresh to check for new arrivals.</p></div>

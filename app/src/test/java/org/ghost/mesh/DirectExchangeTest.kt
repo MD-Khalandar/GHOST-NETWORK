@@ -105,6 +105,32 @@ class DirectExchangeTest {
 
     @After fun close() { databases.forEach { it.close() }; names.forEach { context.deleteDatabase(it) } }
 
+    @Test fun assistanceInvitationsDecisionsAndConfirmationsCrossThreePhonesWithSignedReceipts()=runTest {
+        val cloud=newKey();val pin=cloud.publicKey.encoded
+        val a=phone("A",cloudKey=pin);phone("B",cloudKey=pin);val c=phone("C",cloudKey=pin)
+        val id=UUID.randomUUID().toString();val request=UUID.randomUUID().toString();val resource=UUID.randomUUID().toString()
+        fun status(destination:String,state:Int,version:Int)=SignedPackets.create(cloud,16,
+            org.ghost.contracts.v1.AssistanceStatusV1.newBuilder().setProposalId(id).setVersion(version).setRequestId(request)
+                .setResourceId(resource).setResourceKind(2).setOwnerNodeId(com.google.protobuf.ByteString.copyFrom(WireCodec.bytes(c.key.nodeId.value)))
+                .setRequesterNodeId(com.google.protobuf.ByteString.copyFrom(WireCodec.bytes(a.key.nodeId.value))).setState(state)
+                .setQuantity(7).setUnit("litres").setDescription("Need water").setDeadlineMs(baseTime+3600000).build().toByteString(),
+            baseTime,ttl=3600000,destination=destination)
+        runBlocking{a.repo.assistance.store(status(c.key.nodeId.value,1,1),pin)}
+        connect("A","B");connect("B","C")
+        until{c.repo.assistance.observe().first().singleOrNull()?.state==1}
+        runBlocking{c.repo.assistance.decide(id,1,1,pin)}
+        until{a.repo.cloudOutgoing().any{ImmutableEnvelopeV1.parseFrom(WireCodec.unbase64(WireCodec.decode(it.wire).immutableEnvelopeBytesBase64,24576)).kindValue==17}}
+        runBlocking{
+            a.repo.assistance.store(status(a.key.nodeId.value,2,2),pin)
+            a.repo.assistance.store(status(c.key.nodeId.value,2,2),pin)
+        }
+        until{c.repo.assistance.observe().first().singleOrNull()?.state==2}
+        assertFalse(runBlocking{c.repo.assistance.observe().first().single().pending})
+        assertEquals(2,runBlocking{a.repo.assistance.observe().first().single().state})
+        assertTrue(sends("A","B",16)>0);assertTrue(sends("B","C",16)>0)
+        assertTrue(sends("C","B",17)>0);assertTrue(sends("B","A",17)>0)
+    }
+
     @Test fun sosResolutionRelaysBeforeOriginalAndCloudReceiptReturnsToRequester() = runTest {
         val cloud = newKey(); val pin = cloud.publicKey.encoded
         val a = phone("A", cloudKey = pin); phone("B", cloudKey = pin); val g = phone("G", cloudKey = pin)

@@ -84,6 +84,7 @@ class LocalSosClosureRepository(private val db: GhostDatabase, private val ident
                     if (sos.hasCoarseArea()) sos.coarseArea else null, base.createdAtMs, now(), base.expiresAtMs,
                     false, true, sos.consent.cloudProcessingAllowed, WireCodec.encode(original))) != -1L)
             }
+            require(db.assistance().packet(e.packetId)==null && db.assistance().event(e.eventId)==null)
             val old = dao.event(e.eventId) ?: dao.packet(e.packetId)
             if (old != null) {
                 val stored = WireCodec.decode(old.wire)

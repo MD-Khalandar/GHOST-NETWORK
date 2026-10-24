@@ -68,6 +68,7 @@ class AppGraph(application: Application) : AndroidViewModel(application) {
             message = if (connection.available && (!connection.online || !state.gateway.uploading &&
                 state.gateway.message.startsWith("Checking saved"))) connection.message else state.gateway.message)) }
         .combine(repository.resources.observeSummaries()) { state, resources -> state.copy(resources = resources, resourcesLoaded = true) }
+        .combine(repository.assistance.observe()) { state, assistance -> state.copy(assistance=assistance) }
         .combine(exchange.topology) { state, topology -> state.copy(topology = topology) }
         .combine(internet) { state, status -> state.copy(topology = state.topology.copy(
             localCapabilities = state.topology.localCapabilities.copy(internet = status))) }
@@ -182,6 +183,15 @@ class AppGraph(application: Application) : AndroidViewModel(application) {
         ::saveDraft, ::publish, start, ::stopNearby, ::retrySends, ::saveGateway, ::clearGateway,
         publishResource = { draft, saved -> publishResource(draft, saved) },
         withdrawResource = { draft, saved -> publishResource(draft, saved, withdraw = true) },
+        decideAssistance = {id,version,decision->
+            if(!operation.value.saving)viewModelScope.launch {
+                operation.update{it.copy(saving=true,error=null)}
+                try{repository.assistance.decide(id,version,decision,requireNotNull(cloudKey))
+                    operation.update{it.copy(saving=false,notice="Decision saved. Waiting for server confirmation.")};exchange.flush()}
+                catch(cancelled:CancellationException){throw cancelled}
+                catch(error:Exception){operation.update{it.copy(saving=false,error=if(error is IllegalArgumentException)error.message else "Could not save the decision. Refresh and retry.")}}
+            }
+        },
         requestLocation = requestLocation, closeSos = ::closeSos)
 
     private fun closeSos(requestId: String, state: SosState) {

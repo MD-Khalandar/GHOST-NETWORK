@@ -81,7 +81,7 @@ fun NetworkScreen(state: FoundationState, onRetry: () -> Unit, modifier: Modifie
                 if (showTechnicalDetails) {
                     item("server-settings") {
                         InfoCard("Server connection", local.gateway.serverUrl.ifBlank { "No server address in this app build." }) {
-                            Text(if (local.gateway.automatic) "This app manages its own upload-only device credentials."
+                            Text(if (local.gateway.automatic) "This app manages its own gateway device credentials."
                                 else "This build can use manual gateway settings for compatibility.")
                             if (!local.gateway.automatic) TextButton({ setup = true }, enabled = actions?.saveGateway != null,
                                 modifier = Modifier.heightIn(min = 48.dp)) {

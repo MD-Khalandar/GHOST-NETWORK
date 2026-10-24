@@ -12,7 +12,7 @@ export const MAX_TTL_MS = 86400000;
 export const CLOCK_SKEW_MS = 300000;
 export const payloadTypes = ["", "SosCreateV1", "SosUpdateV1", "HelperProfilePublishV1", "HelperProfileUpdateV1",
   "OfferPublishV1", "OfferUpdateV1", "CloudAckV1", "MatchProposedV1", "MatchDeclinedV1", "MatchAcceptedV1",
-  "MatchConfirmedV1", "DeliveryReceiptV1"];
+  "MatchConfirmedV1", "DeliveryReceiptV1", "", "", "", "AssistanceStatusV1", "AssistanceDecisionV1"];
 export const REJECTION_CODES = ["MALFORMED_PACKET", "TOO_LARGE", "UNSUPPORTED_VERSION", "UNSUPPORTED_KIND",
   "INVALID_TIME", "EXPIRED", "INVALID_HOPS", "INVALID_KEY", "SIGNER_MISMATCH", "BAD_SIGNATURE",
   "INVALID_PAYLOAD", "INVALID_ACTOR", "UNKNOWN_AUTHORITY", "UNTRUSTED_CLOUD", "CONSENT_REQUIRED"] as const;
@@ -83,7 +83,7 @@ function validate(packet: WirePacket, options: ValidationOptions): VerifiedPacke
     (relay.hop_count === 0 ? !relay.previous_node_id : /^[a-f0-9]{64}$/.test(relay.previous_node_id ?? "")), "INVALID_HOPS");
   const e = decode("ImmutableEnvelopeV1", bytes);
   check(e.version === 1, "UNSUPPORTED_VERSION");
-  check(integer(e.kind, 1, 12), "UNSUPPORTED_KIND");
+  check((integer(e.kind, 1, 12) || [16, 17].includes(e.kind)), "UNSUPPORTED_KIND");
   check(uuid(e.packet_id) && uuid(e.event_id) && [1, 2, 3].includes(e.priority) && e.payload_format === 1, "INVALID_PAYLOAD");
   check(integer(options.nowMs, 1) && integer(e.created_at_ms, 1) && integer(e.expires_at_ms, 1) &&
     e.expires_at_ms > e.created_at_ms && e.expires_at_ms - e.created_at_ms <= MAX_TTL_MS && e.created_at_ms <= options.nowMs + CLOCK_SKEW_MS, "INVALID_TIME");
@@ -98,7 +98,7 @@ function validate(packet: WirePacket, options: ValidationOptions): VerifiedPacke
   try { valid = verifySignature(e.sender_signing_public_key, bytes, signature); } catch { /* fail closed */ }
   check(valid, "BAD_SIGNATURE");
   const p = decode(payloadTypes[e.kind]!, e.payload_bytes);
-  const cloud = [7, 8, 11].includes(e.kind);
+  const cloud = [7, 8, 11, 16].includes(e.kind);
   check(!cloud || (!options.forCloud && sender === options.trustedCloudNodeId), "UNTRUSTED_CLOUD");
   check(cloud ? e.destination.kind === 2 : [1, 2, 3, 4, 5, 6, 9, 10].includes(e.kind) ? e.destination.kind === 1 : true, "INVALID_PAYLOAD");
   let authority: Authority | undefined;
@@ -170,6 +170,28 @@ function validate(packet: WirePacket, options: ValidationOptions): VerifiedPacke
       check(hex(p.offer_owner_node_id) === sender, "INVALID_ACTOR"); owner("proposal", p.proposal_id, p.version); break;
     case 11:
       payloadCheck(uuid(p.proposal_id) && integer(p.version, 1, 2147483647) && uuid(p.request_id) && uuid(p.offer_id) && uuid(p.allocation_id)); break;
+    case 16:
+      payloadCheck(uuid(p.proposal_id) && integer(p.version, 1, 2147483647) && uuid(p.request_id) &&
+        [1,2].includes(p.resource_kind) && (p.resource_kind === 1 ? /^[a-f0-9]{64}$/.test(p.resource_id) : uuid(p.resource_id)) &&
+        p.owner_node_id?.length === 32 && p.requester_node_id?.length === 32 && integer(p.state, 1, 6) &&
+        [hex(p.owner_node_id), hex(p.requester_node_id)].includes(hex(e.destination.node_id)) &&
+        (p.quantity === undefined || integer(p.quantity, 1, 1000000)) && text(p.unit,40) && text(p.description,2000,true) &&
+        text(p.area,120) && text(p.explanation,1000) && text(p.reason,120) && integer(p.deadline_ms,1));
+      break;
+    case 17: {
+      payloadCheck(uuid(p.proposal_id) && integer(p.version,1,2147483647) && integer(p.decision,1,3) &&
+        p.status_envelope?.length <= MAX_ENVELOPE_BYTES && p.status_signature?.length <= 72);
+      payloadCheck(decode("ImmutableEnvelopeV1", p.status_envelope).kind === 16);
+      const proof = validatePacket({ immutable_envelope_bytes: p.status_envelope.toString("base64url"),
+        signature: p.status_signature.toString("base64url"), relay: { remaining_hops:4,hop_count:0 } },
+        { nowMs:options.nowMs, trustedCloudNodeId:options.trustedCloudNodeId });
+      check(hex(proof.payload.owner_node_id) === sender && hex(proof.envelope.destination.node_id) === sender, "INVALID_ACTOR");
+      payloadCheck(e.destination.kind === 1 && proof.payload.proposal_id === p.proposal_id && proof.payload.version === p.version &&
+        (p.decision === 3 ? proof.payload.state === 2 : proof.payload.state === 1) &&
+        e.expires_at_ms <= proof.envelope.expires_at_ms);
+      authority = { ownerNodeId:sender,cloudProcessingAllowed:true };
+      break;
+    }
     case 12:
       payloadCheck(uuid(p.packet_id) && integer(p.receipt_type, 1, 2) && integer(p.observed_at_ms, 1, options.nowMs + CLOCK_SKEW_MS));
       check(hex(p.recipient_node_id) === sender, "INVALID_ACTOR"); owner("receipt", p.packet_id); break;
@@ -206,6 +228,6 @@ export function createPacket(identity: SigningIdentity, kind: number, payload: R
 }
 
 export function signCloudPacket(identity: SigningIdentity, kind: number, payload: Record<string, unknown>, options: Parameters<typeof createPacket>[3]): WirePacket {
-  if (![7, 8, 11].includes(kind) || !options.destinationNodeId) throw new Error("INVALID_CLOUD_EVENT");
+  if (![7, 8, 11, 16].includes(kind) || !options.destinationNodeId) throw new Error("INVALID_CLOUD_EVENT");
   return createPacket(identity, kind, payload, options);
 }

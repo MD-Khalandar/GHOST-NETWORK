@@ -124,7 +124,7 @@ reach a private LAN address. Provider and server private keys stay
 server-side. Dashboard/operator authentication remains separate.
 
 The phone checks both enrollment replies against its trusted server key and proves
-possession of its existing Android Keystore identity. An expiring upload-only
+possession of its existing Android Keystore identity. An expiring gateway-only
 credential is stored encrypted and renewed automatically, including after a 401.
 Disconnection, backgrounding or losing all usable networks pauses online transfers; reconnecting
 resumes them. Sharing choices are unchanged: only public, online-consented reports
@@ -141,7 +141,7 @@ area, available/unavailable) or **Supplies** (resource type, optional quantity,
 unit and area). Save before sharing; availability expires after six hours.
 **Share with nearby phones** and **Allow online help coordination** are separate
 choices. With nearby sharing off, the publication stays on the phone even if
-online consent is checked. There is no automatic assignment or reservation.
+online consent is checked. Saving alone does not assign help or reserve stock.
 For volunteers, turning sharing off also queues an unavailable report for the
 previous audience, without a name or area. New private details stay local. Turning
 only online sharing off can leave your new availability shared nearby while the
@@ -163,8 +163,7 @@ offer ID, type, expiry and sharing choices. Latest changes relay and upload with
 their own verified receipts; a local withdrawal is still waiting until it reaches
 other phones/server. Updates carry the original ownership proof, so arrival order
 doesn't revive withdrawn stock. All phones carrying edits need the updated app;
-offline/older copies may remain stale until updated or expired. Matching/approval
-is next work.
+offline/older copies may remain stale until updated or expired. Approval and owner decisions use the assistance flow below.
 
 ## Server
 
@@ -220,5 +219,27 @@ Operators can use **Find help with AI** on an SOS to request another run. Withou
 the dashboard reports AI unavailable and the existing SOS/relay flow still works.
 
 Only currently available helpers/supplies are candidates. Signed supply edits and
-withdrawals invalidate older proposals. Suggestions require human review; approval,
-owner acceptance and confirmed assistance delivery are the next steps.
+withdrawals invalidate older proposals. Operators can **Approve invitation** or
+**Reject suggestion**. Approval sends a signed invitation; it does not reserve stock.
+A known supply quantity is required before approval (edit and republish unknown stock).
+
+Owners receive invitations under **Offer help** and can **Accept request** or
+**Decline request** after confirmation. Offline decisions remain queued until an
+online gateway reaches the server. The server rechecks sources and reserves supplies
+atomically, or rejects an outdated/conflicting acceptance. Volunteer commitments
+prevent double booking. Invites expire within an hour, bounded by source availability.
+
+Signed updates return directly or through supporting mesh peers. Requesters see
+invitations and commitments in **Requests**; owners can **Cancel commitment** under
+**Offer help**. All participating relay phones need this app version. Gateways poll
+while connected and foregrounded; download cursors and signed packets persist in Room.
+An owner tap, a server commitment and physical assistance are separate states.
+
+Supply cards show last-known available/reserved/used quantities. Edits preserve
+committed amounts and units; offline phones may learn newer reservations later, so
+the server checks again. **Withdraw offer** stops new matching once delivered and
+keeps existing commitments; cancel those separately if you cannot fulfil them.
+Cancelling an SOS releases active reservations. Marking it resolved records its
+committed supplies as used and frees volunteers; it is a requester report, not
+independent proof of physical delivery. Expired/cancelled invitations cannot reopen
+an arrangement when an old packet arrives.

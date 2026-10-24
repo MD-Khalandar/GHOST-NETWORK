@@ -14,8 +14,10 @@ class LocalResourceRepository(private val db: GhostDatabase, private val identit
                               private val now: () -> Long) : HelperOfferRepository {
     private val dao = db.resources()
     fun observeRows() = dao.observe()
-    private fun timedRows() = combine(dao.observe(), flow { while (true) { emit(now()); delay(30000) } }) { rows, time -> rows to time }
+    private fun timedRows() = combine(dao.observe(), db.assistance().observe(), flow { while (true) { emit(now()); delay(30000) } }) { rows, _, time -> rows to time }
     fun observeSummaries(): Flow<List<ResourceSummary>> = timedRows().map { (rows, time) ->
+        val statuses=db.assistance().observe().first().filter{it.kind==16}.distinctBy{it.proposalId}
+            .map{AssistanceStatusV1.parseFrom(ImmutableEnvelopeV1.parseFrom(WireCodec.unbase64(WireCodec.decode(it.wire).immutableEnvelopeBytesBase64,PacketValidator.MAX_ENVELOPE)).payloadBytes)}
         rows.distinctBy { (if (it.kind == 3) "helper:" else "offer:") + it.entityId }.map { row ->
             val data = envelope(row).payloadBytes
             val helper = if (row.kind == 3) HelperProfilePublishV1.parseFrom(data) else null
@@ -27,6 +29,9 @@ class LocalResourceRepository(private val db: GhostDatabase, private val identit
                 it.resourceType.name.removePrefix("RESOURCE_TYPE_").lowercase().replace('_', ' ') +
                     if (it.hasQuantity()) " · ${it.quantity} ${it.unit}" else ""
             }
+            val commitments=statuses.filter{it.resourceId==row.entityId}
+            val reserved=commitments.filter{it.state==2}.sumOf{it.quantity}
+            val used=commitments.filter{it.state==6}.sumOf{it.quantity}
             val area = helper?.coarseArea ?: offer!!.coarseArea
             val available = !withdrawn && row.expiresAt > time && (helper == null || helper.availabilityValue == 1)
             val editor = when {
@@ -49,7 +54,7 @@ class LocalResourceRepository(private val db: GhostDatabase, private val identit
                     .maxByOrNull { it.cloudConsent }
             } else null
             ResourceSummary(row.entityId, row.owner, row.owned, row.kind == 3, title, area.takeIf(String::isNotBlank), available, row.expiresAt,
-                cloudState(row, time), withdrawn, editor, withdrawal?.let { cloudState(it, time) })
+                cloudState(row, time), withdrawn, editor, withdrawal?.let { cloudState(it, time) },reserved,used,offer?.takeIf{it.hasQuantity()}?.let{if(withdrawn || row.expiresAt<=time) 0 else (it.quantity-reserved-used).coerceAtLeast(0)})
         }
     }.flowOn(Dispatchers.IO)
 
@@ -87,6 +92,15 @@ class LocalResourceRepository(private val db: GhostDatabase, private val identit
             require(row.expiresAt > now() && (row.kind != 6 || OfferUpdateV1.parseFrom(envelope(row).payloadBytes).stateValue != 2)) { "This offer is withdrawn or expired." }
             require(withdraw || draft.quantity.isBlank() || draft.quantity.toIntOrNull() in 1..1000000) { "Enter a positive quantity up to 1,000,000." }
             require(draft.unit.length <= 40 && draft.area.length <= 120)
+            if(!withdraw) {
+                val commitments=db.assistance().observe().first().filter{it.kind==16 && it.destination==row.owner}.distinctBy{it.proposalId}
+                    .map{AssistanceStatusV1.parseFrom(ImmutableEnvelopeV1.parseFrom(WireCodec.unbase64(WireCodec.decode(it.wire).immutableEnvelopeBytesBase64,PacketValidator.MAX_ENVELOPE)).payloadBytes)}
+                    .filter{it.resourceId==row.entityId && it.state in setOf(2,6)}
+                val committed=commitments.sumOf{it.quantity}
+                require(committed==0 || draft.quantity.toIntOrNull()?.let{it>=committed}==true && commitments.all{it.unit==draft.unit.trim()}) {
+                    "Keep at least $committed committed units and their original unit. Cancel a commitment before reducing it."
+                }
+            }
             val original = original(row)
             val base = OfferPublishV1.parseFrom(original.first.payloadBytes)
             require(draft.resourceType.ordinal + 1 == base.resourceTypeValue) { "Create a new offer to change its type." }

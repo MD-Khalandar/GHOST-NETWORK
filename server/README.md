@@ -33,7 +33,7 @@ Phone enrollment is automatic once a configured app joins GHOST over cellular or
 `POST /v1/gateway/challenge` accepts a P-256 public key and returns a server-signed,
 60-second challenge. `POST /v1/gateway/enroll` verifies the device's signature over
 the exact challenge bytes, consumes it once, and returns a server-signed 24-hour
-upload credential. No preissued token is required for ordinary phones. Pending
+gateway credential. No preissued token is required for ordinary phones. Pending
 challenges are bounded and reused until consumed or expired, so public-key requests
 cannot invalidate a pending handshake. Enrollment permits 600 requests per IP and
 2,000 globally per minute per server process; each phone normally uses two requests.
@@ -47,7 +47,7 @@ to work for compatibility. Use HTTPS outside debug LAN testing.
 
 `POST /v1/sync/upload` accepts a gateway bearer token and
 `{"idempotency_key":"unique-batch-id","packets":[...]}` (1–50 signed SOS_CREATE,
-HELPER_PROFILE_PUBLISH, OFFER_PUBLISH, OFFER_UPDATE or terminal SOS_UPDATE packets). Both public sharing
+HELPER_PROFILE_PUBLISH, OFFER_PUBLISH, OFFER_UPDATE, terminal SOS_UPDATE or ASSISTANCE_DECISION packets). Both public sharing
 and cloud consent must be signed on. The gateway
 may relay another phone's SOS. Any invalid or conflicting item rolls back the
 batch; other event kinds are not accepted in this slice. Helper/supply payloads
@@ -147,6 +147,35 @@ cooldown (429). Missing model settings return `MODEL_UNAVAILABLE` (503) for reru
 No record text or provider errors are logged. Model names may be shown; API keys
 remain server-side. See [coordinator notes](src/coordinator/README.md).
 
-Approval, owner decisions and allocation remain unimplemented; approval and
-download handlers still return 501. AI proposals do not reserve resources.
+Operator-only `POST /v1/dashboard/proposals/:proposalId/approve` or `/reject`
+reviews a suggestion (no request body). Approval rechecks sources in a transaction
+and writes an invitation; unknown supply quantities require a new known-stock
+publication before approval. Repeated reviews do not create duplicate invitations.
+`GET /v1/dashboard/assistance` lists the latest 100 arrangements for viewers/operators.
+States: 1 invited, 2 committed, 3 declined/rejected, 4 cancelled, 5 expired,
+6 requester-reported resolved. A commitment does not prove physical delivery.
+
+Gateway-only `GET /v1/sync/download?cursor=0&limit=30` returns signed coordination
+packets and `next_cursor`; limit is 1?50. These are public-consented relay messages
+with destination IDs, not encrypted private messages. A phone verifies and stores
+the whole page before persisting its cursor. `/v1/sync/download-ack` accepts
+`{cursor, packet_ids}` after persistence. This acknowledges gateway storage only;
+it never marks the owner/requester as having read or accepted anything. Unexpired
+events remain downloadable to other gateways regardless of these acknowledgements.
+
+Owner-signed ASSISTANCE_DECISION (17) uploads carry the pinned, server-signed
+ASSISTANCE_STATUS (16) as proof. The server checks owner, version, deadline and
+current availability again. Decisions and reservations deduplicate transactionally;
+acceptance reserves known stock or one volunteer commitment. Two acceptances
+cannot allocate the same remaining stock. A conflicting acceptance produces a
+signed cancellation. Current server commitments subtract from AI availability.
+
+Invitations expire within one hour/source expiry. New resource versions invalidate
+pending invitations; withdrawal stops new matches but retains existing commitments.
+Edits below committed/used stock or with changed units return 409
+`SUPPLIES_ALREADY_COMMITTED`. Owner cancellation/SOS cancellation/expiry release
+active reservations. Requester resolution records supplies as used rather than
+returning them to available stock, and frees volunteers. Signed lifecycle updates
+are stored atomically with the change for later download/mesh delivery. Cleanup
+runs on uploads and coordination polling; there is no independent fulfilment proof.
 See [PROJECT.md](../PROJECT.md).

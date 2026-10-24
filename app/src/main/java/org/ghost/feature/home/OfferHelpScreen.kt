@@ -18,6 +18,7 @@ import org.ghost.feature.foundation.fixtureTime
 @Composable
 fun OfferHelpScreen(local: LocalUiState, actions: LocalActions?, modifier: Modifier = Modifier,
                     contentPadding: PaddingValues = PaddingValues(0.dp), simulated: Boolean = false) {
+    var withdrawing by remember {mutableStateOf<ResourceDraft?>(null)}
     var editor by rememberSaveable { mutableStateOf<String?>(null) }
     fun edit(draft: ResourceDraft) { editor = Json.encodeToString(draft) }
     val owned = local.resources.filter { it.owned }
@@ -35,6 +36,7 @@ fun OfferHelpScreen(local: LocalUiState, actions: LocalActions?, modifier: Modif
                 LinearProgressIndicator(Modifier.fillMaxWidth())
             }
         } else {
+            items(local.assistance.filter{it.owner},key={"assistance-${it.id}"}) { AssistanceCard(it,actions,local.saving) }
             item("volunteer") {
                 InfoCard("Your volunteer availability", volunteer?.title ?: "Tell nearby people what you can help with.") {
                     if (volunteer != null) {
@@ -59,7 +61,7 @@ fun OfferHelpScreen(local: LocalUiState, actions: LocalActions?, modifier: Modif
                     supply.editDraft?.let { draft ->
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             TextButton({ edit(draft) }, enabled = canSave) { Text("Edit offer") }
-                            TextButton({ actions?.withdrawResource?.invoke(draft) {} },
+                            TextButton({ withdrawing=draft },
                                 enabled = !local.saving && actions?.withdrawResource != null) { Text("Withdraw offer") }
                         }
                     }
@@ -67,6 +69,10 @@ fun OfferHelpScreen(local: LocalUiState, actions: LocalActions?, modifier: Modif
             }
         }
     }
+    withdrawing?.let{draft->AlertDialog(onDismissRequest={withdrawing=null},title={Text("Withdraw this offer?")},
+        text={Text("Stops new matching when the withdrawal reaches other phones/server. Existing commitments stay active; cancel them separately if you cannot fulfil them.")},
+        confirmButton={TextButton({actions?.withdrawResource?.invoke(draft) {};withdrawing=null},enabled=!local.saving){Text("Withdraw offer")}},
+        dismissButton={TextButton({withdrawing=null}){Text("Keep offer")}})}
     editor?.let { ResourceFormDialog(local, actions, onClose = { editor = null }, initial = Json.decodeFromString(it)) }
 }
 
@@ -77,6 +83,7 @@ private fun ResourceStatus(resource: ResourceSummary) {
         resource.available -> "Reported available"
         else -> "Unavailable or expired"
     })
+    if(resource.remainingQuantity!=null)Text("Last known available: ${resource.remainingQuantity} ? reserved: ${resource.reservedQuantity} ? used: ${resource.usedQuantity}",style=MaterialTheme.typography.bodySmall)
     Text("Availability ends ${fixtureTime(resource.expiresAt)}", style = MaterialTheme.typography.bodySmall)
     Text(when (resource.cloudState) {
         LocalCloudState.ACCEPTED -> "Received by server · receipt verified"

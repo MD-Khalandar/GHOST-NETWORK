@@ -24,10 +24,10 @@ test("gateway/viewer/operator roles are isolated on every protected route", asyn
         assert.equal((await app.inject({ method: "GET", url })).statusCode, 401);
       }
       for (const action of ["approve", "reject"]) {
-        assert.equal((await app.inject({ method: "POST", url: `/v1/dashboard/proposals/any/${action}`, headers, payload: { role: "operator" } })).statusCode, role === "operator" ? 501 : 403);
+        assert.equal((await app.inject({ method: "POST", url: `/v1/dashboard/proposals/any/${action}`, headers, payload: { role: "operator" } })).statusCode, role === "operator" ? 400 : 403);
       }
-      assert.equal((await app.inject({ method: "GET", url: "/v1/sync/download", headers })).statusCode, role === "gateway" ? 501 : 403);
-      assert.equal((await app.inject({ method: "POST", url: "/v1/sync/download-ack", headers, payload: {} })).statusCode, role === "gateway" ? 501 : 403);
+      assert.equal((await app.inject({ method: "GET", url: "/v1/sync/download", headers })).statusCode, role === "gateway" ? 503 : 403);
+      assert.equal((await app.inject({ method: "POST", url: "/v1/sync/download-ack", headers, payload: {} })).statusCode, role === "gateway" ? 400 : 403);
     }
     assert.equal((await app.inject({ method: "GET", url: "/v1/auth/session", headers: { authorization: `Bearer ${"x".repeat(43)}` } })).statusCode, 401);
   } finally { await app.close(); }

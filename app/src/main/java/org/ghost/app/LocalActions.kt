@@ -20,6 +20,7 @@ data class LocalUiState(
     val topology: TopologySnapshot = TopologySnapshot(),
     val resources: List<ResourceSummary> = emptyList(),
     val resourcesLoaded: Boolean = false,
+    val assistance: List<org.ghost.data.local.AssistanceSummary> = emptyList(),
 )
 
 fun LocalUiState.meshStatus(): String = when {
@@ -43,6 +44,7 @@ data class LocalActions(
     val clearGateway: (() -> Unit)? = null,
     val publishResource: ((ResourceDraft, () -> Unit) -> Unit)? = null,
     val withdrawResource: ((ResourceDraft, () -> Unit) -> Unit)? = null,
+    val decideAssistance: ((String, Int, Int) -> Unit)? = null,
     val requestLocation: (() -> Unit)? = null,
     val closeSos: ((String, SosState) -> Unit)? = null,
 )

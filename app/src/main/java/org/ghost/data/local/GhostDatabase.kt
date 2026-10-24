@@ -111,9 +111,10 @@ interface SosDao {
 }
 
 @Database(entities = [ReportRow::class, DraftRow::class, NeighborDeliveryRow::class, CloudReturnRow::class, CloudReturnDeliveryRow::class,
-    ResourceRow::class, ResourceDeliveryRow::class, SosClosureRow::class, SosClosureDeliveryRow::class],
-    version = 6, exportSchema = true, autoMigrations = [AutoMigration(from = 5, to = 6)])
+    AssistanceRow::class, AssistanceDelivery::class, AssistanceCursor::class, ResourceRow::class, ResourceDeliveryRow::class, SosClosureRow::class, SosClosureDeliveryRow::class],
+    version = 7, exportSchema = true, autoMigrations = [AutoMigration(from = 5, to = 6), AutoMigration(from = 6, to = 7)])
 abstract class GhostDatabase : RoomDatabase() {
+    abstract fun assistance(): AssistanceDao
     abstract fun sos(): SosDao
     abstract fun resources(): ResourceDao
     abstract fun closures(): SosClosureDao

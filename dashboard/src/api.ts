@@ -19,6 +19,8 @@ export interface Session { id: string; role: "viewer" | "operator" | "gateway" }
 export class ApiError extends Error {
   constructor(readonly status: number, readonly code?: string) {
     const detail = code === "MODEL_UNAVAILABLE" ? "AI coordination is not configured on the server." :
+      code === "PROPOSAL_STALE_OR_QUANTITY_UNKNOWN" ? "The proposal changed, expired, or needs a known supply quantity. Refresh before approving." :
+      code === "RESOURCE_ALREADY_COMMITTED" ? "This resource is already committed. Refresh availability." :
       code === "RUN_COOLDOWN" ? "Wait a moment before requesting another AI run." : null;
     super(detail ?? (status === 401 ? "Access token not accepted. Sign in again." :
       status === 403 ? "Use a viewer or operator token. Gateway tokens cannot open this desk." :

@@ -39,7 +39,7 @@ Connect to GHOST now joins nearby phones and automatically connects online over
 cellular or Wi-Fi while foregrounded. Hosted servers use Android's default route,
 including VPNs; private LAN servers use available Wi-Fi. Builds include the server URL and trusted public key;
 phones prove their existing Keystore identity with signed one-use challenges and
-receive renewable upload-only sessions. Credentials stay encrypted on the phone;
+receive renewable gateway-only sessions. Credentials stay encrypted on the phone;
 the server stores their hashes. Manual gateway settings are legacy technical details.
 Only consented reports upload; verified server acknowledgements persist in Room.
 Enrollment reuses pending challenges without invalidating another caller's proof.
@@ -108,7 +108,20 @@ defaults to 120 provider calls per UTC hour, configurable on the server; exhaust
 work stays queued for the next hour and the dashboard shows the pause. This limits
 calls, not currency spend. Live provider testing remains.
 
-Next: operator approval → owner decisions, allocation and signed assistance returns.
+Assistance now supports operator approval/rejection, signed invitations, owner
+accept/decline/cancel decisions and server-confirmed commitments. Gateways download
+signed snapshots and relay them to owners/requesters; decisions travel back through
+the same durable mesh/upload path. Room upgrades in place. Conflicting acceptances
+cannot overbook supplies or volunteers; AI uses remaining availability. Supply
+cards show last-known available/reserved/used amounts. Edits preserve committed
+stock and units. Withdrawal stops new matching without cancelling commitments.
+SOS cancellation releases active reservations; requester-reported resolution counts
+supplies as used and frees volunteers. Invitations expire within an hour/source
+expiry. Local signatures, Room/mesh/HTTP, concurrency, rollback and restart tests
+cover the loop. Physical three-phone and deployed PostgreSQL testing remain.
+
+Next: field-test assistance, improve fresh GPS and background operation. Server
+commitment and requester-reported resolution do not independently prove delivery.
 
 Keep public/cloud consent separate, preserve signed bytes, reject forged/duplicate
 events, and keep cloud/provider secrets server-side. Queued, received and confirmed are distinct.

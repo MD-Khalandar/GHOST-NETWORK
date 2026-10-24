@@ -52,7 +52,7 @@ export class CoordinatorWorker {
   private async discover() {
     // A generation advances only when this SOS's candidate set changes. Expiry,
     // withdrawals and type changes are discovered even without a new upload.
-    await this.database.query(`WITH current_resources AS MATERIALIZED (SELECT * FROM coordinator_resource_latest), inputs AS MATERIALIZED (
+    await this.database.query(`WITH current_resources AS MATERIALIZED (SELECT * FROM coordinator_resource_available), inputs AS MATERIALIZED (
       SELECT s.request_id, s.created_at_ms, ${inputHashSql} AS input_hash FROM sos_reports s
       WHERE s.state = 1 AND s.expires_at_ms > $1 AND s.public_mesh_allowed AND s.cloud_processing_allowed
     ) INSERT INTO coordinator_jobs(request_id, input_revision, requested_at_ms, input_hash)

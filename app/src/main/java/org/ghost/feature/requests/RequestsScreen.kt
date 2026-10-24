@@ -38,7 +38,7 @@ fun RequestsScreen(state: FoundationState, onRetry: () -> Unit, modifier: Modifi
                 }
                 if (showExplanation) item("help-policy") {
                     InfoCard("How getting help works", "Each request below shows its own sharing and server receipt status.") {
-                        Text("A server receipt confirms storage. AI suggestions are reviewed in the web dashboard; helper acceptance and confirmed assistance are not available yet.")
+                        Text("A server receipt confirms storage. AI suggestions are reviewed in the web dashboard; owners can accept invitations and the server confirms commitments. A commitment does not confirm delivered assistance.")
                         Text("Nearby phones can pass requests along without internet. Saving online needs a configured gateway with internet and your online-sharing permission.")
                     }
                 }
@@ -80,6 +80,7 @@ fun RequestsScreen(state: FoundationState, onRetry: () -> Unit, modifier: Modifi
                         }
                     }
                 }
+                items(local.assistance.filter{!it.owner},key={"assistance-${it.id}"}) { org.ghost.feature.home.AssistanceCard(it,actions,local.saving,state.requests.any{r->r.requestId.value==it.requestId && r.state in setOf(SosState.CANCELLED,SosState.RESOLVED)}) }
                 items(state.offers, key = { "offer-${it.offerId.value}" }) { offer ->
                     InfoCard("${offer.resourceType.name.displayName()} offer", offer.coarseArea ?: "Area not provided") {
                         StatusLabel(offer.state.label() + if (offer.stale) " · may be out of date" else " · as reported by the person offering help")

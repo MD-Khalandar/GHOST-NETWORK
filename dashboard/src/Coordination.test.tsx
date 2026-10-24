@@ -29,3 +29,15 @@ test("expired suggestions cannot appear current between polls and completed chec
   assert.match(runLabel({ ...run, candidate_count: 3, proposal_count: 2 }), /2 suggestions for review/);
   assert.match(runLabel({ ...run, status: "error", error_code: "INVALID_MODEL_OUTPUT" }), /rejected/);
 });
+
+test("only operators can approve current proposals; unknown supply quantities cannot be approved",()=>{
+  const proposal:AiProposal={proposal_id:"proposal",request_id:"request",request_description:"Need water",resource_kind:"offer",resource_id:"offer",
+    resource_label:null,resource_type:1,unit:"litres",coarse_area:"Station",quantity:7,explanation:"Possible supply",freshness:"current",created_at_ms:1000};
+  const viewer=renderToStaticMarkup(<ProposalCard proposal={proposal} onReview={()=>{}}/>);
+  assert.doesNotMatch(viewer,/Approve invitation|Reject suggestion/);
+  const operator=renderToStaticMarkup(<ProposalCard proposal={proposal} operator onReview={()=>{}}/>);
+  assert.match(operator,/Approve invitation/);assert.match(operator,/Reject suggestion/);
+  const unknown=renderToStaticMarkup(<ProposalCard proposal={{...proposal,quantity:null}} operator onReview={()=>{}}/>);
+  assert.match(unknown,/<button[^>]*disabled=""[^>]*>Approve invitation/);assert.match(unknown,/known quantity/);
+  assert.match(runLabel({run_id:"run",request_id:"request",status:"error",error_code:"MODEL_BUDGET_EXHAUSTED",created_at_ms:1}),/remains queued/);
+});

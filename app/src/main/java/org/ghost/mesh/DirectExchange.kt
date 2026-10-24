@@ -40,6 +40,7 @@ class DirectExchange(private val scope: CoroutineScope, private val transport: G
         var sending: Job? = null
         var flushAgain = false
         var sendingReports = false
+        var supportsAssistance = false
         var supportsTopology = false
         var supportsResources = false
         var supportsOfferUpdates = false
@@ -91,6 +92,7 @@ class DirectExchange(private val scope: CoroutineScope, private val transport: G
             repository.observeCloudReturns().catch { mutableMessage.value = "Return queue unavailable. Saved acknowledgements will wait." }
                 .collect { flush() }
         }
+        scope.launch { repository.assistance.observeRows().catch { }.collect { flush() } }
         scope.launch { repository.resources.observeRows().catch { }.collect { flush() } }
         scope.launch {
             while (isActive) {
@@ -177,7 +179,7 @@ class DirectExchange(private val scope: CoroutineScope, private val transport: G
     private suspend fun sendHello(peer: PeerHandle, session: Session, replyTo: ByteString = ByteString.EMPTY) {
         val packet = withContext(Dispatchers.IO) {
             SignedPackets.create(identity(), 13, PeerHelloV1.newBuilder().setChallenge(ByteString.copyFrom(session.challenge))
-                .setReplyTo(replyTo).setSupportsTopology(true).setSupportsResources(true).setSupportsOfferUpdates(true).setSupportsSosClosures(true).build().toByteString(), now(), ttl = 300000)
+                .setReplyTo(replyTo).setSupportsTopology(true).setSupportsResources(true).setSupportsOfferUpdates(true).setSupportsSosClosures(true).setSupportsAssistance(true).build().toByteString(), now(), ttl = 300000)
         }
         control(peer, session, packet)
     }
@@ -192,6 +194,7 @@ class DirectExchange(private val scope: CoroutineScope, private val transport: G
             if (!current(peer, session)) return
             require(session.helloNode == null || session.helloNode == node)
             session.helloNode = node
+            session.supportsAssistance = hello.supportsAssistance
             session.supportsTopology = hello.supportsTopology
             session.supportsResources = hello.supportsResources
             session.supportsOfferUpdates = hello.supportsOfferUpdates
@@ -236,6 +239,14 @@ class DirectExchange(private val scope: CoroutineScope, private val transport: G
                 control(peer, session, WireCodec.decode(receipt))
                 mutableMessage.value = "Helper or supply offer saved from a nearby phone."
                 flush()
+            }
+            16,17 -> {
+                if(!session.supportsAssistance || cloudKey==null)return
+                val receipt=repository.assistance.receive(packet,node,cloudKey)
+                if(!current(peer,session))return
+                session.confirmed.add(envelope.packetId)
+                session.receipts[envelope.packetId]?.complete(Unit)
+                control(peer,session,WireCodec.decode(receipt));flush()
             }
             15 -> {
                 if (!session.supportsTopology) return
@@ -356,6 +367,7 @@ class DirectExchange(private val scope: CoroutineScope, private val transport: G
                                 reports.getOrNull(index)?.let(::add)
                                 returns.getOrNull(index)?.let(::add)
                             }
+                            if(session.supportsAssistance && cloudKey!=null) addAll(repository.assistance.outgoing(session.nodeId!!,excluded).map {Outgoing(it.packetId,it.wire,false)})
                             addAll(resources)
                         }
                         if (candidates.isNotEmpty()) { session.sendingReports = true; session.topologySending?.cancel() }
@@ -367,6 +379,7 @@ class DirectExchange(private val scope: CoroutineScope, private val transport: G
                             else repository.prepareOutgoing(candidate.packetId, session.nodeId!!)?.let { Outgoing(it.packetId, it.wire, false) }
                                 ?: repository.closures.prepare(candidate.packetId, session.nodeId!!)?.let { Outgoing(it.packetId, it.wire, false) }
                                 ?: repository.resources.prepare(candidate.packetId, session.nodeId!!)?.let { Outgoing(it.packetId, it.wire, false) }
+                                ?: if(session.supportsAssistance) repository.assistance.prepare(candidate.packetId,session.nodeId!!)?.let{Outgoing(it.packetId,it.wire,false)} else null
                             if (row == null) continue
                             if (!current(peer, session) || row.packetId in session.confirmed) continue
                             val completion = CompletableDeferred<Unit>()

@@ -21,6 +21,7 @@ class GatewaySync(scope: CoroutineScope, configs: StateFlow<GatewayConfig?>, ena
     private val retry = MutableStateFlow(0)
     private val wake = Channel<Unit>(Channel.CONFLATED)
     init {
+        scope.launch { repository.assistance.observeRows().catch { }.collect { wake.trySend(Unit) } }
         scope.launch { repository.resources.observeRows().catch { }.collect { wake.trySend(Unit) } }
         scope.launch {
             repository.observeRequests().map { rows -> rows.map { Triple(it.requestId, it.cloudState, it.state) } }.distinctUntilChanged()
@@ -81,6 +82,24 @@ class GatewaySync(scope: CoroutineScope, configs: StateFlow<GatewayConfig?>, ena
                         } else withTimeoutOrNull(30000) { wake.receive() }
                     }
                 }
+        }
+        scope.launch {
+            combine(configs,enabled.distinctUntilChanged(),retry){config,active,_->config to active}.collectLatest {(config,active)->
+                if(config==null || cloudKey==null || !active)return@collectLatest
+                while(currentCoroutineContext().isActive){
+                    try {
+                        val cursor=repository.assistance.cursor(config.serverUrl)
+                        val page=client.download(cursor,30).getOrThrow()
+                        repository.assistance.saveDownload(config.serverUrl,page,cloudKey)
+                        if(page.packets.isNotEmpty())client.acknowledgeDownload(SyncDownloadAckRequest(page.nextCursor,
+                            page.packets.map{PacketId(org.ghost.contracts.v1.ImmutableEnvelopeV1.parseFrom(WireCodec.unbase64(it.immutableEnvelopeBytesBase64,24576)).packetId)}))
+                        if(page.packets.size==30)continue
+                    }catch(cancelled:CancellationException){throw cancelled}
+                    catch(failure:GatewayFailure){if(failure.authentication)onAuthenticationFailure()}
+                    catch(_:Exception){ /* Retry without advancing a page that was not durably verified. */ }
+                    delay(15000)
+                }
+            }
         }
     }
     fun retry() { retry.update { it + 1 } }

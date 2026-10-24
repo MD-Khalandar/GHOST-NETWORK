@@ -1,3 +1,4 @@
+import { initializeAssistance } from "./assistance.js";
 import { Pool } from "pg";
 
 export interface SqlConnection {
@@ -90,6 +91,7 @@ export async function initializeDatabase(database: Database): Promise<void> {
     await connection.query("CREATE INDEX IF NOT EXISTS resource_latest ON resource_events(kind, entity_id, created_at_ms DESC, event_id DESC)");
     await connection.query("ALTER TABLE resource_events DROP CONSTRAINT IF EXISTS resource_events_kind_check");
     await connection.query("ALTER TABLE resource_events ADD CONSTRAINT resource_events_kind_check CHECK (kind IN (3,5,6))");
+    await initializeAssistance(connection);
     // Stable read surface for matching: one effective version per offer, including withdrawals.
     await connection.query(`CREATE OR REPLACE VIEW resource_offer_latest AS
       SELECT DISTINCT ON (entity_id) * FROM resource_events WHERE kind IN (5,6)

@@ -23,10 +23,10 @@ const selectCandidates = (source: string) => `SELECT * FROM (
       AND (r.data->>'resource_type')::integer = ANY(${supplies}) END)
 ) ranked WHERE candidate_rank <= ${CANDIDATES_PER_KIND}`;
 
-export const candidateSql = selectCandidates("coordinator_resource_latest");
+export const candidateSql = selectCandidates("coordinator_resource_available");
 
 // Signed source versions identify the actual bounded input; unrelated uploads,
 // old replays and stock outside this candidate set do not spend another model call.
 export const inputHashSql = `md5(s.event_id::text || ':' || s.cloud_revision::text || ':' || COALESCE((
-  SELECT string_agg(c.event_id::text || ':' || c.cloud_revision::text, ',' ORDER BY c.event_id)
+  SELECT string_agg(c.event_id::text || ':' || c.cloud_revision::text || ':' || COALESCE(c.data->>'quantity','') || ':' || COALESCE(c.data->>'availability',''), ',' ORDER BY c.event_id)
   FROM (${selectCandidates("current_resources")}) c), ''))`;

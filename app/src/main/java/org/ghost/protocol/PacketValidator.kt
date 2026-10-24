@@ -40,7 +40,7 @@ class PacketValidator(
             (if (r.hopCount == 0) r.previousNodeId == null else r.previousNodeId?.value?.matches(NODE) == true), Rejection.INVALID_HOPS)
         val e = ImmutableEnvelopeV1.parseFrom(raw)
         check(e.version == 1, Rejection.UNSUPPORTED_VERSION)
-        check((e.kindValue in 1..13 || e.kindValue == 15) && !(forCloud && e.kindValue in setOf(13, 15)), Rejection.UNSUPPORTED_KIND)
+        check((e.kindValue in 1..13 || e.kindValue in 15..17) && !(forCloud && e.kindValue in setOf(13, 15)), Rejection.UNSUPPORTED_KIND)
         check(uuid(e.packetId) && uuid(e.eventId) && e.priorityValue in 1..3 && e.payloadFormatValue == 1)
         check(now in 1..MAX_SAFE && e.createdAtMs in 1..MAX_SAFE && e.expiresAtMs in 1..MAX_SAFE &&
             e.expiresAtMs > e.createdAtMs && e.expiresAtMs - e.createdAtMs <= MAX_TTL && e.createdAtMs <= now + CLOCK_SKEW, Rejection.INVALID_TIME)
@@ -52,7 +52,7 @@ class PacketValidator(
         val sender = SigningIdentity.hex(e.senderNodeId.toByteArray())
         check(e.senderNodeId.size() == 32 && SigningIdentity.nodeId(publicKey).value == sender, Rejection.SIGNER_MISMATCH)
         check(try { SigningIdentity.verify(publicKey, raw, signature) } catch (_: Exception) { false }, Rejection.BAD_SIGNATURE)
-        val cloud = e.kindValue in setOf(7, 8, 11)
+        val cloud = e.kindValue in setOf(7, 8, 11, 16)
         check(!cloud || (!forCloud && trustedCloudPublicKey?.contentEquals(publicKey) == true), Rejection.UNTRUSTED_CLOUD)
         check(if (cloud) e.destination.kindValue == 2 else if (e.kindValue in 1..6 || e.kindValue in 9..10) e.destination.kindValue == 1 else true)
         var authority: Authority? = null
@@ -142,6 +142,26 @@ class PacketValidator(
             }
             11 -> MatchConfirmedV1.parseFrom(data).also { p ->
                 check(uuid(p.proposalId) && p.version > 0 && uuid(p.requestId) && uuid(p.offerId) && uuid(p.allocationId))
+            }
+            16 -> AssistanceStatusV1.parseFrom(data).also { p ->
+                check(uuid(p.proposalId) && p.version > 0 && uuid(p.requestId) && p.resourceKind in 1..2 &&
+                    (if(p.resourceKind==1) p.resourceId.matches(NODE) else uuid(p.resourceId)) && p.ownerNodeId.size()==32 &&
+                    p.requesterNodeId.size()==32 && p.state in 1..6 &&
+                    (e.destination.nodeId==p.ownerNodeId || e.destination.nodeId==p.requesterNodeId) &&
+                    (!p.hasQuantity() || p.quantity in 1..1000000) && text(p.unit,40) && text(p.description,2000,true) &&
+                    text(p.area,120) && text(p.explanation,1000) && text(p.reason,120) && p.deadlineMs>0)
+            }
+            17 -> AssistanceDecisionV1.parseFrom(data).also { p ->
+                check(uuid(p.proposalId) && p.version>0 && p.decision in 1..3 &&
+                    p.statusEnvelope.size()<=MAX_ENVELOPE && p.statusSignature.size()<=72)
+                check(ImmutableEnvelopeV1.parseFrom(p.statusEnvelope).kindValue==16)
+                val proof=PacketValidator(trustedCloudPublicKey).verify(WirePacket(WireCodec.base64(p.statusEnvelope.toByteArray()),
+                    WireCodec.base64(p.statusSignature.toByteArray()),org.ghost.domain.model.RelayMetadata(4,0)),now)
+                val status=proof.payload as AssistanceStatusV1
+                check(status.ownerNodeId==e.senderNodeId && proof.envelope.destination.nodeId==e.senderNodeId,Rejection.INVALID_ACTOR)
+                check(e.destination.kindValue==1 && status.proposalId==p.proposalId && status.version==p.version &&
+                    (if(p.decision==3) status.state==2 else status.state==1) && e.expiresAtMs<=proof.envelope.expiresAtMs)
+                authority=Authority(sender,true)
             }
             12 -> DeliveryReceiptV1.parseFrom(data).also { p ->
                 check(uuid(p.packetId) && p.receiptTypeValue in 1..2 && p.observedAtMs in 1..(now + CLOCK_SKEW))

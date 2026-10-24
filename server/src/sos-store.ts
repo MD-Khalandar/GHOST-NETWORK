@@ -1,3 +1,4 @@
+import { applyAssistanceDecision, reconcileAssistance, checkCommittedEdit } from "./assistance.js";
 import { createHash, randomUUID } from "node:crypto";
 import type { Database, SqlConnection } from "./database.js";
 import { PacketError, signCloudPacket, validatePacket, decode, type VerifiedPacket, type WirePacket } from "./protocol.js";
@@ -59,6 +60,8 @@ export class SosStore {
     // a report's identity. Preserve order to replay the same batch response.
     const hash = createHash("sha256").update(JSON.stringify(packets.map(p => p.packet.immutable_envelope_bytes))).digest("hex");
     return this.database.transaction(async connection => {
+      await connection.query("SELECT pg_advisory_xact_lock(715422706)");
+      await reconcileAssistance(connection,this.signer,this.now());
       await connection.query("DELETE FROM sync_uploads WHERE created_at < CURRENT_TIMESTAMP - INTERVAL '7 days'");
       const inserted = await connection.query(`INSERT INTO sync_uploads (principal_id, idempotency_key, content_hash)
         VALUES ($1, $2, $3) ON CONFLICT DO NOTHING RETURNING principal_id`, [principalId, key, hash]);
@@ -83,6 +86,10 @@ export class SosStore {
         if (e.expires_at_ms <= this.now()) throw new PacketError("EXPIRED");
         const bytes = Buffer.from(packet.immutable_envelope_bytes, "base64url");
         // Serialize cross-family ID checks too: IDs cannot describe both SOS and resources.
+        const decisionIds=await connection.query("SELECT event_id FROM assistance_decisions WHERE event_id=$1 OR packet_id=$2",[e.event_id,e.packet_id]);
+        if(e.kind!==17 && decisionIds.rows.length)throw new UploadConflict("REPORT_ID_CONFLICT");
+        if(e.kind===17 && (await connection.query("SELECT event_id FROM resource_events WHERE event_id=$1 OR packet_id=$2",[e.event_id,e.packet_id])).rows.length)
+          throw new UploadConflict("REPORT_ID_CONFLICT");
         const other = await connection.query([1, 2].includes(e.kind)
           ? "SELECT event_id FROM resource_events WHERE event_id = $1 OR packet_id = $2"
           : "SELECT event_id FROM sos_reports WHERE event_id = $1 OR packet_id = $2", [e.event_id, e.packet_id]);
@@ -97,7 +104,14 @@ export class SosStore {
           packetId: randomUUID(), eventId: randomUUID(), createdAtMs: received,
           expiresAtMs: received + 86400000, destinationNodeId: e.sender_node_id.toString("hex"),
         });
+        if (e.kind === 17) {
+          const saved = await applyAssistanceDecision(connection,this.signer,verified,revision,ack,received);
+          response.results[index] = {event_id:e.event_id,status:saved.duplicate?"DUPLICATE":"ACCEPTED",cloud_revision:Number(saved.row.cloud_revision)};
+          response.packets[index] = saved.row.cloud_ack;
+          continue;
+        }
         if ([3, 5, 6].includes(e.kind)) {
+          if (e.kind===6 && p.state===1) await checkCommittedEdit(connection,p.offer_id,p.quantity??null,p.unit??"");
           const saved = await saveResource(connection, verified, bytes, revision, received, ack);
           response.results[index] = { event_id: e.event_id, status: saved.duplicate ? "DUPLICATE" : "ACCEPTED", cloud_revision: Number(saved.row.cloud_revision) };
           response.packets[index] = saved.row.cloud_ack;
@@ -129,6 +143,7 @@ export class SosStore {
         response.results[index] = { event_id: e.event_id, status: stored.duplicate ? "DUPLICATE" : "ACCEPTED", cloud_revision: Number(stored.cloud_revision) };
         response.packets[index] = stored.cloud_ack as WirePacket;
       }
+      await reconcileAssistance(connection,this.signer,this.now());
       await connection.query("UPDATE sync_uploads SET response = $3::jsonb WHERE principal_id = $1 AND idempotency_key = $2", [principalId, key, JSON.stringify(response)]);
       return response;
     });

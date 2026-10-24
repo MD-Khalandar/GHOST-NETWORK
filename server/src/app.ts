@@ -1,3 +1,4 @@
+import { AssistanceService, AssistanceConflict } from "./assistance.js";
 import Fastify, { type FastifyInstance } from "fastify";
 import { authenticate, SigningIdentity, type Principal, type Role } from "./security.js";
 import { PacketError, validatePacket, type AuthorityLookup, type WirePacket } from "./protocol.js";
@@ -29,6 +30,7 @@ export function buildApp(security: AppSecurity = {}): FastifyInstance {
   // The signer stays on the server. Enrollment signs fixed, domain-separated messages only.
   const signer = security.cloudSigningKeyPem ? SigningIdentity.fromPem(security.cloudSigningKeyPem) : undefined;
   if (security.database && !signer) throw new Error("Cloud signing key is required with storage");
+  const assistance = security.database && signer ? new AssistanceService(security.database,signer,security.now) : undefined;
   const store = security.database && signer ? new SosStore(security.database, signer, security.now) : undefined;
   const enrollment = security.database && signer ? new GatewayEnrollment(security.database, signer, security.now) : undefined;
   const uploads = security.database ? new UploadLimiter(security.database, security.uploadLimits, security.now) : undefined;
@@ -45,7 +47,7 @@ export function buildApp(security: AppSecurity = {}): FastifyInstance {
   const principals = security.principals ?? [];
   const routes: Array<{ method: "GET" | "POST"; url: string; roles: Role[] }> = [
     { method: "GET", url: "/v1/auth/session", roles: ["gateway", "viewer", "operator"] },
-    ...["/v1/dashboard/sos", "/v1/dashboard/sos/:requestId", "/v1/dashboard/helpers", "/v1/dashboard/offers", "/v1/dashboard/runs", "/v1/dashboard/proposals"]
+    ...["/v1/dashboard/sos", "/v1/dashboard/sos/:requestId", "/v1/dashboard/helpers", "/v1/dashboard/offers", "/v1/dashboard/runs", "/v1/dashboard/proposals", "/v1/dashboard/assistance"]
       .map(url => ({ method: "GET" as const, url, roles: ["viewer", "operator"] as Role[] })),
     { method: "POST", url: "/v1/dashboard/sos/:requestId/coordinate", roles: ["operator"] },
     ...["approve", "reject"].map(action => ({ method: "POST" as const, url: `/v1/dashboard/proposals/:proposalId/${action}`, roles: ["operator"] as Role[] })),
@@ -63,6 +65,44 @@ export function buildApp(security: AppSecurity = {}): FastifyInstance {
       if (!route.roles.includes(principal.role)) return reply.code(403).send({ code: "FORBIDDEN", message: "Role is not authorized", retryable: false });
       authorized.set(request, principal);
     }, handler: async (request, reply) => {
+      if (route.url === "/v1/dashboard/assistance") {
+        if (Object.keys(request.query as object).length) return reply.code(400).send({code:"INVALID_QUERY",retryable:false});
+        if (!assistance) return reply.code(503).send({code:"STORAGE_UNAVAILABLE",retryable:true});
+        try { return await assistance.list(); }
+        catch { return reply.code(503).send({code:"STORAGE_UNAVAILABLE",retryable:true}); }
+      }
+      if (route.url.match(/\/proposals\/[^/]+\/(approve|reject)$/)) {
+        const id = (request.params as {proposalId:string}).proposalId;
+        if (!UUID.test(id) || Object.keys(request.query as object).length || request.body!==undefined &&
+          (!request.body || typeof request.body!=="object" || Array.isArray(request.body) || Object.keys(request.body).length))
+          return reply.code(400).send({code:"INVALID_REQUEST",retryable:false});
+        if (!assistance) return reply.code(503).send({code:"STORAGE_UNAVAILABLE",retryable:true});
+        try { return await assistance.review(id,route.url.endsWith("/approve"),authorized.get(request)!.id); }
+        catch(error) { if(error instanceof AssistanceConflict) return reply.code(409).send({code:error.code,retryable:false});
+          return reply.code(503).send({code:"STORAGE_UNAVAILABLE",retryable:true}); }
+      }
+      if (route.url === "/v1/sync/download") {
+        const query=request.query as Record<string,string>;
+        if(Object.keys(query).some(k=>!["cursor","limit"].includes(k)) || !/^(0|[1-9][0-9]{0,14})$/.test(query.cursor??"0") ||
+          !/^[1-9][0-9]?$/.test(query.limit??"30") || Number(query.limit??30)>50)
+          return reply.code(400).send({code:"INVALID_QUERY",retryable:false});
+        if(!assistance) return reply.code(503).send({code:"STORAGE_UNAVAILABLE",retryable:true});
+        try { return await assistance.download(Number(query.cursor??0),Number(query.limit??30)); }
+        catch { return reply.code(503).send({code:"STORAGE_UNAVAILABLE",retryable:true}); }
+      }
+      if (route.url === "/v1/sync/download-ack") {
+        const body=request.body as {cursor?:unknown;packet_ids?:unknown};
+        if(!body || Object.keys(request.query as object).length || Object.keys(body).some(k=>!["cursor","packet_ids"].includes(k)) ||
+          typeof body.cursor!=="string" || !/^[0-9]{1,15}$/.test(body.cursor) || !Array.isArray(body.packet_ids) ||
+          body.packet_ids.length>50 || body.packet_ids.some(id=>typeof id!=="string" || !UUID.test(id)))
+          return reply.code(400).send({code:"INVALID_REQUEST",retryable:false});
+        if(!assistance)return reply.code(503).send({code:"STORAGE_UNAVAILABLE",retryable:true});
+        try{await assistance.acknowledge(authorized.get(request)!.id,body.cursor,body.packet_ids as string[]);}
+        catch(error){if(error instanceof AssistanceConflict)return reply.code(400).send({code:error.code,retryable:false});
+          return reply.code(503).send({code:"STORAGE_UNAVAILABLE",retryable:true});}
+        // A gateway acknowledgement only records transport persistence, never owner acceptance.
+        return reply.code(204).send();
+      }
       if (route.url === "/v1/auth/session") {
         const p = authorized.get(request)!;
         return { id: p.id, role: p.role, ...(p.gateway_node_id ? { gateway_node_id: p.gateway_node_id } : {}) };
@@ -113,7 +153,7 @@ export function buildApp(security: AppSecurity = {}): FastifyInstance {
           }
           if (route.url.endsWith("helpers") || route.url.endsWith("offers"))
             return await listResources(security.database!, route.url.endsWith("helpers") ? 3 : 5,
-              Number(query.limit ?? 30), query.before === undefined ? undefined : Number(query.before));
+              Number(query.limit ?? 30), query.before === undefined ? undefined : Number(query.before), (security.now??Date.now)());
           return await store.list(Number(query.limit ?? 30), query.before === undefined ? undefined : Number(query.before));
         } catch {
           return reply.code(503).send({ code: "STORAGE_UNAVAILABLE", message: "Saved requests are temporarily unavailable", retryable: true });
@@ -130,9 +170,9 @@ export function buildApp(security: AppSecurity = {}): FastifyInstance {
           if (uploads) await uploads.admit(authorized.get(request)!.id, request.ip, body.packets.length);
           const packets = body.packets.map(packet => {
             const verified = validatePacket(packet as WirePacket, {
-              nowMs: (security.now ?? Date.now)(), forCloud: true, lookup: security.lookup,
+              nowMs: (security.now ?? Date.now)(), forCloud: true, lookup: security.lookup, trustedCloudNodeId:signer?.nodeId,
             });
-            if (![1, 2, 3, 5, 6].includes(verified.envelope.kind)) throw new PacketError("UNSUPPORTED_KIND");
+            if (![1, 2, 3, 5, 6, 17].includes(verified.envelope.kind)) throw new PacketError("UNSUPPORTED_KIND");
             if (verified.envelope.kind === 2 && (![5, 6].includes(verified.payload.state) || !verified.payload.original_sos_envelope?.length)) throw new PacketError("INVALID_PAYLOAD");
             return verified;
           });
@@ -145,6 +185,7 @@ export function buildApp(security: AppSecurity = {}): FastifyInstance {
           if (error instanceof UploadThrottled) return reply.header("Retry-After", String(error.retryAfterSeconds)).code(429)
             .send({ code: "UPLOAD_BUSY", retryable: true });
           if (error instanceof PacketError) return reply.code(400).send({ code: error.code, message: "Packet rejected", retryable: false });
+          if (error instanceof AssistanceConflict) return reply.code(409).send({code:error.code,retryable:false});
           if (error instanceof UploadConflict) return reply.code(409).send({ code: error.code, message: "Upload conflicts with previously saved content", retryable: false });
           return reply.code(503).send({ code: "STORAGE_UNAVAILABLE", message: "SOS upload temporarily unavailable", retryable: true });
         }

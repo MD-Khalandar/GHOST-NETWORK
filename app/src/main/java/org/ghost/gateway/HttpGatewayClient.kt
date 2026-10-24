@@ -48,8 +48,36 @@ class HttpGatewayClient(private val openConnection: (java.net.URL) -> HttpURLCon
             Result.failure(GatewayFailure("NETWORK_UNAVAILABLE", true))
         } finally { connection?.disconnect() }
     }
-    override suspend fun download(cursor: String?, limit: Int): Result<SyncDownloadResponse> = Result.failure(UnsupportedOperationException())
-    override suspend fun acknowledgeDownload(request: SyncDownloadAckRequest): Result<Unit> = Result.failure(UnsupportedOperationException())
+    override suspend fun download(cursor: String?, limit: Int): Result<SyncDownloadResponse> = transferResult {
+        require(limit in 1..50 && (cursor ?: "0").matches(Regex("[0-9]{1,15}")))
+        val response=exchange("/v1/sync/download?cursor=${cursor ?: "0"}&limit=$limit","GET")
+        json.decodeFromString<SyncDownloadResponse>(response.decodeToString()).also {
+            require(it.cursor == (cursor ?: "0") && it.packets.size<=limit && it.nextCursor.matches(Regex("[0-9]{1,15}")) && it.nextCursor.toLong()>=(cursor?:"0").toLong())
+        }
+    }
+    override suspend fun acknowledgeDownload(request: SyncDownloadAckRequest): Result<Unit> = transferResult<Unit> {
+        exchange("/v1/sync/download-ack","POST",json.encodeToString(request).encodeToByteArray())
+    }
+    private suspend fun <T> transferResult(work:suspend ()->T):Result<T> = try {Result.success(work())}
+        catch(_:TimeoutCancellationException){Result.failure(GatewayFailure("NETWORK_UNAVAILABLE",true))}
+        catch(cancelled:CancellationException){throw cancelled}
+        catch(failure:GatewayFailure){Result.failure(failure)}
+        catch(_:Exception){Result.failure(GatewayFailure("NETWORK_UNAVAILABLE",true))}
+    private suspend fun exchange(path:String,method:String,body:ByteArray?=null):ByteArray=coroutineScope {
+        val settings=config() ?: throw GatewayFailure("NOT_CONFIGURED",false)
+        val socket=openConnection(URI("${settings.serverUrl}$path").toURL())
+        try { withTimeout(20000) {
+            val transfer=async(Dispatchers.IO) {
+                socket.apply {requestMethod=method;instanceFollowRedirects=false;connectTimeout=10000;readTimeout=10000
+                    setRequestProperty("Authorization","Bearer ${settings.token}")}
+                if(body!=null){socket.doOutput=true;socket.setRequestProperty("Content-Type","application/json");socket.setFixedLengthStreamingMode(body.size);socket.outputStream.use{it.write(body)}}
+                val status=socket.responseCode
+                if(status !in 200..299)throw GatewayFailure("DOWNLOAD_UNAVAILABLE",status==429 || status>=500,status==401 || status==403)
+                socket.inputStream.use {readBounded(it,2400000)}.also {require(it.size<=2400000)}
+            }
+            try{transfer.await()}finally{socket.disconnect()}
+        }}finally{socket.disconnect()}
+    }
 
     private suspend fun post(socket: HttpURLConnection, settings: GatewayConfig, request: SyncUploadRequest): SyncUploadResponse {
         currentCoroutineContext().ensureActive()

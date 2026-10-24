@@ -41,12 +41,17 @@ export async function saveResource(connection: SqlConnection, verified: Verified
   return { duplicate: true, row: found.rows[0] };
 }
 
-export async function listResources(database: Database, kind: 3 | 5, limit: number, before?: number) {
+export async function listResources(database: Database, kind: 3 | 5, limit: number, before?: number, now=Date.now()) {
   const result = await database.query(`SELECT * FROM (
     SELECT DISTINCT ON (entity_id) entity_id, owner_node_id, data, created_at_ms, expires_at_ms, received_at_ms, cloud_revision
     FROM resource_events WHERE kind = $1 OR ($1 = 5 AND kind = 6) ORDER BY entity_id, created_at_ms DESC, event_id DESC
     ) latest WHERE ($2::bigint IS NULL OR cloud_revision < $2) ORDER BY cloud_revision DESC LIMIT $3`, [kind, before ?? null, limit + 1]);
+  const balances = await database.query(`SELECT resource_id, SUM(quantity) FILTER(WHERE state=2) AS reserved,
+    SUM(quantity) FILTER(WHERE state=6) AS consumed,COUNT(*) FILTER(WHERE state=2) AS commitments FROM assistance_cases WHERE state IN(2,6) GROUP BY resource_id`);
   const items = result.rows.slice(0, limit).map(row => ({ ...row.data, ...(kind === 5 ? { offer_id: row.entity_id } : {}),
+    ...(kind===5 ? (()=>{const b=balances.rows.find(b=>b.resource_id===row.entity_id);const reserved=Number(b?.reserved??0),consumed=Number(b?.consumed??0);
+      return {reserved_quantity:reserved,consumed_quantity:consumed,available_quantity:(row.data.state??1)!==1 || Number(row.expires_at_ms)<=now?0:row.data.quantity===null?null:Math.max(0,Number(row.data.quantity)-reserved-consumed)};})() : {}),
+    ...(kind===3?{committed_count:Number(balances.rows.find(b=>b.resource_id===row.entity_id)?.commitments??0)}:{}),
     owner_node_id: row.owner_node_id, created_at_ms: Number(row.created_at_ms), expires_at_ms: Number(row.expires_at_ms),
     received_at_ms: Number(row.received_at_ms), cloud_revision: Number(row.cloud_revision) }));
   return { items, next_before: result.rows.length > limit ? items.at(-1)!.cloud_revision : null };

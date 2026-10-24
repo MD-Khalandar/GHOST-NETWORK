@@ -6,7 +6,7 @@ export interface ResourceRecord {
   owner_node_id: string; offer_id?: string; display_name?: string | null; coarse_area: string | null;
   help_types?: number[]; availability?: number; resource_type?: number; quantity?: number | null; unit?: string | null;
   available_until_ms?: number; expires_at_ms: number; received_at_ms: number; created_at_ms: number; cloud_revision: number;
-  state?: number;
+  state?: number; committed_count?:number; reserved_quantity?:number;consumed_quantity?:number;available_quantity?:number|null;
 }
 export const helpNames = ["Other", "First aid", "Transport", "Search", "Shelter", "Food", "Water", "Other help"];
 export const supplyNames = ["Other", "Water", "Food", "Shelter", "Medical supplies", "Transport", "Other supplies"];
@@ -16,17 +16,18 @@ export function ResourceCard({ item, kind, now }: { item: ResourceRecord; kind: 
   const withdrawn = kind === "offers" && item.state === 2;
   const available = !withdrawn && !expired && (kind === "offers" || item.availability === 1);
   return <article className="resource-card">
-    <span className={`badge ${available ? "received" : "expired"}`}>{withdrawn ? "Withdrawn" : expired ? "Expired" : available ? "Reported available" : "Reported unavailable / unknown"}</span>
+    <span className={`badge ${available ? "received" : "expired"}`}>{withdrawn ? "Withdrawn" : kind==="helpers" && (item.committed_count??0)>0 ? "Committed to another request" : expired ? "Expired" : available ? "Reported available" : "Reported unavailable / unknown"}</span>
     <h2>{kind === "helpers" ? item.display_name || `Helper ${item.owner_node_id.slice(0, 8)}` : supplyNames[item.resource_type ?? 0]}</h2>
     <p>{kind === "helpers" ? item.help_types?.map(type => helpNames[type]).join(" · ") :
       item.quantity === null ? "Quantity not provided" : `${item.quantity} ${item.unit || "units (unspecified)"}`}</p>
     <dl className="details">
+      {kind==="offers" && item.available_quantity!==undefined && <div><dt>Available / reserved / used</dt><dd>{item.available_quantity??"Unknown"} / {item.reserved_quantity??0} / {item.consumed_quantity??0} {item.unit}</dd></div>}
       <div><dt>Area</dt><dd>{item.coarse_area || "Not provided"}</dd></div>
       <div><dt>Owner</dt><dd className="identifier">{item.owner_node_id.slice(0, 12)}</dd></div>
       <div><dt>Reported</dt><dd>{time(item.created_at_ms)}</dd></div>
       <div><dt>Availability expires</dt><dd>{time(Math.min(item.expires_at_ms, item.available_until_ms ?? item.expires_at_ms))}</dd></div>
     </dl>
-    <p className="subtle">Owner-reported availability. No reservation or assistance is confirmed.</p>
+    <p className="subtle">Owner-reported availability; commitments are tracked separately. Physical delivery still needs confirmation.</p>
   </article>;
 }
 
@@ -64,7 +65,7 @@ export default function Resources({ kind, token, onAccessLost }: {
   return <section aria-label={kind === "helpers" ? "Helper directory" : "Supply directory"} aria-busy={busy}>
     <div className="inbox-toolbar"><strong>{items.length} {kind === "helpers" ? "helpers" : "supply offers"} loaded</strong>
       <button className="secondary-button" disabled={busy} onClick={() => void load()}>{busy ? "Loading…" : "Refresh availability"}</button></div>
-    <p className="subtle">Only owner-signed reports uploaded with consent appear here. Availability can change; matching and owner approval come next.</p>
+    <p className="subtle">Only owner-signed reports uploaded with consent appear here. Availability can change; operator approval invites the owner, and acceptance is checked against remaining availability.</p>
     {error && <p className="error error-banner" role="alert">{error} {loaded && "Showing previously loaded availability."}</p>}
     <div className="resource-grid">{items.map(item => <ResourceCard key={item.offer_id ?? item.owner_node_id} item={item} kind={kind} now={now}/>)}</div>
     {loaded && !items.length && <div className="empty-state"><h2>No {kind === "helpers" ? "helpers" : "supplies"} received yet</h2><p>Use Offer help on a phone, allow online coordination, and connect to a gateway.</p></div>}

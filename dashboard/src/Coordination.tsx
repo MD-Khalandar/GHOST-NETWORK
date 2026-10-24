@@ -30,7 +30,7 @@ export function runLabel(run: AiRun): string {
   return run.proposal_count == null ? "Check completed" : `${run.proposal_count} ${run.proposal_count === 1 ? "suggestion" : "suggestions"} for review`;
 }
 
-export function ProposalCard({ proposal, now = Date.now() }: { proposal: AiProposal; now?: number }) {
+export function ProposalCard({ proposal, now = Date.now(), operator=false, busy=false, onReview }: { proposal: AiProposal; now?: number; operator?:boolean; busy?:boolean; onReview?:(id:string,approve:boolean)=>void }) {
   const current = proposal.freshness === "current" && (proposal.request_expires_at_ms === undefined || proposal.request_expires_at_ms > now) &&
     (proposal.resource_expires_at_ms == null || proposal.resource_expires_at_ms > now);
   return <article className="resource-card">
@@ -48,7 +48,13 @@ export function ProposalCard({ proposal, now = Date.now() }: { proposal: AiPropo
       <div><dt>SOS</dt><dd className="identifier">{proposal.request_id}</dd></div>
       <div><dt>Resource</dt><dd className="identifier">{proposal.resource_id}</dd></div>
     </dl>
-    <p className="subtle">Nothing is reserved or sent to a phone. Operator approval and the owner's acceptance are required next.</p>
+    <p className="subtle">Nothing is reserved or sent to a phone. Operator approval sends an invitation; stock is committed only after owner acceptance and a server check.</p>
+    {operator && onReview && <div className="inbox-toolbar">
+      <button className="primary-button" disabled={busy || !current || proposal.resource_kind==="offer" && proposal.quantity===null}
+        onClick={()=>onReview(proposal.proposal_id,true)}>Approve invitation</button>
+      <button className="secondary-button" disabled={busy} onClick={()=>onReview(proposal.proposal_id,false)}>Reject suggestion</button>
+      {proposal.resource_kind==="offer" && proposal.quantity===null && <p>Owner must publish a known quantity before approval.</p>}
+    </div>}
   </article>;
 }
 
@@ -81,8 +87,10 @@ export function FindHelp({ requestId, token, operator, onAccessLost }: {
   </div>;
 }
 
-export default function Coordination({ token, onAccessLost }: { token: string; onAccessLost: (message: string) => void }) {
+export default function Coordination({ token, onAccessLost, operator=false }: { token: string; onAccessLost: (message: string) => void; operator?:boolean }) {
   const [status, setStatus] = useState<AiStatus | null>(null);
+  const [cases,setCases]=useState<{proposal_id:string;request_id:string;resource_id:string;state:number;quantity:number|null;unit:string;deadline_ms:number}[]>([]);
+  const [reviewing,setReviewing]=useState(false);
   const [items, setItems] = useState<AiProposal[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -97,10 +105,10 @@ export default function Coordination({ token, onAccessLost }: { token: string; o
     if (pending.current) return false;
     const controller = new AbortController(); pending.current = controller; setBusy(true);
     try {
-      const [state, proposals] = await Promise.all([get<AiStatus>("dashboard/runs", token, controller.signal),
-        get<ProposalPage>(`dashboard/proposals?limit=30${before ? `&before=${encodeURIComponent(before)}` : ""}${requestId ? `&request_id=${encodeURIComponent(requestId)}` : ""}`, token, controller.signal)]);
+      const [state, proposals, assistance] = await Promise.all([get<AiStatus>("dashboard/runs", token, controller.signal),
+        get<ProposalPage>(`dashboard/proposals?limit=30${before ? `&before=${encodeURIComponent(before)}` : ""}${requestId ? `&request_id=${encodeURIComponent(requestId)}` : ""}`, token, controller.signal),get<{items:typeof cases}>("dashboard/assistance",token,controller.signal)]);
       if (pending.current !== controller) return false;
-      setStatus(state); setItems(proposals.items); setError(null);
+      setCases(assistance.items);setStatus(state); setItems(proposals.items); setError(null);
       setNextBefore(proposals.next_before); setCheckedAt(proposals.evaluated_at_ms);
       selection.current = { before, requestId };
       return true;
@@ -112,6 +120,15 @@ export default function Coordination({ token, onAccessLost }: { token: string; o
       return false;
     } finally { if (pending.current === controller) { pending.current = null; setBusy(false); } }
   }
+  async function review(id:string,approve:boolean) {
+    if(reviewing)return;
+    if(!window.confirm(approve?"Send this invitation to the owner? Nothing is reserved until acceptance.":"Reject this suggestion?"))return;
+    setReviewing(true);const controller=new AbortController();
+    try{await post(`dashboard/proposals/${id}/${approve?"approve":"reject"}`,token,controller.signal);await load();}
+    catch(failure){if(failure instanceof ApiError && [401,403].includes(failure.status))accessLost.current(failure.message);
+      else setError(failure instanceof ApiError?failure.message:"Could not save review. Refresh and retry.");}
+    finally{setReviewing(false);}
+  }
   useEffect(() => {
     void load(); const timer = window.setInterval(() => { if (!document.hidden) void load(); }, 5000);
     return () => { window.clearInterval(timer); pending.current?.abort(); pending.current = null; };
@@ -119,7 +136,7 @@ export default function Coordination({ token, onAccessLost }: { token: string; o
   return <section aria-label="AI coordination" aria-busy={busy}>
     <div className="inbox-toolbar"><strong>{status ? status.configured ? "Cloud AI configured" : "Cloud AI not configured" : "Loading AI status…"}</strong>
       <button className="secondary-button" disabled={busy} onClick={() => void load()}>Refresh AI status</button></div>
-    <p className="subtle">This page refreshes every five seconds. Suggestions require human review; stock is shared across requests and is not reserved. Approval and owner acceptance remain separate steps.</p>
+    <p className="subtle">This page refreshes every five seconds. Suggestions require human review; stock is shared across requests and is not reserved. Approved invitations and owner decisions appear below; confirmation means a commitment, not delivered assistance.</p>
     <form className="inbox-toolbar ai-filter" onSubmit={event => { event.preventDefault(); void load(null, filter.trim()).then(ok => { if (ok) setPrevious([]); }); }}>
       <label htmlFor="ai-request-filter">Filter by SOS ID</label>
       <input id="ai-request-filter" value={filter} onChange={event => setFilter(event.target.value.trim())} placeholder="All requests"
@@ -135,7 +152,7 @@ export default function Coordination({ token, onAccessLost }: { token: string; o
       AI checks are paused until {time(status.budget.resets_at_ms)}. Requests remain queued; uploads and nearby relay continue.
     </p>}
     {error && <p className="error error-banner" role="alert">{error} Previously loaded results may be outdated.</p>}
-    <div className="resource-grid">{items.map(item => <ProposalCard key={item.proposal_id} proposal={item}/>)}</div>
+    <div className="resource-grid">{items.map(item => <ProposalCard key={item.proposal_id} proposal={item} operator={operator} busy={reviewing} onReview={(id,approve)=>void review(id,approve)}/>)}</div>
     <nav className="inbox-toolbar ai-pages" aria-label="Suggestion pages">
       {previous.length > 0 && <>
         <button className="secondary-button" disabled={busy} onClick={() => { void load(null).then(ok => { if (ok) setPrevious([]); }); }}>Newest suggestions</button>
@@ -147,6 +164,11 @@ export default function Coordination({ token, onAccessLost }: { token: string; o
       }}>Older suggestions</button>}
     </nav>
     {status && !items.length && <div className="empty-state"><h2>No suggestions on this page</h2><p>{status.queued_total ? "Requests are queued for the AI coordinator." : "Check the recent run results below. Operators can request a fresh check from an open SOS."}</p></div>}
+    {cases.length>0 && <div className="help-note"><h2>Assistance coordination</h2><p>Latest 100 arrangements. Phone delivery can wait for a gateway or mesh route.</p>
+      {cases.map(item=><div className="resource-card" key={item.proposal_id}><strong>{["","Invitation awaiting owner","Commitment confirmed by server","Declined / rejected","Cancelled","Expired","Requester reported resolved"][item.state]}</strong>
+        <p>SOS {item.request_id} ? Resource {item.resource_id}</p><p>{item.quantity===null?"Volunteer assistance":`${item.quantity} ${item.unit}`} ? deadline {time(item.deadline_ms)}</p>
+        <p className="subtle">This status does not confirm physical delivery or that an offline requester has received the update.</p></div>)}
+    </div>}
     {status && <div className="help-note"><h2>Recent AI runs</h2>
       <p>{status.queued_total} requests waiting or running · latest 20 runs</p>
       {status.queued.filter(job => job.attempts > 0).map(job => <p className="subtle" key={job.request_id}>
