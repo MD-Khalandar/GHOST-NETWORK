@@ -9,6 +9,8 @@ import org.ghost.design.GhostTheme
 import org.ghost.feature.foundation.FoundationPreviewFixtures
 import org.ghost.feature.foundation.DeviceTrustState
 import org.ghost.feature.foundation.OperatorAccess
+import org.ghost.domain.model.SosDraft
+import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -24,25 +26,25 @@ class GhostAppUiTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
 
     @Test
-    fun allDestinationsRenderAndSosOnlyOpensAnExplicitPreview() {
+    fun navigationAndOpeningTheSosFormDoNotPublish() {
         compose.setContent { GhostTheme(darkTheme = false) { GhostApp(FoundationPreviewFixtures.loaded, {}) } }
         compose.onNodeWithText("Home").assertIsSelected()
         compose.onNodeWithText("Send SOS").performScrollTo().assertHasClickAction()
             .assertHeightIsAtLeast(48.dp).performClick()
-        compose.onNodeWithText("SOS preview").assertIsDisplayed()
-        compose.onNodeWithText("Sending is unavailable in this preview.", substring = true).assertIsDisplayed()
-        compose.onNodeWithText("Close preview").performClick()
+        compose.onNodeWithText("Create SOS").assertIsDisplayed()
+        compose.onNodeWithText("UI preview: saving is disabled.").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Close").performClick()
 
         compose.onNodeWithText("Requests").performClick().assertIsSelected()
-        compose.onNodeWithText("Requests & offers").assertIsDisplayed()
-        compose.onNodeWithText("Local report · Open").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Saved requests").assertIsDisplayed()
+        compose.onNodeWithText("Saved on this phone only").performScrollTo().assertIsDisplayed()
 
         compose.onNodeWithText("Mission").performClick()
         compose.onNodeWithText("Cloud unavailable").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Resource allocation confirmed").assertDoesNotExist()
 
         compose.onNode(hasText("Network") and hasClickAction()).performClick()
-        compose.onNodeWithText("Radio simulation").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Nearby phones").performScrollTo().assertIsDisplayed()
 
     }
 
@@ -65,15 +67,21 @@ class GhostAppUiTest {
 
     @Test
     fun publicSharingAndCloudConsentDefaultOffAndRemainIndependent() {
-        compose.setContent { GhostTheme { GhostApp(FoundationPreviewFixtures.loaded, {}) } }
+        var saved: SosDraft? = null
+        val draft = SosDraft()
+        val actions = LocalActions({}, { _, done -> done() }, { draft, done -> saved = draft; done() }, {}, {}, {}, { _, _ -> }, {}, {})
+        compose.setContent { GhostTheme { GhostApp(FoundationPreviewFixtures.loaded, {}, local = LocalUiState(draft = draft), actions = actions) } }
         compose.onNodeWithText("Send SOS").performScrollTo().performClick()
         compose.onNodeWithText("Share publicly with nearby phones").performScrollTo().assertIsOff().performClick().assertIsOn()
         compose.onNodeWithText("Allow cloud coordination").performScrollTo().assertIsOff().performClick().assertIsOn()
         compose.onNodeWithText("Share publicly with nearby phones").performScrollTo().performClick().assertIsOff()
         compose.onNodeWithText("Allow cloud coordination").performScrollTo().assertIsOn()
-        compose.onNodeWithText("Close preview").performClick()
-        compose.onNodeWithText("Send SOS").performScrollTo().performClick()
-        compose.onNodeWithText("Share publicly with nearby phones").performScrollTo().assertIsOff()
-        compose.onNodeWithText("Allow cloud coordination").performScrollTo().assertIsOff()
+        compose.onNodeWithText("What help do you need?").performScrollTo().performTextInput("Need drinking water")
+        compose.onNodeWithText("Review SOS").performClick()
+        assertNull(saved)
+        compose.onNodeWithText("Save SOS").performClick()
+        assertEquals("Need drinking water", saved!!.description)
+        assertFalse(saved!!.publicSharing)
+        assertTrue(saved!!.cloudConsent)
     }
 }

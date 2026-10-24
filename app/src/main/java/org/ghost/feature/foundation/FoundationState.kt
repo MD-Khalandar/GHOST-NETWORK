@@ -13,7 +13,17 @@ data class FoundationState(
     val cloud: GatewayReachability = GatewayReachability.UNKNOWN,
     val loading: Boolean = false,
     val failed: Boolean = false,
+    val simulated: Boolean = false,
 )
+
+fun LocalDelivery.label(): String = when (this) {
+    LocalDelivery.SAVED_LOCALLY -> "Saved on this phone only"
+    LocalDelivery.QUEUED -> "Queued for nearby phones"
+    LocalDelivery.SENT_TO_NEIGHBOR -> "Transferred to neighbor · receipt pending"
+    LocalDelivery.RECEIVED_BY_PHONE -> "Saved by a nearby phone · signed receipt"
+    LocalDelivery.RECEIVED_FROM_PEER -> "Received and saved from a nearby phone"
+    LocalDelivery.EXPIRED -> "Expired · no longer sent"
+}
 
 fun GatewayReachability.label(): String = when (this) {
     GatewayReachability.UNKNOWN -> "Cloud status unknown"

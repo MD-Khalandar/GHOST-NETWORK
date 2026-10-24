@@ -27,8 +27,19 @@ source scripts/env.sh
 ```
 
 APK: `app/build/outputs/apk/debug/app-debug.apk`. With a phone connected, use
-`installDebug` and launch GHOST. The current Send SOS action opens a preview;
-real sending is still being built.
+`installDebug` and launch GHOST. SOS drafts, reports and queued packets are saved
+locally. Nearby runs while the app is open; cloud uploads and multi-hop relay
+are not implemented yet.
+
+For two phones with Google Play services:
+
+1. Keep Bluetooth/Wi-Fi on and both apps open. In Network, tap **Start nearby** and allow the requested permissions.
+2. Tap **Connect** on one phone, compare the code, and confirm it on both.
+3. On Home, create an SOS, enable public sharing, review, then **Save & send SOS**.
+4. Check Requests on the other phone. The sender shows receipt only after the receiver saves the report and returns a valid signature.
+
+With sharing off, **Save SOS** keeps the report on this phone. With no connected
+peer, public reports stay queued across restarts; reconnect to send them.
 
 The server public signing key can be pinned with
 `-PghostCloudPublicKey=<base64url-SPKI>`. Empty configuration rejects cloud results.

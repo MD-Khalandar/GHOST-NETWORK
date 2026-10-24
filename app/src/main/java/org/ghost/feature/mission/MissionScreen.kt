@@ -21,12 +21,12 @@ import org.ghost.feature.foundation.label
 fun MissionScreen(state: FoundationState, onRetry: () -> Unit, modifier: Modifier = Modifier,
                   contentPadding: PaddingValues = PaddingValues(0.dp)) {
     var showExplanation by rememberSaveable { mutableStateOf(false) }
-    GhostScreen("Cloud mission", "Your request's coordination status.", modifier, contentPadding) {
+    GhostScreen("Cloud mission", "Your request's coordination status.", modifier, contentPadding, state.simulated) {
         when {
             state.loading -> item { LoadingCard() }
             state.failed -> item { ErrorCard(onRetry) }
             else -> item("status") {
-                InfoCard(state.mission.status.label(), "Simulated status. No live coordinator is running in this preview.") {
+                InfoCard(state.mission.status.label(), if (state.simulated) "Preview status." else "Cloud synchronization is not implemented yet. Reports remain saved on this phone.") {
                     state.mission.message?.let { Text(it) }
                     state.mission.version?.let { Text("Proposal version $it") }
                 }

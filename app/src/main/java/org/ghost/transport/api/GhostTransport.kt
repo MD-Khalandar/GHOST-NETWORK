@@ -22,6 +22,7 @@ data class TransportEvent(
     val peer: PeerHandle? = null,
     val packetId: PacketId? = null,
     val message: String? = null,
+    val packetBytes: ByteArray? = null,
 )
 
 enum class SendResultCode {

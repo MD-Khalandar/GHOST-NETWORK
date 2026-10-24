@@ -8,11 +8,12 @@ responses return through the mesh. Without internet, cloud coordination waits.
 Stack: one Kotlin/Compose app with Room/Nearby, one Fastify server with
 PostgreSQL/OpenAI, and a React/Vite dashboard. API and worker share one service.
 
-Built: preview screens, signing/verification, cloud-key pinning, consent and server
-authentication. SOS storage, radios, sync, matching and dashboard are not built.
-Physical-phone key persistence and radio behavior are untested.
+Built: SOS forms/drafts and signed reports in Room, local-only saves, foreground
+Nearby discovery/pairing, direct SOS exchange, bounded retries and signed phone
+receipts. Signing, cloud-key pinning, consent and server authentication also work.
+Two-phone radio behavior and handset key persistence still need physical testing.
 
-Next: durable local SOS → direct phone exchange → relay/gateway sync → dashboard
+Next: multi-hop relay/gateway sync → dashboard
 and resource matching → approval, owner decisions and outage recovery.
 
 Keep public/cloud consent separate, preserve signed bytes, reject forged/duplicate

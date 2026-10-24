@@ -20,28 +20,29 @@ class MainActivitySmokeTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
 
     @Test
-    fun realLauncherWiresOneSeededGraphAndRetainsItAcrossActivityRecreation() {
+    fun launcherUsesEmptyRealStorageAndRetainsItsGraphAcrossRecreation() {
         compose.waitUntil(5_000) {
-            ViewModelProvider(compose.activity)[FoundationViewModel::class.java].state.value.requests.size == 1
+            ViewModelProvider(compose.activity)[AppGraph::class.java].local.value.draft != null &&
+                !ViewModelProvider(compose.activity)[FoundationViewModel::class.java].state.value.loading
         }
         val graph = ViewModelProvider(compose.activity)[AppGraph::class.java]
         compose.onNodeWithText("Requests").performClick()
-        compose.onNodeWithText("Local report · Open").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("No local requests yet").performScrollTo().assertIsDisplayed()
         compose.activityRule.scenario.recreate()
         compose.onNodeWithText("Requests").assertIsSelected()
         compose.runOnIdle {
             assertSame(graph, ViewModelProvider(compose.activity)[AppGraph::class.java])
             val state = ViewModelProvider(compose.activity)[FoundationViewModel::class.java].state.value
-            assertEquals(1, state.requests.size)
-            assertEquals(1, state.offers.size)
+            assertEquals(0, state.requests.size)
+            assertEquals(0, state.offers.size)
             assertEquals(CloudCoordinationStatus.NOT_CONNECTED, state.mission.status)
         }
         compose.onNodeWithText("Home").performClick()
         compose.onNodeWithText("Send SOS").performScrollTo().performClick()
-        compose.onNodeWithText("SOS preview").assertIsDisplayed()
-        compose.onNodeWithText("Close preview").performClick()
+        compose.onNodeWithText("Create SOS").assertIsDisplayed()
+        compose.onNodeWithText("Close & save draft").performClick()
         compose.runOnIdle {
-            assertEquals(1, ViewModelProvider(compose.activity)[FoundationViewModel::class.java].state.value.requests.size)
+            assertEquals(0, ViewModelProvider(compose.activity)[FoundationViewModel::class.java].state.value.requests.size)
         }
     }
 }

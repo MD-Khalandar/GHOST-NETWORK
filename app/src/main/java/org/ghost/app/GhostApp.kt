@@ -19,17 +19,20 @@ import org.ghost.design.GhostIcons
 import org.ghost.feature.foundation.FoundationState
 import org.ghost.feature.foundation.DeviceTrustState
 import org.ghost.feature.home.HomeScreen
-import org.ghost.feature.home.SosPreviewDialog
+import org.ghost.feature.home.SosFormDialog
+import org.ghost.domain.model.SosDraft
 import org.ghost.feature.mission.MissionScreen
 import org.ghost.feature.network.NetworkScreen
 import org.ghost.feature.requests.RequestsScreen
 
 /** Navigation only; sample request/network content remains explicitly simulated. */
 @Composable
-fun GhostApp(state: FoundationState, onRetry: () -> Unit, trust: DeviceTrustState = DeviceTrustState(), onRetryIdentity: (() -> Unit)? = null) {
+fun GhostApp(state: FoundationState, onRetry: () -> Unit, trust: DeviceTrustState = DeviceTrustState(), onRetryIdentity: (() -> Unit)? = null,
+             local: LocalUiState = LocalUiState(), actions: LocalActions? = null) {
     var route by rememberSaveable { mutableStateOf(AppRoute.HOME) }
     var showSosPreview by rememberSaveable { mutableStateOf(false) }
     val savedScreens = rememberSaveableStateHolder()
+    val previewDraft = remember { SosDraft() }
     BackHandler(route != AppRoute.HOME) { route = AppRoute.HOME }
 
     Scaffold(
@@ -40,7 +43,7 @@ fun GhostApp(state: FoundationState, onRetry: () -> Unit, trust: DeviceTrustStat
                     .padding(horizontal = 24.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                     Text("GHOST", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
-                    Text("Preview", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelLarge)
+                    Text(if (state.simulated) "Preview" else "Local SOS", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelLarge)
                 }
             }
         },
@@ -92,12 +95,27 @@ fun GhostApp(state: FoundationState, onRetry: () -> Unit, trust: DeviceTrustStat
             val modifier = Modifier.semantics { paneTitle = route.name.lowercase().replaceFirstChar { it.titlecase() } }
             when (route) {
                 AppRoute.HOME -> HomeScreen(state, { showSosPreview = true }, { route = AppRoute.REQUESTS },
-                    { route = AppRoute.NETWORK }, onRetry, modifier, insets)
+                    { route = AppRoute.NETWORK }, onRetry, modifier, insets, local)
                 AppRoute.REQUESTS -> RequestsScreen(state, onRetry, modifier, insets)
                 AppRoute.MISSION -> MissionScreen(state, onRetry, modifier, insets)
-                AppRoute.NETWORK -> NetworkScreen(state, onRetry, modifier, insets, trust, onRetryIdentity)
+                AppRoute.NETWORK -> NetworkScreen(state, onRetry, modifier, insets, trust, onRetryIdentity, local, actions)
             }
         }
     }
-    if (showSosPreview) SosPreviewDialog { showSosPreview = false }
+    if (showSosPreview) {
+        val draft = local.draft ?: if (actions == null) previewDraft else null
+        if (draft == null) AlertDialog(onDismissRequest = { showSosPreview = false }, title = { Text("Loading SOS draft") },
+            text = { Text(local.error ?: "Opening local storage…") }, confirmButton = { TextButton({ showSosPreview = false }) { Text("Close") } })
+        else SosFormDialog(draft, local.saving, local.error, actions != null,
+            onChange = { actions?.updateDraft?.invoke(it) },
+            onSave = { value -> actions?.publish?.invoke(value) { showSosPreview = false; route = AppRoute.REQUESTS } },
+            onClose = { value -> if (actions == null) showSosPreview = false else actions.saveDraft(value) { showSosPreview = false } })
+    }
+    local.network.pairing.firstOrNull()?.let { pairing ->
+        AlertDialog(onDismissRequest = { actions?.confirm?.invoke(pairing.endpointId, false) },
+            title = { Text("Confirm nearby phone") },
+            text = { Text("${pairing.name}\n\nCompare this code on both phones:\n${pairing.code}\n\nAccept only if both codes match.") },
+            confirmButton = { TextButton({ actions?.confirm?.invoke(pairing.endpointId, true) }) { Text("Codes match") } },
+            dismissButton = { TextButton({ actions?.confirm?.invoke(pairing.endpointId, false) }) { Text("Decline") } })
+    }
 }

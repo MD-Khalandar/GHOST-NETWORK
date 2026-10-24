@@ -13,7 +13,7 @@ import androidx.compose.ui.unit.dp
 
 @Composable
 fun GhostScreen(title: String, subtitle: String, modifier: Modifier = Modifier,
-                contentPadding: PaddingValues = PaddingValues(0.dp), content: LazyListScope.() -> Unit) {
+                contentPadding: PaddingValues = PaddingValues(0.dp), simulated: Boolean = false, content: LazyListScope.() -> Unit) {
     // Keep the scroll viewport between app bars so bring-into-view cannot place a
     // focused button behind an opaque bar (especially at 200% text or in landscape).
     Box(modifier.fillMaxSize().padding(contentPadding).consumeWindowInsets(contentPadding), contentAlignment = Alignment.TopCenter) {
@@ -28,7 +28,7 @@ fun GhostScreen(title: String, subtitle: String, modifier: Modifier = Modifier,
                     Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-            item("simulation") { SimulationNotice() }
+            if (simulated) item("simulation") { SimulationNotice() }
             content()
         }
     }
@@ -67,6 +67,6 @@ fun LoadingCard() = InfoCard("Loading local information", "Your reports will app
 }
 
 @Composable
-fun ErrorCard(onRetry: () -> Unit) = InfoCard("Couldn’t load local information", "Try again to refresh this preview.") {
+fun ErrorCard(onRetry: () -> Unit) = InfoCard("Couldn’t load local information", "Try again to load saved information.") {
     OutlinedButton(onClick = onRetry, modifier = Modifier.heightIn(min = 48.dp)) { Text("Try again") }
 }

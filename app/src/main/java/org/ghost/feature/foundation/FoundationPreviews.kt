@@ -15,7 +15,7 @@ import org.ghost.transport.api.PeerHandle
 
 /** Presentation fixtures; previews never start I/O. */
 object FoundationPreviewFixtures {
-    val empty = FoundationState(cloud = GatewayReachability.OFFLINE)
+    val empty = FoundationState(cloud = GatewayReachability.OFFLINE, simulated = true)
     val loaded = empty.copy(
         requests = listOf(DashboardSosSummary(
             RequestId("11111111-1111-4111-8111-111111111111"), SosCategory.WATER, SosState.OPEN,

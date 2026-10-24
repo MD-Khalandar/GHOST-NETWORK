@@ -47,6 +47,8 @@ data class DashboardSosSummary(
     @SerialName("reported_at_ms") val reportedAtMs: Long,
     @SerialName("received_at_ms") val receivedAtMs: Long,
     val stale: Boolean,
+    val localDelivery: LocalDelivery = LocalDelivery.SAVED_LOCALLY,
+    val createdHere: Boolean = false,
 )
 
 @Serializable

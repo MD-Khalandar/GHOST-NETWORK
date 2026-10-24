@@ -40,7 +40,7 @@ class PacketValidator(
             (if (r.hopCount == 0) r.previousNodeId == null else r.previousNodeId?.value?.matches(NODE) == true), Rejection.INVALID_HOPS)
         val e = ImmutableEnvelopeV1.parseFrom(raw)
         check(e.version == 1, Rejection.UNSUPPORTED_VERSION)
-        check(e.kindValue in 1..12, Rejection.UNSUPPORTED_KIND)
+        check(e.kindValue in 1..13 && !(forCloud && e.kindValue == 13), Rejection.UNSUPPORTED_KIND)
         check(uuid(e.packetId) && uuid(e.eventId) && e.priorityValue in 1..3 && e.payloadFormatValue == 1)
         check(now in 1..MAX_SAFE && e.createdAtMs in 1..MAX_SAFE && e.expiresAtMs in 1..MAX_SAFE &&
             e.expiresAtMs > e.createdAtMs && e.expiresAtMs - e.createdAtMs <= MAX_TTL && e.createdAtMs <= now + CLOCK_SKEW, Rejection.INVALID_TIME)
@@ -117,6 +117,9 @@ class PacketValidator(
             12 -> DeliveryReceiptV1.parseFrom(data).also { p ->
                 check(uuid(p.packetId) && p.receiptTypeValue in 1..2 && p.observedAtMs in 1..(now + CLOCK_SKEW))
                 check(SigningIdentity.hex(p.recipientNodeId.toByteArray()) == sender, Rejection.INVALID_ACTOR); owner(AuthorityKind.RECEIPT, p.packetId)
+            }
+            13 -> PeerHelloV1.parseFrom(data).also { p ->
+                check(e.destination.kindValue == 1 && p.challenge.size() == 32 && (p.replyTo.isEmpty || p.replyTo.size() == 32))
             }
             else -> throw ProtocolException(Rejection.UNSUPPORTED_KIND)
         }

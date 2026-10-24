@@ -80,6 +80,12 @@ message ConsentV1 {
   bool cloud_processing_allowed = 2;
 }
 
+// Neighbor-only proof of possession. reply_to echoes the current connection's challenge.
+message PeerHelloV1 {
+  bytes challenge = 1;
+  bytes reply_to = 2;
+}
+
 message SosCreateV1 {
   string request_id = 1;
   SosCategoryV1 category = 2;
