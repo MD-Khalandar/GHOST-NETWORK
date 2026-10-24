@@ -1,0 +1,122 @@
+{
+  "contract_version": "ghost.contracts.v1",
+  "sos_create": {
+    "request_id": "11111111-1111-4111-8111-111111111111",
+    "category": "WATER",
+    "description": "Two people need drinking water near the marked community hall.",
+    "people_count": 2,
+    "coarse_area": "Sector 4",
+    "landmark": "Community hall",
+    "consent": {
+      "public_mesh_allowed": true,
+      "cloud_processing_allowed": true
+    }
+  },
+  "helper_profile_publish": {
+    "owner_node_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "display_name": "Volunteer B",
+    "coarse_area": "Sector 4",
+    "help_types": ["WATER", "TRANSPORT"],
+    "availability": "AVAILABLE",
+    "consent": {
+      "public_mesh_allowed": true,
+      "cloud_processing_allowed": true
+    }
+  },
+  "offer_publish": {
+    "offer_id": "22222222-2222-4222-8222-222222222222",
+    "owner_node_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "resource_type": "WATER",
+    "quantity": 20,
+    "unit": "liters",
+    "coarse_area": "Sector 4",
+    "available_until_ms": 1792861200000,
+    "consent": {
+      "public_mesh_allowed": true,
+      "cloud_processing_allowed": true
+    }
+  },
+  "cloud_ack": {
+    "origin_event_id": "33333333-3333-4333-8333-333333333333",
+    "status": "ACCEPTED",
+    "cloud_revision": 42,
+    "received_at_ms": 1792860000000
+  },
+  "match_proposed": {
+    "proposal_id": "44444444-4444-4444-8444-444444444444",
+    "version": 1,
+    "request_id": "11111111-1111-4111-8111-111111111111",
+    "offer_id": "22222222-2222-4222-8222-222222222222",
+    "explanation": "Fresh water offer in the same coarse area.",
+    "approval_id": "55555555-5555-4555-8555-555555555555"
+  },
+  "delivery_receipt": {
+    "packet_id": "66666666-6666-4666-8666-666666666666",
+    "recipient_node_id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "receipt_type": "PERSISTED_BY_RECIPIENT",
+    "observed_at_ms": 1792861800000
+  },
+  "wire_packet": {
+    "immutable_envelope_bytes": "AQID",
+    "signature": "BAUG",
+    "relay": {
+      "remaining_hops": 3,
+      "hop_count": 1,
+      "previous_node_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  },
+  "sync_upload": {
+    "idempotency_key": "gateway-batch-0001",
+    "packets": [
+      {
+        "immutable_envelope_bytes": "AQID",
+        "signature": "BAUG",
+        "relay": {
+          "remaining_hops": 3,
+          "hop_count": 1,
+          "previous_node_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      }
+    ],
+    "receipts": [
+      {
+        "packet_id": "66666666-6666-4666-8666-666666666666",
+        "recipient_node_id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "receipt_type": "PERSISTED_BY_RECIPIENT",
+        "observed_at_ms": 1792861800000
+      }
+    ]
+  },
+  "dashboard_sos_page": {
+    "items": [
+      {
+        "request_id": "11111111-1111-4111-8111-111111111111",
+        "category": "WATER",
+        "state": "OPEN",
+        "description": "Two people need drinking water near the marked community hall.",
+        "people_count": 2,
+        "coarse_area": "Sector 4",
+        "source_node_id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "reported_at_ms": 1792859000000,
+        "received_at_ms": 1792860000000,
+        "stale": false
+      }
+    ],
+    "next_cursor": "sos-cursor-1",
+    "server_time_ms": 1792861800000
+  },
+  "approval_request": {
+    "version": 1,
+    "idempotency_key": "operator-approval-0001",
+    "note": "Approved for operator review demo."
+  },
+  "approval_response": {
+    "proposal_id": "44444444-4444-4444-8444-444444444444",
+    "version": 1,
+    "outcome": "APPROVED",
+    "cloud_revision": 43,
+    "outgoing_packet_ids": [
+      "77777777-7777-4777-8777-777777777777"
+    ]
+  }
+}

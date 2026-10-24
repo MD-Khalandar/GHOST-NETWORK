@@ -1,0 +1,25 @@
+{
+  "name": "ghost-cloud-server",
+  "private": true,
+  "version": "0.1.0-dev",
+  "description": "GHOST CP01 cloud service scaffold",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "test": "tsx --test src/*.test.ts",
+    "smoke": "tsx src/smoke.ts"
+  },
+  "dependencies": {
+    "fastify": "5.12.7"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.5",
+    "tsx": "4.23.15",
+    "typescript": "7.0.2"
+  }
+}
