@@ -169,7 +169,22 @@ class AppGraph(application: Application) : AndroidViewModel(application) {
         ::saveDraft, ::publish, start, ::stopNearby, ::retrySends, ::saveGateway, ::clearGateway,
         publishResource = { draft, saved -> publishResource(draft, saved) },
         withdrawResource = { draft, saved -> publishResource(draft, saved, withdraw = true) },
-        requestLocation = requestLocation)
+        requestLocation = requestLocation, closeSos = ::closeSos)
+
+    private fun closeSos(requestId: String, state: SosState) {
+        if (operation.value.saving) return
+        operation.update { it.copy(saving = true, error = null, notice = null) }
+        viewModelScope.launch {
+            try {
+                val result = repository.closures.close(requestId, state).getOrThrow()
+                operation.update { it.copy(saving = false, notice = if (result.queued)
+                    "Closure saved on this phone. Waiting to share with nearby phones and any permitted online gateway."
+                    else "Request closed on this phone only.") }
+                exchange.flush()
+            } catch (cancelled: CancellationException) { throw cancelled }
+              catch (error: Exception) { operation.update { it.copy(saving = false, error = if (error is IllegalArgumentException) error.message else "Could not close this SOS. Check storage and retry.") } }
+        }
+    }
 
     override fun onCleared() {
         // SDK stop calls are immediate; the app also stops links when its activity backgrounds.

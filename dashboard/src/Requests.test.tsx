@@ -43,3 +43,18 @@ test("location map plots only reports with coordinates and exposes marker select
   const empty = renderToStaticMarkup(<LocationMap reports={[withoutLocation]} selected={null} onSelect={() => {}}/>);
   assert.match(empty, /No uploaded SOS report includes a GPS location/);
 });
+
+test("closed requests show owner-reported state and are excluded from the active map", () => {
+  for (const state of [5, 6]) {
+    const report: SosReport = { request_id: "11111111-1111-4111-8111-111111111111", category: 3, state,
+      description: "Water request", coarse_area: null, landmark: null, people_count: 2,
+      latitude: 12, longitude: 44, created_at_ms: 1000, received_at_ms: 2000, expires_at_ms: 4000, cloud_revision: 1 };
+    const details = renderToStaticMarkup(<RequestDetails report={report} now={2500}/>);
+    assert.match(details, state === 6 ? /Reported resolved by requester/ : /Cancelled by requester/);
+    assert.match(details, /excluded from new AI matching/);
+    assert.doesNotMatch(details, /Help is confirmed/);
+    const map = renderToStaticMarkup(<LocationMap reports={[report]} selected={null} onSelect={() => {}}/>);
+    assert.match(map, /0 of 1 requests with GPS/);
+    assert.doesNotMatch(map, /aria-label="Water SOS at/);
+  }
+});

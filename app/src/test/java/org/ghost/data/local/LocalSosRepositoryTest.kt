@@ -323,6 +323,86 @@ class LocalSosRepositoryTest {
         assertNull(restoredDb.sos().delivery(first.packetId, c.nodeId.value))
     }
 
+    @Test fun sosClosureArrivesBeforeOriginalSurvivesRestartAndReturnsVerifiedCloudReceipt() = runBlocking {
+        for (state in listOf(SosState.CANCELLED, SosState.RESOLVED)) {
+            val owner = key(); val carrier = key(); val gateway = key(); val cloud = key()
+            val sourceDb = open(); val source = LocalSosRepository(sourceDb, { owner }, { time })
+            val request = payload().copy(consent = Consent(true, true))
+            source.publish(request).getOrThrow()
+            val original = source.outgoing(carrier.nodeId.value).single()
+            val saved = source.closures.close(request.requestId.value, state).getOrThrow()
+            assertEquals(0, sourceDb.sos().activeOwned(time))
+            assertEquals(saved, source.closures.close(request.requestId.value, state).getOrThrow())
+            assertTrue(source.outgoing(carrier.nodeId.value).isEmpty())
+            assertNull(source.prepareOutgoing(original.packetId, carrier.nodeId.value))
+            assertNull(source.prepareCloudUpload(original.eventId))
+            val name = "closure-${UUID.randomUUID()}.db"; val db = open(name)
+            val relay = LocalSosRepository(db, { carrier }, { time })
+            val row = source.closures.outgoing(carrier.nodeId.value, emptySet()).single()
+            val receipt = relay.closures.receive(WireCodec.decode(row.wire), owner.nodeId.value)
+            source.receiveReceipt(WireCodec.decode(receipt), carrier.nodeId.value, setOf(row.packetId))
+            assertTrue(source.closures.outgoing(carrier.nodeId.value, emptySet()).isEmpty())
+            assertArrayEquals(receipt, relay.closures.receive(WireCodec.decode(row.wire), owner.nodeId.value))
+            relay.receiveSos(WireCodec.decode(original.wire), owner.nodeId.value)
+            assertEquals(state, relay.observeRequests().first().single().state)
+            assertTrue(relay.outgoing(gateway.nodeId.value).isEmpty())
+            assertEquals(original.expiresAt, row.expiresAt)
+            db.close(); databases.remove(db)
+            val reopened = open(name); val restored = LocalSosRepository(reopened, { carrier }, { time + 1000 })
+            val upload = restored.cloudOutgoing().single()
+            assertEquals(row.eventId, upload.eventId)
+            val onward = restored.closures.outgoing(gateway.nodeId.value, emptySet()).single()
+            assertEquals(RelayMetadata(2, 2, carrier.nodeId), WireCodec.decode(onward.wire).relay)
+            assertEquals(WireCodec.decode(row.wire).immutableEnvelopeBytesBase64, WireCodec.decode(onward.wire).immutableEnvelopeBytesBase64)
+            val ack = SignedPackets.create(cloud, 7, CloudAckV1.newBuilder().setOriginEventId(row.eventId).setStatusValue(1)
+                .setCloudRevision(1).setReceivedAtMs(time).build().toByteString(), time, destination = owner.nodeId.value)
+            restored.acceptCloudAck(row.eventId, ack, cloud.publicKey.encoded, 1)
+            assertEquals(LocalCloudState.ACCEPTED, restored.observeRequests().first().single().cloudState)
+            val back = restored.outgoingCloudReturns(owner.nodeId.value).single()
+            source.receiveCloudReturn(WireCodec.decode(back.wire), carrier.nodeId.value, cloud.publicKey.encoded)
+            assertEquals(LocalCloudState.ACCEPTED, source.observeRequests().first().single().cloudState)
+            val expired = LocalSosRepository(reopened, { carrier }, { row.expiresAt })
+            assertTrue(expired.closures.outgoing(gateway.nodeId.value, emptySet()).isEmpty())
+            assertTrue(expired.cloudOutgoing().isEmpty())
+            assertTrue(source.closures.close(request.requestId.value, if (state == SosState.CANCELLED) SosState.RESOLVED else SosState.CANCELLED).isFailure)
+        }
+    }
+
+    @Test fun sosClosuresEnforceOwnershipConsentAndProofBeforeChangingAnyState() = runBlocking {
+        val owner = key(); val stranger = key(); val peer = key()
+        val source = LocalSosRepository(open(), { owner }, { time })
+        val db = open(); val receiver = LocalSosRepository(db, { peer }, { time })
+        val request = payload(); source.publish(request).getOrThrow()
+        val original = source.outgoing(peer.nodeId.value).single()
+        receiver.receiveSos(WireCodec.decode(original.wire), owner.nodeId.value)
+        assertTrue(receiver.closures.close(request.requestId.value, SosState.CANCELLED).isFailure)
+        source.closures.close(request.requestId.value, SosState.CANCELLED).getOrThrow()
+        val row = source.closures.outgoing(peer.nodeId.value, emptySet()).single()
+        assertTrue(source.cloudOutgoing().isEmpty())
+        val packet = WireCodec.decode(row.wire)
+        val e = org.ghost.contracts.v1.ImmutableEnvelopeV1.parseFrom(WireCodec.unbase64(packet.immutableEnvelopeBytesBase64, PacketValidator.MAX_ENVELOPE))
+        val p = org.ghost.contracts.v1.SosUpdateV1.parseFrom(e.payloadBytes)
+        val forged = SignedPackets.create(stranger, 2, p.toByteString(), e.createdAtMs, ttl = e.expiresAtMs - e.createdAtMs)
+            .copy(relay = RelayMetadata(3, 1, stranger.nodeId))
+        val invalidProof = SignedPackets.create(owner, 2, p.toBuilder().setOriginalSosSignature(com.google.protobuf.ByteString.copyFrom(ByteArray(70))).build().toByteString(),
+            e.createdAtMs, ttl = e.expiresAtMs - e.createdAtMs).copy(relay = packet.relay)
+        for ((bad, sender) in listOf(forged to stranger.nodeId.value, invalidProof to owner.nodeId.value, packet to stranger.nodeId.value)) {
+            try { receiver.closures.receive(bad, sender); fail("Invalid closure accepted") } catch (_: IllegalArgumentException) { }
+            assertEquals(SosState.OPEN, receiver.observeRequests().first().single().state)
+            assertEquals(0, db.closures().count())
+        }
+        try { PacketValidator().verify(packet, time, forCloud = true); fail("Closure uploaded without original cloud consent") } catch (_: ProtocolException) { }
+        receiver.closures.receive(packet, owner.nodeId.value)
+        assertEquals(SosState.CANCELLED, receiver.observeRequests().first().single().state)
+        assertTrue(receiver.cloudOutgoing().isEmpty())
+        val privateRequest = payload(false).copy(consent = Consent(false, true))
+        source.publish(privateRequest).getOrThrow()
+        val privateClosure = source.closures.close(privateRequest.requestId.value, SosState.RESOLVED).getOrThrow()
+        assertFalse(privateClosure.queued)
+        assertTrue(source.cloudOutgoing().isEmpty())
+        assertTrue(source.closures.outgoing(peer.nodeId.value, emptySet()).none { it.eventId == privateClosure.eventId })
+    }
+
     @Test fun offerEditsAndWithdrawalsAreOwnerSignedAndCannotBeUndoneByLateOriginals() = runBlocking {
         val owner = key(); val carrier = key(); var clock = time
         val ownedDb = open(); val source = LocalSosRepository(ownedDb, { owner }, { clock })

@@ -54,6 +54,7 @@ data class DashboardSosSummary(
     val remainingRelayHops: Int = 4,
     val acknowledgedNeighbors: Int = 0,
     val cloudState: LocalCloudState = LocalCloudState.NOT_SHARED,
+    val closureShared: Boolean = false,
 )
 
 enum class LocalCloudState { NOT_SHARED, QUEUED, ACCEPTED, REJECTED, EXPIRED }

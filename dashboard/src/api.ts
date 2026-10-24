@@ -1,4 +1,5 @@
 export interface SosReport {
+  state?: number;
   request_id: string;
   category: number;
   description: string;

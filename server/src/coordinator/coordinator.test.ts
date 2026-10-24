@@ -50,7 +50,7 @@ async function fixture(path?: string) {
   });
   const model = (suggest: (context: MatchContext) => Promise<unknown> = async () => ({ matches: [draft()] })): ProposalModel =>
     ({ available: true, name: "configured-test-model", suggest });
-  return { pg, database, requestId, offerId, helper, supplier, store, draft, model, publishHelper, publishOffer, upload, packet };
+  return { pg, database, requestId, offerId, origin, helper, supplier, store, draft, model, publishHelper, publishOffer, upload, packet };
 }
 
 const until = async (condition: () => Promise<boolean>) => {
@@ -58,6 +58,31 @@ const until = async (condition: () => Promise<boolean>) => {
   while (Date.now() < end) { if (await condition()) return; await new Promise(resolve => setTimeout(resolve, 15)); }
   assert.fail("Coordinator did not reach expected state");
 };
+
+test("closing an SOS during inference discards suggestions, makes saved proposals stale, and prevents scheduling", async () => {
+  const f = await fixture();
+  let calls = 0;
+  const model = f.model(async () => { calls++; return { matches: [f.draft()] }; });
+  const worker = new CoordinatorWorker(f.database, model, () => now);
+  try {
+    const initial = await new CloudCoordinator(f.store, f.model(), () => now).run(f.requestId);
+    assert.equal(initial.status, "completed");
+    const original = (await f.pg.query<{ immutable_envelope: Uint8Array; origin_signature: Uint8Array }>("SELECT immutable_envelope, origin_signature FROM sos_reports WHERE request_id = $1", [f.requestId])).rows[0];
+    const closure = f.packet(f.origin, 2, { request_id: f.requestId, state: 6,
+      original_sos_envelope: Buffer.from(original.immutable_envelope), original_sos_signature: Buffer.from(original.origin_signature) }, now);
+    const result = await new CloudCoordinator(f.store, f.model(async () => {
+      await f.upload([closure]); return { matches: [f.draft("helper")] };
+    }), () => now).run(f.requestId);
+    assert.equal(result.code, "REQUEST_UNAVAILABLE");
+    assert.equal((await f.store.listProposals()).length, 1);
+    assert.equal(await f.store.checkProposal(initial.proposal_ids[0], now), "stale");
+    await assert.rejects(worker.enqueue(f.requestId), /REQUEST_UNAVAILABLE/);
+    worker.start(); await worker.stop();
+    assert.equal((await worker.status()).queued.length, 0);
+    assert.equal((await new CloudCoordinator(f.store, model, () => now).run(f.requestId)).code, "REQUEST_UNAVAILABLE");
+    assert.equal(calls, 0);
+  } finally { await worker.stop(); await f.pg.close(); }
+});
 
 test("signed supply edits and withdrawals invalidate suggestions and cannot be selected from old publications", async () => {
   const f = await fixture();

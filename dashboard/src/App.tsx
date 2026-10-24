@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { ApiError, get, type Session, type SosPage, type SosReport } from "./api";
-import { RequestDetails, RequestList, time } from "./Requests";
+import { RequestDetails, RequestList, time, closed } from "./Requests";
 import Resources from "./Resources";
 import Coordination, { FindHelp } from "./Coordination";
 import { LocationMap } from "./LocationMap";
@@ -83,7 +83,7 @@ export default function App() {
             {reports.length > 0 ? <RequestList reports={reports} selected={selected} onSelect={setSelected} now={now}/> : <div className="empty-state"><span className="empty-symbol" aria-hidden="true">◎</span><h2>No requests received yet</h2><p>Cloud-consented SOS reports will appear after a gateway uploads them.</p></div>}
             {nextBefore !== null && <div className="load-more"><button className="secondary-button" disabled={busy} onClick={() => void load(false, nextBefore)}>{busy ? "Loading…" : "Load older requests"}</button></div>}
           </section>
-          {report ? <RequestDetails report={report} now={now}>{report.expires_at_ms > now && <FindHelp key={report.request_id} requestId={report.request_id}
+          {report ? <RequestDetails report={report} now={now}>{report.expires_at_ms > now && !closed(report) && <FindHelp key={report.request_id} requestId={report.request_id}
             token={session.token} operator={session.role === "operator"} onAccessLost={message => { clearSession(); setError(message); }}/>}</RequestDetails>
             : <aside className="detail-panel detail-empty"><div className="eyebrow">Request details</div><p>Select a request to read its full report.</p></aside>}
         </div>

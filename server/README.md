@@ -31,12 +31,17 @@ node --env-file=server/.env server/dist/index.js
 
 `POST /v1/sync/upload` accepts a gateway bearer token and
 `{"idempotency_key":"unique-batch-id","packets":[...]}` (1–50 signed SOS_CREATE,
-HELPER_PROFILE_PUBLISH, OFFER_PUBLISH or OFFER_UPDATE packets). Both public sharing
+HELPER_PROFILE_PUBLISH, OFFER_PUBLISH, OFFER_UPDATE or terminal SOS_UPDATE packets). Both public sharing
 and cloud consent must be signed on. The gateway
 may relay another phone's SOS. Any invalid or conflicting item rolls back the
 batch; other event kinds are not accepted in this slice. Helper/supply payloads
 must name the signing phone as owner. Resource events and their signed receipts
 persist in PostgreSQL; duplicate offer IDs cannot be republished with new content.
+SOS cancellation/resolution uses states 5/6 and must embed the original signed
+SOS envelope/signature. Consent and expiry come from that proof. A closure can
+arrive first; late originals cannot reopen it. Dashboard items include `state`
+(1 open, 5 cancelled, 6 requester-reported resolved). Closed requests are excluded
+from AI scheduling and source validation, and their existing proposals are stale.
 
 Success returns `results` (event ID, ACCEPTED/DUPLICATE, cloud revision) and
 `packets` containing a stored cloud-signed acknowledgement addressed to each

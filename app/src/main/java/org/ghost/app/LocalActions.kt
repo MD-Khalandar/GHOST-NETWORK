@@ -6,6 +6,7 @@ import org.ghost.gateway.GatewayUiState
 import org.ghost.mesh.TopologySnapshot
 import org.ghost.domain.model.ResourceDraft
 import org.ghost.domain.model.ResourceSummary
+import org.ghost.domain.model.SosState
 
 data class LocalUiState(
     val draft: SosDraft? = null,
@@ -41,4 +42,5 @@ data class LocalActions(
     val publishResource: ((ResourceDraft, () -> Unit) -> Unit)? = null,
     val withdrawResource: ((ResourceDraft, () -> Unit) -> Unit)? = null,
     val requestLocation: (() -> Unit)? = null,
+    val closeSos: ((String, SosState) -> Unit)? = null,
 )

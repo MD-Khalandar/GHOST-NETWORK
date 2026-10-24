@@ -32,6 +32,37 @@ import org.robolectric.annotation.GraphicsMode
 class GhostAppUiTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
 
+    @Test fun requesterConfirmsCancellationOrResolutionAndOtherPhonesCannotCloseIt() {
+        val original = FoundationPreviewFixtures.loaded.requests.first().copy(createdHere = true, stale = false,
+            state = org.ghost.domain.model.SosState.OPEN)
+        val requests = mutableStateOf(listOf(original))
+        var closes = 0
+        val actions = LocalActions({}, { _, _ -> }, { _, _ -> }, {}, {}, {}, closeSos = { id, state ->
+            assertEquals(original.requestId.value, id); closes++
+            requests.value = listOf(original.copy(state = state, closureShared = true, cloudState = LocalCloudState.QUEUED))
+        })
+        compose.setContent { GhostTheme { GhostApp(FoundationPreviewFixtures.loaded.copy(requests = requests.value), {}, actions = actions) } }
+        compose.onNodeWithText("Requests").performClick()
+        compose.onNodeWithText("Cancel SOS").performScrollTo().performClick()
+        assertEquals(0, closes)
+        compose.onNodeWithText("Keep request open").performClick()
+        compose.onNodeWithText("Mark resolved").performScrollTo().performClick()
+        compose.onNodeWithText("Mark this SOS resolved?").assertIsDisplayed()
+        compose.onAllNodesWithText("Mark resolved").onLast().performClick()
+        assertEquals(1, closes)
+        compose.onNodeWithText("Reported resolved by requester").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Closure waiting for an online gateway.").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Cancel SOS").assertDoesNotExist()
+        compose.runOnIdle { requests.value = listOf(original) }
+        compose.onNodeWithText("Cancel SOS").performScrollTo().performClick()
+        compose.onAllNodesWithText("Cancel SOS").onLast().performClick()
+        assertEquals(2, closes)
+        compose.onNodeWithText("Cancelled by requester").performScrollTo().assertIsDisplayed()
+        compose.runOnIdle { requests.value = listOf(original.copy(createdHere = false)) }
+        compose.onNodeWithText("Cancel SOS").assertDoesNotExist()
+        compose.onNodeWithText("Mark resolved").assertDoesNotExist()
+    }
+
     @Test fun ownedSupplyCanBeEditedAndWithdrawnWithoutCreatingAnotherOffer() {
         val draft = org.ghost.domain.model.ResourceDraft(supply = true, quantity = "10", unit = "litres", publicSharing = true,
             cloudConsent = true, editing = true, baseEventId = "latest-version")

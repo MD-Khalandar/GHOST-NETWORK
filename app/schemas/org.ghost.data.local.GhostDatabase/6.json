@@ -1,0 +1,662 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 6,
+    "identityHash": "cad036e4d1d7f14acc3be2ae5982351f",
+    "entities": [
+      {
+        "tableName": "reports",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`eventId` TEXT NOT NULL, `packetId` TEXT NOT NULL, `requestId` TEXT NOT NULL, `sender` TEXT NOT NULL, `category` TEXT NOT NULL, `description` TEXT NOT NULL, `people` INTEGER, `area` TEXT, `createdAt` INTEGER NOT NULL, `receivedAt` INTEGER NOT NULL, `expiresAt` INTEGER NOT NULL, `owned` INTEGER NOT NULL, `publicSharing` INTEGER NOT NULL, `cloudConsent` INTEGER NOT NULL, `wire` BLOB NOT NULL, `receipt` BLOB, `sentAt` INTEGER, `receivedBy` TEXT, `cloudAck` BLOB, `cloudError` TEXT, PRIMARY KEY(`eventId`))",
+        "fields": [
+          {
+            "fieldPath": "eventId",
+            "columnName": "eventId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "packetId",
+            "columnName": "packetId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "requestId",
+            "columnName": "requestId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sender",
+            "columnName": "sender",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "category",
+            "columnName": "category",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "description",
+            "columnName": "description",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "people",
+            "columnName": "people",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "area",
+            "columnName": "area",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "receivedAt",
+            "columnName": "receivedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "expiresAt",
+            "columnName": "expiresAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "owned",
+            "columnName": "owned",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "publicSharing",
+            "columnName": "publicSharing",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cloudConsent",
+            "columnName": "cloudConsent",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "wire",
+            "columnName": "wire",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "receipt",
+            "columnName": "receipt",
+            "affinity": "BLOB"
+          },
+          {
+            "fieldPath": "sentAt",
+            "columnName": "sentAt",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "receivedBy",
+            "columnName": "receivedBy",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "cloudAck",
+            "columnName": "cloudAck",
+            "affinity": "BLOB"
+          },
+          {
+            "fieldPath": "cloudError",
+            "columnName": "cloudError",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "eventId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_reports_packetId",
+            "unique": true,
+            "columnNames": [
+              "packetId"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_reports_packetId` ON `${TABLE_NAME}` (`packetId`)"
+          },
+          {
+            "name": "index_reports_requestId",
+            "unique": true,
+            "columnNames": [
+              "requestId"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_reports_requestId` ON `${TABLE_NAME}` (`requestId`)"
+          }
+        ]
+      },
+      {
+        "tableName": "draft",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER NOT NULL, `value` TEXT NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "value",
+            "columnName": "value",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "neighbor_deliveries",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`packetId` TEXT NOT NULL, `peerNodeId` TEXT NOT NULL, `receiptFromPeer` BLOB, `receiptToPeer` BLOB, PRIMARY KEY(`packetId`, `peerNodeId`), FOREIGN KEY(`packetId`) REFERENCES `reports`(`packetId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "packetId",
+            "columnName": "packetId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "peerNodeId",
+            "columnName": "peerNodeId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "receiptFromPeer",
+            "columnName": "receiptFromPeer",
+            "affinity": "BLOB"
+          },
+          {
+            "fieldPath": "receiptToPeer",
+            "columnName": "receiptToPeer",
+            "affinity": "BLOB"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "packetId",
+            "peerNodeId"
+          ]
+        },
+        "foreignKeys": [
+          {
+            "table": "reports",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "packetId"
+            ],
+            "referencedColumns": [
+              "packetId"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "cloud_returns",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`packetId` TEXT NOT NULL, `eventId` TEXT NOT NULL, `originEventId` TEXT NOT NULL, `destination` TEXT NOT NULL, `expiresAt` INTEGER NOT NULL, `wire` BLOB NOT NULL, PRIMARY KEY(`packetId`))",
+        "fields": [
+          {
+            "fieldPath": "packetId",
+            "columnName": "packetId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "eventId",
+            "columnName": "eventId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "originEventId",
+            "columnName": "originEventId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "destination",
+            "columnName": "destination",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "expiresAt",
+            "columnName": "expiresAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "wire",
+            "columnName": "wire",
+            "affinity": "BLOB",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "packetId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_cloud_returns_eventId",
+            "unique": true,
+            "columnNames": [
+              "eventId"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_cloud_returns_eventId` ON `${TABLE_NAME}` (`eventId`)"
+          }
+        ]
+      },
+      {
+        "tableName": "cloud_return_deliveries",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`packetId` TEXT NOT NULL, `peerNodeId` TEXT NOT NULL, `receiptFromPeer` BLOB, `receiptToPeer` BLOB, PRIMARY KEY(`packetId`, `peerNodeId`), FOREIGN KEY(`packetId`) REFERENCES `cloud_returns`(`packetId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "packetId",
+            "columnName": "packetId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "peerNodeId",
+            "columnName": "peerNodeId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "receiptFromPeer",
+            "columnName": "receiptFromPeer",
+            "affinity": "BLOB"
+          },
+          {
+            "fieldPath": "receiptToPeer",
+            "columnName": "receiptToPeer",
+            "affinity": "BLOB"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "packetId",
+            "peerNodeId"
+          ]
+        },
+        "foreignKeys": [
+          {
+            "table": "cloud_returns",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "packetId"
+            ],
+            "referencedColumns": [
+              "packetId"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "resources",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`eventId` TEXT NOT NULL, `packetId` TEXT NOT NULL, `entityId` TEXT NOT NULL, `kind` INTEGER NOT NULL, `owner` TEXT NOT NULL, `owned` INTEGER NOT NULL, `publicSharing` INTEGER NOT NULL, `cloudConsent` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `expiresAt` INTEGER NOT NULL, `wire` BLOB NOT NULL, `cloudAck` BLOB, `cloudError` TEXT, PRIMARY KEY(`eventId`))",
+        "fields": [
+          {
+            "fieldPath": "eventId",
+            "columnName": "eventId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "packetId",
+            "columnName": "packetId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "entityId",
+            "columnName": "entityId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "kind",
+            "columnName": "kind",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "owner",
+            "columnName": "owner",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "owned",
+            "columnName": "owned",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "publicSharing",
+            "columnName": "publicSharing",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cloudConsent",
+            "columnName": "cloudConsent",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "expiresAt",
+            "columnName": "expiresAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "wire",
+            "columnName": "wire",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cloudAck",
+            "columnName": "cloudAck",
+            "affinity": "BLOB"
+          },
+          {
+            "fieldPath": "cloudError",
+            "columnName": "cloudError",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "eventId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_resources_packetId",
+            "unique": true,
+            "columnNames": [
+              "packetId"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_resources_packetId` ON `${TABLE_NAME}` (`packetId`)"
+          },
+          {
+            "name": "index_resources_entityId",
+            "unique": false,
+            "columnNames": [
+              "entityId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_resources_entityId` ON `${TABLE_NAME}` (`entityId`)"
+          }
+        ]
+      },
+      {
+        "tableName": "resource_deliveries",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`packetId` TEXT NOT NULL, `peerNodeId` TEXT NOT NULL, `receiptFromPeer` BLOB, `receiptToPeer` BLOB, PRIMARY KEY(`packetId`, `peerNodeId`), FOREIGN KEY(`packetId`) REFERENCES `resources`(`packetId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "packetId",
+            "columnName": "packetId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "peerNodeId",
+            "columnName": "peerNodeId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "receiptFromPeer",
+            "columnName": "receiptFromPeer",
+            "affinity": "BLOB"
+          },
+          {
+            "fieldPath": "receiptToPeer",
+            "columnName": "receiptToPeer",
+            "affinity": "BLOB"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "packetId",
+            "peerNodeId"
+          ]
+        },
+        "foreignKeys": [
+          {
+            "table": "resources",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "packetId"
+            ],
+            "referencedColumns": [
+              "packetId"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "sos_closures",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`eventId` TEXT NOT NULL, `packetId` TEXT NOT NULL, `requestId` TEXT NOT NULL, `sender` TEXT NOT NULL, `state` INTEGER NOT NULL, `owned` INTEGER NOT NULL, `publicSharing` INTEGER NOT NULL, `cloudConsent` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `expiresAt` INTEGER NOT NULL, `wire` BLOB NOT NULL, `cloudAck` BLOB, `cloudError` TEXT, PRIMARY KEY(`eventId`), FOREIGN KEY(`requestId`) REFERENCES `reports`(`requestId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "eventId",
+            "columnName": "eventId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "packetId",
+            "columnName": "packetId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "requestId",
+            "columnName": "requestId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sender",
+            "columnName": "sender",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "state",
+            "columnName": "state",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "owned",
+            "columnName": "owned",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "publicSharing",
+            "columnName": "publicSharing",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cloudConsent",
+            "columnName": "cloudConsent",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "expiresAt",
+            "columnName": "expiresAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "wire",
+            "columnName": "wire",
+            "affinity": "BLOB",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cloudAck",
+            "columnName": "cloudAck",
+            "affinity": "BLOB"
+          },
+          {
+            "fieldPath": "cloudError",
+            "columnName": "cloudError",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "eventId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_sos_closures_packetId",
+            "unique": true,
+            "columnNames": [
+              "packetId"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_sos_closures_packetId` ON `${TABLE_NAME}` (`packetId`)"
+          },
+          {
+            "name": "index_sos_closures_requestId",
+            "unique": false,
+            "columnNames": [
+              "requestId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_sos_closures_requestId` ON `${TABLE_NAME}` (`requestId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "reports",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "requestId"
+            ],
+            "referencedColumns": [
+              "requestId"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "sos_closure_deliveries",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`packetId` TEXT NOT NULL, `peerNodeId` TEXT NOT NULL, `receiptFromPeer` BLOB, `receiptToPeer` BLOB, PRIMARY KEY(`packetId`, `peerNodeId`), FOREIGN KEY(`packetId`) REFERENCES `sos_closures`(`packetId`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "packetId",
+            "columnName": "packetId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "peerNodeId",
+            "columnName": "peerNodeId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "receiptFromPeer",
+            "columnName": "receiptFromPeer",
+            "affinity": "BLOB"
+          },
+          {
+            "fieldPath": "receiptToPeer",
+            "columnName": "receiptToPeer",
+            "affinity": "BLOB"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "packetId",
+            "peerNodeId"
+          ]
+        },
+        "foreignKeys": [
+          {
+            "table": "sos_closures",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "packetId"
+            ],
+            "referencedColumns": [
+              "packetId"
+            ]
+          }
+        ]
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'cad036e4d1d7f14acc3be2ae5982351f')"
+    ]
+  }
+}

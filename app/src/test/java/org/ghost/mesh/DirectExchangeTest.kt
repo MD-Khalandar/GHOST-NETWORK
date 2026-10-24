@@ -105,6 +105,27 @@ class DirectExchangeTest {
 
     @After fun close() { databases.forEach { it.close() }; names.forEach { context.deleteDatabase(it) } }
 
+    @Test fun sosResolutionRelaysBeforeOriginalAndCloudReceiptReturnsToRequester() = runTest {
+        val cloud = newKey(); val pin = cloud.publicKey.encoded
+        val a = phone("A", cloudKey = pin); phone("B", cloudKey = pin); val g = phone("G", cloudKey = pin)
+        a.publish(cloud = true)
+        runBlocking {
+            val request = a.repo.observeRequests().first().single()
+            a.repo.closures.close(request.requestId.value, SosState.RESOLVED).getOrThrow()
+        }
+        connect("A", "B"); connect("B", "G")
+        until { g.repo.observeRequests().first().singleOrNull()?.state == SosState.RESOLVED }
+        assertEquals(0, sends("A", "B", 1))
+        runBlocking {
+            val report = g.repo.cloudOutgoing().single()
+            val ack = SignedPackets.create(cloud, 7, CloudAckV1.newBuilder().setOriginEventId(report.eventId)
+                .setStatusValue(1).setCloudRevision(1).setReceivedAtMs(baseTime).build().toByteString(), baseTime, destination = a.key.nodeId.value)
+            g.repo.acceptCloudAck(report.eventId, ack, pin, 1)
+        }
+        until { a.repo.observeRequests().first().single().cloudState == LocalCloudState.ACCEPTED }
+        assertEquals(SosState.RESOLVED, runBlocking { a.repo.observeRequests().first().single().state })
+    }
+
     @Test fun shorterDuplicateResumesForwardingToAnAlreadyConnectedNeighbor() = runTest {
         val a = phone("A"); val b = phone("B"); val c = phone("C"); val previous = newKey()
         a.publish()

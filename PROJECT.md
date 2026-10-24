@@ -52,6 +52,15 @@ SOS text or access tokens. Viewer/operator tokens stay in tab memory; gateway to
 cannot read it. Local browser checks pass against signed uploads.
 Navigation is Home, Requests, Offer help and Connections. Requests shows each SOS's
 upload status and an optional explanation; the old Help status tab is removed.
+Request owners can cancel an SOS or mark it resolved after confirmation. Signed
+terminal closures retain the original expiry/consent and carry ownership proof,
+so they can arrive first without a delayed original reopening the request.
+Closures have durable four-transfer relay queues and verified server receipts;
+private SOS stay private. Room upgrades in place. Closed requests stop forwarding
+and cloud AI scheduling; in-flight suggestions are rejected and older proposals
+become stale. Dashboard labels closures and removes them from the active map.
+Older/offline phones may retain open copies until delivery or expiry. Host tests
+cover these paths; physical closure/gateway testing remains.
 Offer help lists owned volunteer availability and supplies separately from forms,
 and loads the saved volunteer name, skill, area and sharing choices when updating.
 It saves signed volunteer profiles and supply offers in Room.

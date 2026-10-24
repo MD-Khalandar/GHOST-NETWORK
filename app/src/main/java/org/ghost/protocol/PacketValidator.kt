@@ -73,7 +73,21 @@ class PacketValidator(
                 check(p.consent.publicMeshAllowed, Rejection.CONSENT_REQUIRED)
             }
             2 -> SosUpdateV1.parseFrom(data).also { p ->
-                check(uuid(p.requestId) && p.stateValue in 1..4 && text(p.note, 500)); owner(AuthorityKind.REQUEST, p.requestId)
+                check(uuid(p.requestId) && p.stateValue in 1..6 && text(p.note, 500))
+                if (!p.originalSosEnvelope.isEmpty || !p.originalSosSignature.isEmpty) {
+                    check(p.stateValue in 5..6 && !p.hasNote() && !p.hasCloudProcessingAllowed() &&
+                        p.originalSosEnvelope.size() <= MAX_ENVELOPE && p.originalSosSignature.size() <= 72)
+                    check(ImmutableEnvelopeV1.parseFrom(p.originalSosEnvelope).kindValue == 1)
+                    val original = PacketValidator().verify(WirePacket(WireCodec.base64(p.originalSosEnvelope.toByteArray()),
+                        WireCodec.base64(p.originalSosSignature.toByteArray()), org.ghost.domain.model.RelayMetadata(4, 0)), now, forCloud)
+                    val sos = original.payload as SosCreateV1
+                    check(sos.requestId == p.requestId && original.envelope.senderNodeId == e.senderNodeId, Rejection.INVALID_ACTOR)
+                    check(e.eventId != original.envelope.eventId && e.packetId != original.envelope.packetId)
+                    check(e.createdAtMs > original.envelope.createdAtMs && e.expiresAtMs == original.envelope.expiresAtMs)
+                    authority = Authority(sender, sos.consent.cloudProcessingAllowed)
+                } else {
+                    check(p.stateValue in 1..4); owner(AuthorityKind.REQUEST, p.requestId)
+                }
             }
             3 -> HelperProfilePublishV1.parseFrom(data).also { p ->
                 check(SigningIdentity.hex(p.ownerNodeId.toByteArray()) == sender, Rejection.INVALID_ACTOR)

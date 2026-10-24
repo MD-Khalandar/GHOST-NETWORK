@@ -88,6 +88,7 @@ message PeerHelloV1 {
   bool supports_topology = 3; // send graph updates only to supporting peers
   bool supports_resources = 4; // helper/supply publications (older peers still relay SOS)
   bool supports_offer_updates = 5;
+  bool supports_sos_closures = 6;
 }
 
 enum ConnectivityStatusV1 {
@@ -121,6 +122,9 @@ message SosUpdateV1 {
   SosStateV1 state = 2;
   optional string note = 3;
   optional bool cloud_processing_allowed = 4;
+  // Terminal updates carry ownership proof and may arrive before the SOS.
+  bytes original_sos_envelope = 5;
+  bytes original_sos_signature = 6;
 }
 
 message HelperProfilePublishV1 {
@@ -229,6 +233,8 @@ enum SosStateV1 {
   SOS_STATE_ACKNOWLEDGED = 2;
   SOS_STATE_HELP_OFFERED = 3;
   SOS_STATE_CLOSED = 4;
+  SOS_STATE_CANCELLED = 5;
+  SOS_STATE_RESOLVED = 6;
 }
 
 enum HelpTypeV1 {

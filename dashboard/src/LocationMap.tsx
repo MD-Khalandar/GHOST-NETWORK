@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type * as Leaflet from "leaflet";
 import type { SosReport } from "./api";
-import { categoryName } from "./Requests";
+import { categoryName, closed } from "./Requests";
 
 type LocatedReport = SosReport & { latitude: number; longitude: number };
 type MapView = { library: typeof Leaflet; map: Leaflet.Map };
@@ -12,7 +12,7 @@ export function LocationMap({ reports, selected, onSelect }: {
   onSelect: (id: string) => void;
 }) {
   const located = useMemo(() => reports.filter((report): report is LocatedReport =>
-    typeof report.latitude === "number" && Number.isFinite(report.latitude) && Math.abs(report.latitude) <= 90 &&
+    !closed(report) && typeof report.latitude === "number" && Number.isFinite(report.latitude) && Math.abs(report.latitude) <= 90 &&
     typeof report.longitude === "number" && Number.isFinite(report.longitude) && Math.abs(report.longitude) <= 180), [reports]);
   const container = useRef<HTMLDivElement>(null);
   const [view, setView] = useState<MapView | null>(null);
@@ -78,6 +78,6 @@ export function LocationMap({ reports, selected, onSelect }: {
           {categoryName(report.category)} · {report.latitude.toFixed(5)}, {report.longitude.toFixed(5)}
         </button>)}</div>
     </> : <div className="map-empty"><p>No uploaded SOS report includes a GPS location.</p><span className="subtle">Locations appear only when the sender shared a recent fix.</span></div>}
-    <p className="map-note">Shows loaded requests only. Select a marker to open its request. OpenStreetMap supplies the basemap, needs internet and receives requests for the viewed area.</p>
+    <p className="map-note">Shows loaded open requests only. Closed requests remain in the list. Select a marker to open its request. OpenStreetMap supplies the basemap, needs internet and receives requests for the viewed area.</p>
   </section>;
 }

@@ -207,6 +207,7 @@ class LocalResourceRepository(private val db: GhostDatabase, private val identit
         val receipt = WireCodec.encode(SignedPackets.create(key, 12, DeliveryReceiptV1.newBuilder().setPacketId(e.packetId)
             .setRecipientNodeId(ByteString.copyFrom(WireCodec.bytes(key.nodeId.value))).setReceiptTypeValue(1).setObservedAtMs(now()).build().toByteString(), now(), destination = peer))
         db.withTransaction {
+            require(db.closures().event(e.eventId) == null && db.closures().packet(e.packetId) == null)
             require(db.sos().event(e.eventId) == null && db.sos().packet(e.packetId) == null && db.sos().cloudReturn(e.packetId) == null && db.sos().cloudReturnEvent(e.eventId) == null)
             val old = dao.event(e.eventId) ?: dao.packet(e.packetId)
             if (old != null) require(old.publicSharing && WireCodec.decode(old.wire).immutableEnvelopeBytesBase64 == packet.immutableEnvelopeBytesBase64) { "Conflicting help publication." }

@@ -47,6 +47,17 @@ drafts keep their choices. With mesh sharing off, **Save on this phone** saves
 locally. Public reports stay queued without peers. Joining alone never sends a
 new SOS, though previously queued public reports resume automatically.
 
+In **Requests**, your own unexpired SOS has **Cancel SOS** and **Mark resolved**.
+Confirm either action to end the request; send a new SOS if you need help again.
+The signed closure keeps the original sharing choices and expiry, and can reach
+other phones/server before the original SOS. Once received, it stops forwarding
+the open request and excludes it from new cloud AI matching. The dashboard marks
+older suggestions stale and removes the request from the active map.
+The closure has its own delivery queue and verified server receipt. Local-only
+requests stay local. Phones need the updated app to exchange closures; older or
+offline copies may remain open until delivery or expiry. Marking resolved is the
+requester's report, not independent confirmation that assistance was delivered.
+
 To try a relay, send A's SOS to B, leave the mesh on A, then let B meet C. C should
 receive A's unchanged report. Forwarding stops after four transfers or expiry.
 Receipts confirm saving by the immediate neighbor. Each phone remembers which

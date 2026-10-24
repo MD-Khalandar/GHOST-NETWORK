@@ -39,6 +39,8 @@ enum class SosState {
     ACKNOWLEDGED,
     HELP_OFFERED,
     CLOSED,
+    CANCELLED,
+    RESOLVED,
 }
 
 @Serializable

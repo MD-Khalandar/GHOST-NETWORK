@@ -43,6 +43,7 @@ class DirectExchange(private val scope: CoroutineScope, private val transport: G
         var supportsTopology = false
         var supportsResources = false
         var supportsOfferUpdates = false
+        var supportsSosClosures = false
         var topologySending: Job? = null
         val topologySent = mutableMapOf<String, Pair<String, Int>>()
         val topologyLastSent = mutableMapOf<String, Long>()
@@ -176,7 +177,7 @@ class DirectExchange(private val scope: CoroutineScope, private val transport: G
     private suspend fun sendHello(peer: PeerHandle, session: Session, replyTo: ByteString = ByteString.EMPTY) {
         val packet = withContext(Dispatchers.IO) {
             SignedPackets.create(identity(), 13, PeerHelloV1.newBuilder().setChallenge(ByteString.copyFrom(session.challenge))
-                .setReplyTo(replyTo).setSupportsTopology(true).setSupportsResources(true).setSupportsOfferUpdates(true).build().toByteString(), now(), ttl = 300000)
+                .setReplyTo(replyTo).setSupportsTopology(true).setSupportsResources(true).setSupportsOfferUpdates(true).setSupportsSosClosures(true).build().toByteString(), now(), ttl = 300000)
         }
         control(peer, session, packet)
     }
@@ -194,6 +195,7 @@ class DirectExchange(private val scope: CoroutineScope, private val transport: G
             session.supportsTopology = hello.supportsTopology
             session.supportsResources = hello.supportsResources
             session.supportsOfferUpdates = hello.supportsOfferUpdates
+            session.supportsSosClosures = hello.supportsSosClosures
             if (hello.replyTo.isEmpty) {
                 if (!session.replied) { session.replied = true; sendHello(peer, session, hello.challenge) }
             } else {
@@ -211,10 +213,20 @@ class DirectExchange(private val scope: CoroutineScope, private val transport: G
         }
         val node = session.nodeId
         if (node == null) {
-            require(envelope.kindValue in setOf(1, 3, 5, 6, 7, 12, 15) && session.pending.size < 4)
+            require(envelope.kindValue in setOf(1, 2, 3, 5, 6, 7, 12, 15) && session.pending.size < 4)
             session.pending.add(packet); return
         }
         when (envelope.kindValue) {
+            2 -> {
+                require(session.supportsSosClosures)
+                val receipt = repository.closures.receive(packet, node)
+                if (!current(peer, session)) return
+                session.confirmed.add(envelope.packetId)
+                session.receipts[envelope.packetId]?.complete(Unit)
+                control(peer, session, WireCodec.decode(receipt))
+                mutableMessage.value = "Request closure saved from a nearby phone."
+                flush()
+            }
             3, 5, 6 -> {
                 require(session.supportsResources && (envelope.kindValue != 6 || session.supportsOfferUpdates))
                 val receipt = repository.resources.receive(packet, node)
@@ -338,6 +350,8 @@ class DirectExchange(private val scope: CoroutineScope, private val transport: G
                             .map { Outgoing(it.packetId, it.wire, false) } else emptyList()
                         // Interleave return traffic with SOS so neither queue starves the other.
                         val candidates = buildList {
+                            if (session.supportsSosClosures) addAll(repository.closures.outgoing(session.nodeId!!, excluded)
+                                .map { Outgoing(it.packetId, it.wire, false) })
                             for (index in 0 until maxOf(reports.size, returns.size)) {
                                 reports.getOrNull(index)?.let(::add)
                                 returns.getOrNull(index)?.let(::add)
@@ -351,6 +365,7 @@ class DirectExchange(private val scope: CoroutineScope, private val transport: G
                             val row = if (candidate.cloudReturn) repository.prepareCloudReturn(candidate.packetId, session.nodeId!!)
                                 ?.let { Outgoing(it.packetId, it.wire, true) }
                             else repository.prepareOutgoing(candidate.packetId, session.nodeId!!)?.let { Outgoing(it.packetId, it.wire, false) }
+                                ?: repository.closures.prepare(candidate.packetId, session.nodeId!!)?.let { Outgoing(it.packetId, it.wire, false) }
                                 ?: repository.resources.prepare(candidate.packetId, session.nodeId!!)?.let { Outgoing(it.packetId, it.wire, false) }
                             if (row == null) continue
                             if (!current(peer, session) || row.packetId in session.confirmed) continue

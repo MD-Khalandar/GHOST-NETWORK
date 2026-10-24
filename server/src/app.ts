@@ -114,7 +114,8 @@ export function buildApp(security: AppSecurity = {}): FastifyInstance {
             const verified = validatePacket(packet as WirePacket, {
               nowMs: (security.now ?? Date.now)(), forCloud: true, lookup: security.lookup,
             });
-            if (![1, 3, 5, 6].includes(verified.envelope.kind)) throw new PacketError("UNSUPPORTED_KIND");
+            if (![1, 2, 3, 5, 6].includes(verified.envelope.kind)) throw new PacketError("UNSUPPORTED_KIND");
+            if (verified.envelope.kind === 2 && (![5, 6].includes(verified.payload.state) || !verified.payload.original_sos_envelope?.length)) throw new PacketError("INVALID_PAYLOAD");
             return verified;
           });
           if (!store) return reply.code(503).send({ code: "STORAGE_UNAVAILABLE", message: "SOS storage is not configured", retryable: true });

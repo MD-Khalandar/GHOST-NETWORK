@@ -22,7 +22,7 @@ class GatewaySync(scope: CoroutineScope, configs: StateFlow<GatewayConfig?>, ena
     init {
         scope.launch { repository.resources.observeRows().catch { }.collect { wake.trySend(Unit) } }
         scope.launch {
-            repository.observeRequests().map { rows -> rows.map { it.requestId to it.cloudState } }.distinctUntilChanged()
+            repository.observeRequests().map { rows -> rows.map { Triple(it.requestId, it.cloudState, it.state) } }.distinctUntilChanged()
                 .catch { }.collect { wake.trySend(Unit) }
         }
         scope.launch {

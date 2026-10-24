@@ -61,6 +61,15 @@ export async function initializeDatabase(database: Database): Promise<void> {
     )`);
     await connection.query("ALTER TABLE sos_reports ADD COLUMN IF NOT EXISTS latitude DOUBLE PRECISION");
     await connection.query("ALTER TABLE sos_reports ADD COLUMN IF NOT EXISTS longitude DOUBLE PRECISION");
+    await connection.query("ALTER TABLE sos_reports ADD COLUMN IF NOT EXISTS state SMALLINT NOT NULL DEFAULT 1 CHECK (state IN (1,5,6))");
+    await connection.query(`CREATE TABLE IF NOT EXISTS sos_closures (
+      event_id UUID PRIMARY KEY, packet_id UUID NOT NULL UNIQUE, request_id UUID NOT NULL REFERENCES sos_reports(request_id),
+      immutable_envelope BYTEA NOT NULL, origin_signature BYTEA NOT NULL,
+      state SMALLINT NOT NULL CHECK (state IN (5,6)), created_at_ms BIGINT NOT NULL,
+      expires_at_ms BIGINT NOT NULL, received_at_ms BIGINT NOT NULL,
+      cloud_revision BIGINT NOT NULL UNIQUE, cloud_ack JSONB NOT NULL
+    )`);
+    await connection.query("CREATE INDEX IF NOT EXISTS sos_closure_request ON sos_closures(request_id, created_at_ms DESC, event_id DESC)");
     await connection.query(`CREATE TABLE IF NOT EXISTS sync_uploads (
       principal_id TEXT NOT NULL,
       idempotency_key TEXT NOT NULL,

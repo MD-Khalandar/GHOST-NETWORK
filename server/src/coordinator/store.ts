@@ -46,7 +46,7 @@ const sameSource = (a: SourceVersion, b: SourceVersion): boolean => a.event_id =
 async function readRequest(connection: SqlConnection, requestId: string, now: number): Promise<SosSource> {
   const { rows } = await connection.query(`SELECT request_id, event_id, cloud_revision, category, description,
     people_count, coarse_area, landmark, expires_at_ms FROM sos_reports
-    WHERE request_id = $1 AND expires_at_ms > $2 AND public_mesh_allowed AND cloud_processing_allowed`, [requestId, now]);
+    WHERE request_id = $1 AND state = 1 AND expires_at_ms > $2 AND public_mesh_allowed AND cloud_processing_allowed FOR SHARE`, [requestId, now]);
   if (!rows.length) throw new CoordinatorFailure("REQUEST_UNAVAILABLE");
   const row = rows[0];
   return { request_id: row.request_id, source: source(row), category: Number(row.category), description: row.description,

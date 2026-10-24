@@ -68,14 +68,14 @@ interface SosDao {
     @Query("UPDATE reports SET wire = :wire WHERE packetId = :packetId AND owned = 0")
     suspend fun updateRelay(packetId: String, wire: ByteArray)
     @Query("SELECT COUNT(*) FROM reports") suspend fun count(): Int
-    @Query("SELECT COUNT(*) FROM reports WHERE owned = 1 AND expiresAt > :now") suspend fun activeOwned(now: Long): Int
-    @Query("SELECT * FROM reports WHERE publicSharing = 1 AND expiresAt > :now AND (:peerNode IS NULL OR NOT EXISTS (SELECT 1 FROM neighbor_deliveries d WHERE d.packetId = reports.packetId AND d.peerNodeId = :peerNode)) ORDER BY owned DESC, createdAt LIMIT 1000")
+    @Query("SELECT COUNT(*) FROM reports WHERE owned = 1 AND expiresAt > :now AND NOT EXISTS (SELECT 1 FROM sos_closures c WHERE c.requestId = reports.requestId)") suspend fun activeOwned(now: Long): Int
+    @Query("SELECT * FROM reports WHERE publicSharing = 1 AND expiresAt > :now AND NOT EXISTS (SELECT 1 FROM sos_closures c WHERE c.requestId = reports.requestId) AND (:peerNode IS NULL OR NOT EXISTS (SELECT 1 FROM neighbor_deliveries d WHERE d.packetId = reports.packetId AND d.peerNodeId = :peerNode)) ORDER BY owned DESC, createdAt LIMIT 1000")
     suspend fun outgoing(now: Long, peerNode: String? = null): List<ReportRow>
-    @Query("SELECT * FROM reports WHERE packetId = :packetId AND publicSharing = 1 AND expiresAt > :now AND NOT EXISTS (SELECT 1 FROM neighbor_deliveries d WHERE d.packetId = reports.packetId AND d.peerNodeId = :peerNode)")
+    @Query("SELECT * FROM reports WHERE packetId = :packetId AND publicSharing = 1 AND expiresAt > :now AND NOT EXISTS (SELECT 1 FROM sos_closures c WHERE c.requestId = reports.requestId) AND NOT EXISTS (SELECT 1 FROM neighbor_deliveries d WHERE d.packetId = reports.packetId AND d.peerNodeId = :peerNode)")
     suspend fun outgoingPacket(packetId: String, peerNode: String, now: Long): ReportRow?
-    @Query("SELECT packetId FROM reports WHERE publicSharing = 1 AND expiresAt > :now UNION SELECT packetId FROM cloud_returns WHERE expiresAt > :now")
+    @Query("SELECT packetId FROM reports WHERE publicSharing = 1 AND expiresAt > :now UNION SELECT packetId FROM cloud_returns WHERE expiresAt > :now UNION SELECT packetId FROM sos_closures WHERE publicSharing = 1 AND expiresAt > :now")
     suspend fun activePacketIds(now: Long): List<String>
-    @Query("SELECT * FROM reports WHERE publicSharing = 1 AND cloudConsent = 1 AND cloudAck IS NULL AND cloudError IS NULL AND expiresAt > :now ORDER BY owned DESC, createdAt LIMIT 20")
+    @Query("SELECT * FROM reports WHERE publicSharing = 1 AND cloudConsent = 1 AND cloudAck IS NULL AND cloudError IS NULL AND expiresAt > :now AND NOT EXISTS (SELECT 1 FROM sos_closures c WHERE c.requestId = reports.requestId) ORDER BY owned DESC, createdAt LIMIT 20")
     suspend fun cloudOutgoing(now: Long): List<ReportRow>
     @Query("UPDATE reports SET cloudAck = :ack, cloudError = NULL WHERE eventId = :eventId AND publicSharing = 1 AND cloudConsent = 1 AND cloudAck IS NULL")
     suspend fun saveCloudAck(eventId: String, ack: ByteArray)
@@ -111,10 +111,12 @@ interface SosDao {
 }
 
 @Database(entities = [ReportRow::class, DraftRow::class, NeighborDeliveryRow::class, CloudReturnRow::class, CloudReturnDeliveryRow::class,
-    ResourceRow::class, ResourceDeliveryRow::class], version = 5, exportSchema = true)
+    ResourceRow::class, ResourceDeliveryRow::class, SosClosureRow::class, SosClosureDeliveryRow::class],
+    version = 6, exportSchema = true, autoMigrations = [AutoMigration(from = 5, to = 6)])
 abstract class GhostDatabase : RoomDatabase() {
     abstract fun sos(): SosDao
     abstract fun resources(): ResourceDao
+    abstract fun closures(): SosClosureDao
 
     companion object {
         val MIGRATION_4_5 = object : Migration(4, 5) {

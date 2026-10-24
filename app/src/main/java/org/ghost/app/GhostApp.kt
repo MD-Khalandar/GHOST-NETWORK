@@ -99,7 +99,7 @@ fun GhostApp(state: FoundationState, onRetry: () -> Unit, trust: DeviceTrustStat
             when (route) {
                 AppRoute.HOME -> HomeScreen(state, { showSosPreview = true }, { route = AppRoute.REQUESTS },
                     { route = AppRoute.NETWORK }, onRetry, modifier, insets, local, actions, onOfferHelp = { route = AppRoute.OFFER_HELP })
-                AppRoute.REQUESTS -> RequestsScreen(state, onRetry, modifier, insets)
+                AppRoute.REQUESTS -> RequestsScreen(state, onRetry, modifier, insets, local, actions)
                 AppRoute.OFFER_HELP -> OfferHelpScreen(local, actions, modifier, insets, state.simulated)
                 AppRoute.NETWORK -> NetworkScreen(state, onRetry, modifier, insets, trust, onRetryIdentity, local, actions)
             }

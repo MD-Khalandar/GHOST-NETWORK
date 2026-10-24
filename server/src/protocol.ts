@@ -119,7 +119,19 @@ function validate(packet: WirePacket, options: ValidationOptions): VerifiedPacke
       check(!authority || authority.ownerNodeId === sender, "INVALID_ACTOR");
       break;
     case 2:
-      payloadCheck(uuid(p.request_id) && integer(p.state, 1, 4) && text(p.note, 500)); owner("request", p.request_id); break;
+      payloadCheck(uuid(p.request_id) && integer(p.state, 1, 6) && text(p.note, 500));
+      if (p.original_sos_envelope?.length || p.original_sos_signature?.length) {
+        payloadCheck([5, 6].includes(p.state) && p.note === undefined && p.cloud_processing_allowed === undefined &&
+          p.original_sos_envelope?.length <= MAX_ENVELOPE_BYTES && p.original_sos_signature?.length <= 72);
+        payloadCheck(decode("ImmutableEnvelopeV1", p.original_sos_envelope).kind === 1);
+        const original = validatePacket({ immutable_envelope_bytes: p.original_sos_envelope.toString("base64url"),
+          signature: p.original_sos_signature.toString("base64url"), relay: { remaining_hops: 4, hop_count: 0 } }, options);
+        check(original.payload.request_id === p.request_id && hex(original.envelope.sender_node_id) === sender, "INVALID_ACTOR");
+        payloadCheck(e.event_id !== original.envelope.event_id && e.packet_id !== original.envelope.packet_id);
+        payloadCheck(e.created_at_ms > original.envelope.created_at_ms && e.expires_at_ms === original.envelope.expires_at_ms);
+        authority = { ownerNodeId: sender, cloudProcessingAllowed: original.payload.consent?.cloud_processing_allowed === true };
+      } else { payloadCheck(integer(p.state, 1, 4)); owner("request", p.request_id); }
+      break;
     case 3: case 4:
       check(hex(p.owner_node_id) === sender, "INVALID_ACTOR");
       payloadCheck(text(p.display_name, 80) && text(p.coarse_area, 120) && (p.help_types?.length ?? 0) <= 10 &&
