@@ -1,11 +1,15 @@
 package org.ghost.feature.network
 
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Button
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import org.ghost.design.*
@@ -34,16 +38,22 @@ fun NetworkScreen(state: FoundationState, onRetry: () -> Unit, modifier: Modifie
             state.failed -> item { ErrorCard(onRetry) }
             else -> {
                 item("radio") {
-                    InfoCard("Mesh", local.meshStatus()) {
-                        Text(local.network.message)
-                        Text("Phones connect automatically while this app is open and relay public SOS reports.")
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        Text(local.meshStatus(), Modifier.weight(1f), style = androidx.compose.material3.MaterialTheme.typography.bodySmall)
                         Button(onClick = { if (local.network.active || local.network.starting) actions?.stopNearby?.invoke() else actions?.startNearby?.invoke() }, enabled = actions != null,
                             modifier = Modifier.heightIn(min = 48.dp)) { Text(if (local.network.active || local.network.starting) "Disconnect from mesh" else "Connect to mesh") }
-                        TextButton(onClick = { context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}"))) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Open app settings") }
                     }
                 }
                 item("mesh-graph") {
                     NearbyMeshGraph(state.peers, local.peerIdentities, local.network.active, local.network.starting)
+                }
+                item("radio-details") {
+                    InfoCard("Mesh", local.meshStatus()) {
+                        Text(local.network.message)
+                        Text("Phones connect automatically while this app is open and relay public SOS reports.")
+                        TextButton(onClick = { context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}"))) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Open app settings") }
+                    }
                 }
                 local.error?.let { message -> item("local-error") { InfoCard("Local action unavailable", message) } }
                 (local.exchangeStatus ?: local.notice)?.let { message -> item("exchange") { InfoCard("Exchange status", message) } }

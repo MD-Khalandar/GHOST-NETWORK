@@ -12,8 +12,9 @@ Built: SOS forms/drafts and signed reports in Room, local-only saves, and one-ta
 mesh join with automatic Nearby connections/reconnection. Foreground SOS relay
 has a four-transfer budget, bounded per-phone queues, receipt-driven retries and
 visible relay status.
-Network shows a live graph of this phone's direct neighbors, including connections
-still checking identity. It does not infer the wider mesh or relay routes.
+Network shows a dark, floating graph of direct neighbors with dragging, pinch zoom
+and connection details on tap, including phones still checking identity. It does
+not infer the wider mesh or relay routes.
 Signed neighbor receipts and delivery knowledge survive restarts. Local-only
 reports stay private to the device; original signatures and expiry are preserved.
 Signing, cloud-key pinning, consent and server authentication also work.
