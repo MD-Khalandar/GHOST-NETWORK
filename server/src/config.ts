@@ -9,6 +9,8 @@ export interface ServerConfig {
   databaseUrl?: string;
   openaiApiKey?: string;
   coordinatorModel?: string;
+  aiProvider?: "openai" | "gemini";
+  geminiApiKey?: string;
 }
 
 export class ConfigValidationError extends Error {
@@ -21,6 +23,8 @@ export class ConfigValidationError extends Error {
 export function loadConfig(environment: NodeJS.ProcessEnv = process.env): ServerConfig {
   const issues: string[] = [];
   const mode = environment.GHOST_ENV?.trim() || "development";
+  const aiProvider = environment.GHOST_AI_PROVIDER?.trim() || "openai";
+  if (!["openai", "gemini"].includes(aiProvider)) issues.push("GHOST_AI_PROVIDER must be openai or gemini");
   if (!["development", "test", "production"].includes(mode)) issues.push("GHOST_ENV must be development, test, or production");
   const port = Number(environment.GHOST_PORT?.trim() || "3000");
   if (!Number.isInteger(port) || port < 1 || port > 65535) issues.push("GHOST_PORT must be an integer from 1 to 65535");
@@ -47,5 +51,7 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): Server
   return { environment: mode as ServerConfig["environment"], host: environment.GHOST_HOST?.trim() || "127.0.0.1", port,
     authPrincipals, ...(cloudSigningKeyPem ? { cloudSigningKeyPem } : {}), ...(databaseUrl ? { databaseUrl } : {}),
     ...(environment.OPENAI_API_KEY?.trim() ? { openaiApiKey: environment.OPENAI_API_KEY.trim() } : {}),
+    ...(environment.GHOST_AI_PROVIDER?.trim() ? { aiProvider: aiProvider as "openai" | "gemini" } : {}),
+    ...(environment.GEMINI_API_KEY?.trim() ? { geminiApiKey: environment.GEMINI_API_KEY.trim() } : {}),
     ...(environment.GHOST_COORDINATOR_MODEL?.trim() ? { coordinatorModel: environment.GHOST_COORDINATOR_MODEL.trim() } : {}) };
 }

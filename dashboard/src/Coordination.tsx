@@ -92,7 +92,7 @@ export default function Coordination({ token, onAccessLost }: { token: string; o
     <div className="inbox-toolbar"><strong>{status ? status.configured ? "Cloud AI configured" : "Cloud AI not configured" : "Loading AI status…"}</strong>
       <button className="secondary-button" disabled={busy} onClick={() => void load()}>Refresh AI status</button></div>
     <p className="subtle">Suggestions refresh every five seconds. They do not confirm help. Approval and owner acceptance are the next implementation step.</p>
-    {status && !status.configured && <p className="error-banner">The server needs OPENAI_API_KEY and GHOST_COORDINATOR_MODEL. Saved SOS reports and mesh relay continue to work.</p>}
+    {status && !status.configured && <p className="error-banner">The server needs an AI provider, its API key and a model. Saved SOS reports and mesh relay continue to work.</p>}
     {error && <p className="error error-banner" role="alert">{error} Previously loaded results may be outdated.</p>}
     <div className="resource-grid">{items.map(item => <ProposalCard key={item.proposal_id} proposal={item}/>)}</div>
     {status && !items.length && <div className="empty-state"><h2>No suggestions yet</h2><p>{status.queued.length ? "Requests are queued for the AI coordinator." : "New uploads trigger checks when cloud AI is configured. Operators can also run a check from an SOS."}</p></div>}

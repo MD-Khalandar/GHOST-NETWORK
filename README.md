@@ -159,8 +159,18 @@ Checks: `npm --prefix dashboard test` and `npm --prefix dashboard run build`.
 
 ## Cloud AI matching
 
-Set `OPENAI_API_KEY` and `GHOST_COORDINATOR_MODEL` in the server environment and
-restart the server. The model must support Responses strict function calling.
+For OpenAI (default), set `OPENAI_API_KEY` and `GHOST_COORDINATOR_MODEL` in the
+server environment. For Gemini, use:
+
+```dotenv
+GHOST_AI_PROVIDER=gemini
+GEMINI_API_KEY=<your Google AI Studio API key>
+GHOST_COORDINATOR_MODEL=<Gemini model ID available to your project>
+```
+
+Restart the server after configuration. Both providers use the same validated
+suggestion tool; OpenAI uses Responses and Gemini uses Google's Chat Completions
+compatibility endpoint. Keys stay server-side. No Android rebuild is needed.
 New SOS and availability uploads trigger matching automatically. **AI suggestions**
 shows model suggestions, run progress/failures and outdated results. Operators can
 use **Find help with AI** on an SOS to request another run. Without model settings,

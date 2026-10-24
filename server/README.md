@@ -85,7 +85,10 @@ expiry/available_until_ms and quantities before suggesting or approving matches.
 
 ## AI coordinator
 
-Set server-only `OPENAI_API_KEY` and `GHOST_COORDINATOR_MODEL` to enable matching.
+Set `GHOST_AI_PROVIDER` to `openai` (default) or `gemini`, plus the matching
+server-only `OPENAI_API_KEY` or `GEMINI_API_KEY` and `GHOST_COORDINATOR_MODEL`.
+Gemini keys come from Google AI Studio; the model ID must be available to that
+key's project. Both adapters use the same validation, queue and failure handling.
 The server initializes coordinator runs/proposals, a durable job queue and one
 worker lease. Uploads wake the worker; a periodic scan recovers requests and checks
 new availability. Calls are serialized, provider calls time out after 30 seconds,

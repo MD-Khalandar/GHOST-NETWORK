@@ -6,7 +6,7 @@ a web operator approves proposals, resource owners accept/decline, and signed
 responses return through the mesh. Without internet, cloud coordination waits.
 
 Stack: one Kotlin/Compose app with Room/Nearby, one Fastify server with
-PostgreSQL/OpenAI, and a React/Vite dashboard. API and worker share one service.
+PostgreSQL with OpenAI or Gemini, and a React/Vite dashboard. API and worker share one service.
 
 Built: SOS forms/drafts and signed reports in Room, local-only saves, and one-tap
 mesh join with automatic Nearby connections/reconnection. Foreground SOS relay
@@ -58,8 +58,9 @@ The cloud AI coordinator now queues active SOS after uploads/restarts and on
 availability changes. It uses current supply versions, validates bounded model
 suggestions and stores proposals without allocating stock. Leases, bounded retries
 and source checks guard processing. Dashboard AI suggestions shows runs and stale
-proposals; operators can request a rerun. Enable with server-only OPENAI_API_KEY
-and GHOST_COORDINATOR_MODEL. Live provider/deployment testing remains.
+proposals; operators can request a rerun. Select GHOST_AI_PROVIDER=openai (default)
+or gemini, set its OPENAI_API_KEY/GEMINI_API_KEY and GHOST_COORDINATOR_MODEL on the
+server. Both providers share validation and queues. Live provider testing remains.
 
 Next: operator approval → owner decisions, allocation and signed assistance returns.
 

@@ -1,8 +1,10 @@
 # Cloud AI coordinator
 
 The existing server starts this worker after database initialization. Set
-`OPENAI_API_KEY` and `GHOST_COORDINATOR_MODEL` on the server to enable it; both
-are required. No model/provider settings go into the APK or browser bundle.
+`GHOST_COORDINATOR_MODEL` and the provider's key on the server to enable it.
+`GHOST_AI_PROVIDER=openai` (default) uses `OPENAI_API_KEY`; `gemini` uses
+`GEMINI_API_KEY`. No keys go into the APK or browser bundle. Gemini uses Google's
+[Chat Completions compatibility API](https://ai.google.dev/gemini-api/docs/openai).
 
 Committed uploads wake a durable request queue. Startup and a 15-second scan
 recover missed work and requeue active SOS when uploaded availability changes.
