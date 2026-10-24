@@ -290,7 +290,12 @@ class LocalSosRepository(
             require(dao.cloudReturn(result.envelope.packetId) == null && dao.cloudReturnEvent(result.envelope.eventId) == null) { "Conflicting packet identifier." }
             val existing = dao.event(result.envelope.eventId) ?: dao.packet(result.envelope.packetId) ?: dao.request(p.requestId)
             if (existing != null) {
-                require(existing.publicSharing && WireCodec.decode(existing.wire).immutableEnvelopeBytesBase64 == packet.immutableEnvelopeBytesBase64) { "Conflicting report identifier." }
+                val stored = WireCodec.decode(existing.wire)
+                require(existing.publicSharing && stored.immutableEnvelopeBytesBase64 == packet.immutableEnvelopeBytesBase64) { "Conflicting report identifier." }
+                if (!existing.owned && receivedPacket.relay.hopCount < relayMetadata(existing).hopCount) {
+                    // Keep the origin bytes/signature and delivery history; improve only the route.
+                    dao.updateRelay(existing.packetId, WireCodec.encode(stored.copy(relay = receivedPacket.relay)))
+                }
             } else {
                 require(origin != key.nodeId.value) { "Unknown report signed by this phone." }
                 dao.pruneReceived(now())

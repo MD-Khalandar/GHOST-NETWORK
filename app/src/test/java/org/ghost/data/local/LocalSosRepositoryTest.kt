@@ -170,6 +170,90 @@ class LocalSosRepositoryTest {
         assertTrue(receiver.outgoing(b.nodeId.value).isEmpty())
     }
 
+    @Test fun shorterDuplicateRestoresForwardingAndSurvivesRestartWithoutLosingReceiptsOrCloudState() = runBlocking {
+        val keys = List(6) { key() }; val cloud = key()
+        val receiverName = "shorter-route-${UUID.randomUUID()}.db"
+        val dbs = List(5) { index -> if (index == 4) open(receiverName) else open() }
+        val phones = dbs.mapIndexed { index, db -> LocalSosRepository(db, { keys[index] }, { time }) }
+        val sender = phones.first(); val receiver = phones.last(); val receivedDb = dbs.last()
+        sender.publish(payload().copy(consent = Consent(true, true))).getOrThrow()
+        var lastPacket: WirePacket? = null
+        var lastReceipt: ByteArray? = null
+        for (index in 0..3) {
+            val row = phones[index].outgoing(keys[index + 1].nodeId.value).single()
+            val packet = WireCodec.decode(row.wire)
+            val receipt = phones[index + 1].receiveSos(packet, keys[index].nodeId.value)
+            phones[index].receiveReceipt(WireCodec.decode(receipt), keys[index + 1].nodeId.value, setOf(row.packetId))
+            lastPacket = packet; lastReceipt = receipt
+        }
+        assertEquals(LocalDelivery.RELAY_LIMIT_REACHED, receiver.observeRequests().first().single().localDelivery)
+        assertTrue(receiver.outgoing(keys.last().nodeId.value).isEmpty())
+        val direct = sender.outgoing(keys[4].nodeId.value).single()
+        val ack = SignedPackets.create(cloud, 7, CloudAckV1.newBuilder().setOriginEventId(direct.eventId)
+            .setStatusValue(1).setCloudRevision(1).setReceivedAtMs(time).build().toByteString(), time, destination = keys.first().nodeId.value)
+        receiver.acceptCloudAck(direct.eventId, ack, cloud.publicKey.encoded, 1)
+        val before = receivedDb.sos().packet(direct.packetId)!!
+        val reply = receiver.receiveSos(WireCodec.decode(direct.wire), keys.first().nodeId.value)
+        val after = receivedDb.sos().packet(direct.packetId)!!
+        val stored = WireCodec.decode(after.wire)
+        assertEquals(RelayMetadata(3, 1, keys.first().nodeId), stored.relay)
+        assertEquals(WireCodec.decode(before.wire).immutableEnvelopeBytesBase64, stored.immutableEnvelopeBytesBase64)
+        assertEquals(WireCodec.decode(before.wire).signature, stored.signature)
+        assertEquals(before.receivedAt, after.receivedAt); assertEquals(before.expiresAt, after.expiresAt)
+        assertArrayEquals(before.receipt, after.receipt); assertArrayEquals(before.cloudAck, after.cloudAck)
+        assertEquals(LocalCloudState.ACCEPTED, receiver.observeRequests().first().single().cloudState)
+        assertArrayEquals(reply, receiver.receiveSos(WireCodec.decode(direct.wire), keys.first().nodeId.value))
+        assertArrayEquals(lastReceipt, receiver.receiveSos(lastPacket!!, keys[3].nodeId.value))
+        assertArrayEquals(after.wire, receivedDb.sos().packet(direct.packetId)!!.wire)
+        assertEquals(1, receivedDb.sos().count())
+        receivedDb.close(); databases.remove(receivedDb)
+        val reopenedDb = open(receiverName)
+        val restored = LocalSosRepository(reopenedDb, { keys[4] }, { time + 1000 })
+        assertArrayEquals(reply, reopenedDb.sos().delivery(direct.packetId, keys.first().nodeId.value)!!.receiptToPeer)
+        assertArrayEquals(lastReceipt, reopenedDb.sos().delivery(direct.packetId, keys[3].nodeId.value)!!.receiptToPeer)
+        for (previous in listOf(keys.first(), keys[3])) assertTrue(restored.outgoing(previous.nodeId.value).isEmpty())
+        val forwarded = restored.outgoing(keys.last().nodeId.value).single()
+        assertEquals(RelayMetadata(2, 2, keys[4].nodeId), WireCodec.decode(forwarded.wire).relay)
+        val next = LocalSosRepository(open(), { keys.last() }, { time + 1000 })
+        val receipt = next.receiveSos(WireCodec.decode(forwarded.wire), keys[4].nodeId.value)
+        restored.receiveReceipt(WireCodec.decode(receipt), keys.last().nodeId.value, setOf(direct.packetId))
+        assertTrue(restored.outgoing(keys.last().nodeId.value).isEmpty())
+        assertNull(restored.prepareOutgoing(direct.packetId, keys.last().nodeId.value))
+        val expired = LocalSosRepository(reopenedDb, { keys[4] }, { direct.expiresAt })
+        assertTrue(expired.outgoing(key().nodeId.value).isEmpty())
+    }
+
+    @Test fun duplicateRouteChangesRequireValidMatchingReportsAndNormalizeLegacyDirectTransfers() = runBlocking {
+        val origin = key(); val local = key(); val previous = key(); val other = key()
+        val source = LocalSosRepository(open(), { origin }, { time })
+        val db = open(); val receiver = LocalSosRepository(db, { local }, { time })
+        source.publish(payload()).getOrThrow()
+        val row = source.outgoing(local.nodeId.value).single()
+        val direct = WireCodec.decode(row.wire)
+        receiver.receiveSos(direct.copy(relay = RelayMetadata(2, 2, previous.nodeId)), previous.nodeId.value)
+        val before = db.sos().packet(row.packetId)!!.wire
+        val envelope = org.ghost.contracts.v1.ImmutableEnvelopeV1.parseFrom(WireCodec.unbase64(direct.immutableEnvelopeBytesBase64, PacketValidator.MAX_ENVELOPE))
+        val changed = SosCreateV1.parseFrom(envelope.payloadBytes).toBuilder().setDescription("Different report").build()
+        val conflict = WireCodec.sign(origin, envelope.toBuilder().setPayloadBytes(changed.toByteString()).build())
+        for ((packet, peer) in listOf(direct.copy(signature = "AA") to origin.nodeId.value,
+            direct to other.nodeId.value, conflict to origin.nodeId.value)) {
+            try { receiver.receiveSos(packet, peer); fail("Invalid duplicate accepted") }
+            catch (_: IllegalArgumentException) { }
+            assertArrayEquals(before, db.sos().packet(row.packetId)!!.wire)
+        }
+        for (hop in listOf(2, 4)) {
+            receiver.receiveSos(direct.copy(relay = RelayMetadata(4 - hop, hop, other.nodeId)), other.nodeId.value)
+            assertArrayEquals(before, db.sos().packet(row.packetId)!!.wire)
+        }
+        // Direct-only older apps send hop zero; receiving still consumes the first transfer.
+        receiver.receiveSos(direct.copy(relay = RelayMetadata(4, 0)), origin.nodeId.value)
+        val stored = WireCodec.decode(db.sos().packet(row.packetId)!!.wire)
+        assertEquals(RelayMetadata(3, 1, origin.nodeId), stored.relay)
+        assertEquals(RelayMetadata(2, 2, local.nodeId), WireCodec.decode(receiver.outgoing(key().nodeId.value).single().wire).relay)
+        source.receiveSos(direct.copy(relay = RelayMetadata(2, 2, previous.nodeId)), previous.nodeId.value)
+        assertArrayEquals(source.outgoing().single().wire, WireCodec.encode(direct.copy(relay = RelayMetadata(4, 0))))
+    }
+
     @Test fun forwardingStopsAfterFourTransfersOrTheOriginalExpiry() = runBlocking {
         val keys = List(6) { key() }
         val dbs = List(5) { open() }

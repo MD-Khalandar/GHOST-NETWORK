@@ -334,8 +334,7 @@ class DirectExchange(private val scope: CoroutineScope, private val transport: G
                         val reports = repository.outgoing(session.nodeId!!, excluded).map { Outgoing(it.packetId, it.wire, false) }
                         val returns = if (cloudKey != null) repository.outgoingCloudReturns(session.nodeId!!, excluded)
                             .map { Outgoing(it.packetId, it.wire, true) } else emptyList()
-                        val resources = if (session.supportsResources) repository.resources.outgoing(session.nodeId!!, excluded)
-                            .filter { it.kind != 6 || session.supportsOfferUpdates }
+                        val resources = if (session.supportsResources) repository.resources.outgoing(session.nodeId!!, excluded, session.supportsOfferUpdates)
                             .map { Outgoing(it.packetId, it.wire, false) } else emptyList()
                         // Interleave return traffic with SOS so neither queue starves the other.
                         val candidates = buildList {

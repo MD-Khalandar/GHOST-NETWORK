@@ -105,6 +105,24 @@ class DirectExchangeTest {
 
     @After fun close() { databases.forEach { it.close() }; names.forEach { context.deleteDatabase(it) } }
 
+    @Test fun shorterDuplicateResumesForwardingToAnAlreadyConnectedNeighbor() = runTest {
+        val a = phone("A"); val b = phone("B"); val c = phone("C"); val previous = newKey()
+        a.publish()
+        val original = runBlocking { WireCodec.decode(a.repo.outgoing().single().wire) }
+        runBlocking { b.repo.receiveSos(original.copy(relay = RelayMetadata(0, 4, previous.nodeId)), previous.nodeId.value) }
+        connect("B", "C")
+        until { b.engine.identities.value.size == 1 && c.engine.identities.value.size == 1 }
+        assertEquals(0, runBlocking { c.db.sos().count() })
+        connect("A", "B")
+        until { c.db.sos().count() == 1 }
+        until { a.repo.observeRequests().first().single().localDelivery == LocalDelivery.RECEIVED_BY_PHONE }
+        val atB = runBlocking { b.repo.observeRequests().first().single() }
+        val atC = runBlocking { c.repo.observeRequests().first().single() }
+        assertEquals(1, atB.relayHops); assertEquals(3, atB.remainingRelayHops)
+        assertEquals(2, atC.relayHops); assertEquals(2, atC.remainingRelayHops)
+        assertEquals(1, runBlocking { b.db.sos().count() })
+    }
+
     @Test fun privateUnavailableHelperSaveRelaysAWithdrawalAndReturnsItsServerReceipt() = runTest {
         val cloud = newKey(); val pin = cloud.publicKey.encoded
         val a = phone("A", cloudKey = pin); phone("B", cloudKey = pin); val g = phone("G", cloudKey = pin)

@@ -65,6 +65,8 @@ interface SosDao {
     @Query("SELECT * FROM reports WHERE packetId = :id") suspend fun packet(id: String): ReportRow?
     @Query("SELECT * FROM reports WHERE eventId = :id") suspend fun event(id: String): ReportRow?
     @Insert(onConflict = OnConflictStrategy.IGNORE) suspend fun insert(row: ReportRow): Long
+    @Query("UPDATE reports SET wire = :wire WHERE packetId = :packetId AND owned = 0")
+    suspend fun updateRelay(packetId: String, wire: ByteArray)
     @Query("SELECT COUNT(*) FROM reports") suspend fun count(): Int
     @Query("SELECT COUNT(*) FROM reports WHERE owned = 1 AND expiresAt > :now") suspend fun activeOwned(now: Long): Int
     @Query("SELECT * FROM reports WHERE publicSharing = 1 AND expiresAt > :now AND (:peerNode IS NULL OR NOT EXISTS (SELECT 1 FROM neighbor_deliveries d WHERE d.packetId = reports.packetId AND d.peerNodeId = :peerNode)) ORDER BY owned DESC, createdAt LIMIT 1000")

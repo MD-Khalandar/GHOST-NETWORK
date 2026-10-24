@@ -21,6 +21,8 @@ G marks a configured gateway, with recent server reachability shown separately.
 This is a partial known-network view, never proof of a working route or delivery.
 Signed neighbor receipts and delivery knowledge survive restarts. Local-only
 reports stay private to the device; original signatures and expiry are preserved.
+Verified duplicate SOS arriving by a shorter route improve the stored forwarding
+budget, preserving signed bytes, expiry, cloud state and all neighbor receipts.
 Signing, cloud-key pinning, consent and server authentication also work.
 SOS sending needs only a message and Send; optional details and remembered sharing
 settings expand in place. GPS sharing is on by default but optional and remembered
@@ -57,6 +59,8 @@ Publications relay to supporting phones and upload with separate online consent;
 verified server receipts return through the mesh. Help types, area, quantity/unit
 and six-hour availability appear in dashboard Helpers/Supplies lists. The latest
 owner-signed helper report controls availability; supplies are separate offers.
+Helper/supply relay scans the bounded saved queue before limiting each batch to
+100 eligible packets, so exhausted, excluded or unsupported updates cannot block later help.
 Existing phone data migrates in place. Local-only publications stay local.
 Turning volunteer sharing off now queues a signed unavailable report for its previous
 audience, omitting name/area and preserving the previous expiry. New private details

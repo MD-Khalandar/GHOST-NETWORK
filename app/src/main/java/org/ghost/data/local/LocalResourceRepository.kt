@@ -170,8 +170,10 @@ class LocalResourceRepository(private val db: GhostDatabase, private val identit
         LocalPublishResult(e.eventId, consent.publicMeshAllowed)
     }
 
-    suspend fun outgoing(peer: String, excluded: Set<String>): List<ResourceRow> = withContext(Dispatchers.IO) {
-        dao.outgoing(now(), peer).filterNot { it.packetId in excluded }.mapNotNull { prepare(it, peer) }
+    suspend fun outgoing(peer: String, excluded: Set<String>, supportsOfferUpdates: Boolean = true): List<ResourceRow> = withContext(Dispatchers.IO) {
+        dao.outgoing(now(), peer).asSequence().filterNot { it.packetId in excluded }
+            .filter { it.kind != 6 || supportsOfferUpdates }
+            .mapNotNull { prepare(it, peer) }.take(100).toList()
     }
     suspend fun prepare(packetId: String, peer: String): ResourceRow? = withContext(Dispatchers.IO) {
         if (dao.delivery(packetId, peer) != null) null else dao.packet(packetId)?.let {
