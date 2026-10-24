@@ -49,7 +49,13 @@ and six-hour availability appear in dashboard Helpers/Supplies lists. The latest
 owner-signed helper report controls availability; supplies are separate offers.
 Existing phone data migrates in place. Local-only publications stay local.
 
-Next: supply edits/withdrawals, matching → approval, owner decisions and outage recovery.
+An unwired cloud coordinator module now reads stored SOS/helpers/supplies and
+stores versioned suggestions for human review. It rechecks availability/quantities;
+model/config failures stay explicit. No stock is reserved or assistance confirmed.
+Embedded PostgreSQL and local provider HTTP tests cover this slice; integration
+notes are in server/src/coordinator/README.md.
+
+Next: supply edits/withdrawals, coordinator wiring → approval, owner decisions and outage recovery.
 
 Keep public/cloud consent separate, preserve signed bytes, reject forged/duplicate
 events, and keep cloud/provider secrets server-side. Queued, received and confirmed are distinct.
