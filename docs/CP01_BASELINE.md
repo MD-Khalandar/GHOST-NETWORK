@@ -2,6 +2,11 @@
 
 Status: **reviewable contract baseline; not a completed checkpoint**.
 
+Historical A preparation record. The subsequent A/B/C/D integration and CP01
+completion evidence are in [the integration report](evidence/cp01/integration.md).
+Integration corrected the API document's top-level `tags` placement; endpoint,
+schema and Kotlin boundary semantics are unchanged.
+
 This document records the decisions and owned files that B, C, and D must use
 after the user commits this baseline. The user owns staging, commit, push, and
 merge. A must not mark CP01 complete until the user-merged B/C/D changes have

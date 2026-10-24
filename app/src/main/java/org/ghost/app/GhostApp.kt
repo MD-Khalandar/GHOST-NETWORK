@@ -2,12 +2,16 @@ package org.ghost.app
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -40,6 +44,28 @@ fun GhostApp(state: FoundationState, onRetry: () -> Unit) {
             }
         },
         bottomBar = {
+            if (LocalDensity.current.fontScale >= 1.5f) {
+                Surface(color = MaterialTheme.colorScheme.surfaceContainerLow) {
+                    Column(Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.navigationBars).selectableGroup()) {
+                        AppRoute.entries.chunked(2).forEach { destinations ->
+                            Row {
+                                destinations.forEach { destination ->
+                                    val selected = route == destination
+                                    Surface(modifier = Modifier.weight(1f).padding(4.dp),
+                                        color = if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
+                                        shape = MaterialTheme.shapes.medium) {
+                                        Box(Modifier.selectable(selected, role = Role.Tab, onClick = { route = destination })
+                                            .heightIn(min = 48.dp).padding(8.dp), contentAlignment = Alignment.Center) {
+                                            Text(destination.name.lowercase().replaceFirstChar { it.titlecase() },
+                                                style = MaterialTheme.typography.labelLarge)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
             NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainerLow) {
                 AppRoute.entries.forEach { destination ->
                     val label = when (destination) {
@@ -57,6 +83,7 @@ fun GhostApp(state: FoundationState, onRetry: () -> Unit) {
                     NavigationBarItem(selected = route == destination, onClick = { route = destination },
                         icon = { Icon(icon, contentDescription = null) }, label = { Text(label) })
                 }
+            }
             }
         },
     ) { insets ->

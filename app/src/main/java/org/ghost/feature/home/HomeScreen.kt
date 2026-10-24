@@ -6,7 +6,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
 import org.ghost.design.*
 import org.ghost.feature.foundation.FoundationState
 import org.ghost.feature.foundation.label
@@ -32,7 +35,7 @@ fun HomeScreen(state: FoundationState, onSendSos: () -> Unit, onOpenRequests: ()
             state.failed -> item { ErrorCard(onRetry) }
             else -> {
                 item("reports") {
-                    InfoCard("Locally known reports", "${state.requests.size} reports on this phone") {
+                    InfoCard("Locally known reports", "${state.requests.size} ${if (state.requests.size == 1) "report" else "reports"} on this phone") {
                         Text("Local visibility does not confirm cloud acceptance or delivery.")
                         TextButton(onOpenRequests, Modifier.heightIn(min = 48.dp)) { Text("View requests") }
                     }
@@ -50,8 +53,19 @@ fun HomeScreen(state: FoundationState, onSendSos: () -> Unit, onOpenRequests: ()
 
 @Composable
 fun SosPreviewDialog(onDismiss: () -> Unit) {
-    AlertDialog(onDismissRequest = onDismiss, title = { Text("SOS preview") },
-        text = { Text("Sending is unavailable in this preview. Nothing has been sent.\n\nWhen sending is available, you’ll review your report and choose public sharing and cloud consent separately.",
-            modifier = Modifier.verticalScroll(rememberScrollState())) },
-        confirmButton = { TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp)) { Text("Close preview") } })
+    val windowHeight = LocalWindowInfo.current.containerSize.height
+    val maximumHeight = with(LocalDensity.current) { windowHeight.toDp() * 0.85f }
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(shape = MaterialTheme.shapes.extraLarge, tonalElevation = 6.dp) {
+            Column(Modifier.fillMaxWidth().heightIn(max = maximumHeight).padding(24.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Text("SOS preview", style = MaterialTheme.typography.headlineSmall)
+                Text("Sending is unavailable in this preview. Nothing has been sent.\n\nWhen sending is available, you’ll review your report and choose public sharing and cloud consent separately.",
+                    modifier = Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()))
+                TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                    Text("Close preview")
+                }
+            }
+        }
+    }
 }

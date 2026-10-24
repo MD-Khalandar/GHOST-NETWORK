@@ -47,7 +47,7 @@ class GhostAppUiTest {
         compose.onNodeWithText("Cloud unavailable").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Resource allocation confirmed").assertDoesNotExist()
         screenshot("mission-light")
-        compose.onNodeWithText("Network").performClick()
+        compose.onNode(hasText("Network") and hasClickAction()).performClick()
         compose.onNodeWithText("Radio simulation").performScrollTo().assertIsDisplayed()
         screenshot("network-light")
     }
@@ -79,7 +79,7 @@ class GhostAppUiTest {
         compose.onNodeWithText("Close preview").assertIsDisplayed().performClick()
         screenshot("home-dark-200")
         for (destination in listOf("Requests", "Mission", "Network", "Home")) {
-            compose.onNodeWithText(destination).assertIsDisplayed().assertHeightIsAtLeast(48.dp)
+            compose.onNode(hasText(destination) and hasClickAction()).assertIsDisplayed().assertHeightIsAtLeast(48.dp)
                 .assertWidthIsAtLeast(48.dp).performClick().assertIsSelected()
             screenshot("${destination.lowercase()}-dark-200")
         }
@@ -103,8 +103,9 @@ class GhostAppUiTest {
         compose.setContent { GhostTheme { Surface { GhostApp(FoundationPreviewFixtures.loaded, {}) } } }
         compose.onNodeWithText("Send SOS").performScrollTo().assertIsDisplayed().performClick()
         compose.onNodeWithText("Close preview").performClick()
-        compose.onNodeWithText("Network").performClick().assertIsSelected()
-        compose.onNodeWithText("Gateway sharing is off").performScrollTo().assertIsDisplayed()
+        compose.onNode(hasText("Network") and hasClickAction()).performClick().assertIsSelected()
+        compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("Gateway sharing is off"))
+        compose.onNodeWithText("Gateway sharing is off").assertIsDisplayed()
         screenshot("network-landscape")
     }
 
@@ -112,11 +113,12 @@ class GhostAppUiTest {
         val file = File("build/reports/cp01-ui/$name.png")
         checkNotNull(file.parentFile).mkdirs()
         compose.runOnIdle {
-            val view = compose.activity.window.decorView
-            val bitmap = android.graphics.Bitmap.createBitmap(view.width, view.height, android.graphics.Bitmap.Config.ARGB_8888)
-            view.draw(android.graphics.Canvas(bitmap))
-            file.outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
-            bitmap.recycle()
+            android.view.inspector.WindowInspector.getGlobalWindowViews().forEachIndexed { index, view ->
+                val bitmap = android.graphics.Bitmap.createBitmap(view.width, view.height, android.graphics.Bitmap.Config.ARGB_8888)
+                view.draw(android.graphics.Canvas(bitmap))
+                File(file.parentFile, "$name-$index.png").outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+                bitmap.recycle()
+            }
         }
     }
 }

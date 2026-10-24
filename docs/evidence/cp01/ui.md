@@ -2,6 +2,8 @@
 
 Implemented on `cp01-ui` from A's published `abe7dd5` baseline, 24 October 2026.
 The user requested D implementation and subsequent integration into `main`.
+The completed wiring and host-rendered UI checks are recorded in
+[integration.md](integration.md).
 
 ## Scope and entry points
 

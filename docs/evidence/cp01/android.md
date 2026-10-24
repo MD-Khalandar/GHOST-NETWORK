@@ -3,6 +3,10 @@
 Status: **role B implemented; A integration pending**, 24 October 2026.
 This is role B host/simulation evidence, not consolidated CP01 completion.
 
+Historical handoff: integration is now recorded in the
+[combined CP01 report](integration.md); the pending statements below describe
+the original role B handoff.
+
 ## Published baseline and ownership
 
 Implemented on `android` from A's `contract` commit

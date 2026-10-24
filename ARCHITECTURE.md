@@ -2,7 +2,7 @@
 
 GHOST is an Android mesh communication app for outages. The wider product includes saved-contact messaging, SOS/help and in-app internet services. **Build SOS sending first, coordinated by one cloud agent.** A web dashboard shows incoming requests, helpers/supplies and agent activity from the same cloud database. Local LLM features, ordinary chat, general information services and LoRa are later work.
 
-Current repository state: Android build scaffold only. This document describes planned components, not working features. Preserve the existing Android toolchain.
+Current repository state: CP01 foundations are integrated: typed contracts, deterministic Android fakes, four Android preview screens and a cloud-service health/config scaffold. SOS sending, signatures, Room, radios, database coordination and the dashboard remain planned components. See [CP01 evidence](docs/evidence/cp01/integration.md). Preserve the existing Android toolchain.
 
 ## SOS architecture
 

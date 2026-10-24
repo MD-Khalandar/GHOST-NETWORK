@@ -1,6 +1,19 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import { cp01FixtureInput } from "./fixtures.js";
+
+test("server fixture copy and provider input match A's shared contract", () => {
+  const shared = JSON.parse(readFileSync(new URL("../../contracts/fixtures/cp01-fixtures.json", import.meta.url), "utf8"));
+  const local = JSON.parse(readFileSync(new URL("../test/fixtures/cp01-fixtures.json", import.meta.url), "utf8"));
+  assert.deepEqual(local, shared);
+  assert.deepEqual(cp01FixtureInput, {
+    requestId: shared.sos_create.request_id,
+    offerId: shared.offer_publish.offer_id,
+    category: shared.sos_create.category,
+    coarseArea: shared.sos_create.coarse_area,
+  });
+});
 
 test("CP01 fixture is deterministic and uses the frozen contract version", () => {
   const fixtureUrl = new URL("../test/fixtures/cp01-fixtures.json", import.meta.url);

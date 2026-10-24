@@ -2,7 +2,7 @@
 
 Build SOS sending first: offline phones → mesh → online gateway → cloud database/dashboard → one cloud coordinator → approved response back through the mesh. The database stores requests, helpers and supply/help offers. Ordinary chat, generic internet services, local LLM helpers and LoRa are deferred, not removed from the wider product.
 
-**Current position:** CP01 role A contract baseline prepared in `docs/CP01_BASELINE.md`; waiting for the user to commit/publish it before B/C/D start. No implementation or device/cloud gate is complete. Preserve the existing Android scaffold/toolchain.
+**Current position:** CP01 contracts and foundations complete within its host/simulation scope. A/B/C/D are integrated: typed contracts, deterministic Android fakes, server scaffold and the four-screen Android preview. See [combined checks and limitations](evidence/cp01/integration.md). Physical/device/cloud acceptance gates remain open; CP02 has not started. Existing Android toolchain versions are preserved.
 
 Each checkpoint has **four copyable prompts** in [BUILD_PHASES.md](BUILD_PHASES.md): A establishes contracts and owns final integration; B handles Android data/network; C handles cloud/database; D handles Android UI and web dashboard. Run A's preparation first. B/C/D then use the same published contract baseline and may work in parallel. A verifies the merged result before the checkpoint closes.
 
@@ -35,7 +35,7 @@ Each checkpoint has **four copyable prompts** in [BUILD_PHASES.md](BUILD_PHASES.
 
 Record real evidence links and verified user-pushed commits; do not infer acceptance from a commit. Statuses: not started, in progress, implemented/evidence pending, blocked, complete.
 
-- 01 — In progress: role A baseline review pending user commit/publish; B/C/D not started.
+- 01 — Complete (host/simulation foundations): [integration evidence](evidence/cp01/integration.md), [Android fakes](evidence/cp01/android.md), [UI](evidence/cp01/ui.md). No physical or real-cloud gates claimed.
 - 02 — Not started.
 - 03 — Not started.
 - 04 — Not started.
