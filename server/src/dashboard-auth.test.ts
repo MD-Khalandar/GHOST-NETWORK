@@ -75,6 +75,12 @@ test("login and mutations reject forged origins and CSRF; viewer privileges cann
     const valid = await attempt({ "x-csrf-token": csrf });
     assert.equal(valid.statusCode, 409); assert.equal(valid.json().code, "PROPOSAL_NOT_FOUND");
     const viewer = await f.login("viewer");
+    const changeMode=(extra:Record<string,string>)=>f.app.inject({method:"POST",url:"/v1/dashboard/coordination-settings",
+      headers:{...deskHeaders,cookie:cookie(session),...extra},payload:{manual_review:true}});
+    assert.equal((await changeMode({})).statusCode,403);
+    assert.equal((await changeMode({"x-csrf-token":csrf})).statusCode,200);
+    assert.equal((await f.app.inject({method:"POST",url:"/v1/dashboard/coordination-settings",headers:{...deskHeaders,
+      cookie:cookie(viewer),"x-csrf-token":viewer.json().csrf_token},payload:{manual_review:false}})).statusCode,403);
     assert.equal((await f.app.inject({ method: "POST", url, headers: { ...deskHeaders,
       cookie: cookie(viewer), "x-csrf-token": viewer.json().csrf_token } })).statusCode, 403);
     assert.equal((await f.app.inject({ url: "/v1/dashboard/sos", headers: { cookie: cookie(viewer) } })).statusCode, 200);

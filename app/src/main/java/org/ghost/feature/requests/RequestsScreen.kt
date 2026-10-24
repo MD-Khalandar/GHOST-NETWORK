@@ -45,7 +45,7 @@ fun RequestsScreen(state: FoundationState, onRetry: () -> Unit, modifier: Modifi
                 }
                 if (showExplanation) item("help-policy") {
                     InfoCard("How getting help works", "Each request below shows its own sharing and server receipt status.") {
-                        Text("A server receipt confirms storage. AI suggestions are reviewed in the web dashboard; owners can accept invitations and the server confirms commitments. A commitment does not confirm delivered assistance.")
+                        Text("A server receipt confirms storage. AI suggestions can send invitations automatically or wait for operator approval. Owners choose whether to accept, and the server confirms commitments. A commitment does not confirm delivered assistance.")
                         Text("Nearby phones can pass requests along without internet. Saving online needs a configured gateway with internet and your online-sharing permission.")
                     }
                 }

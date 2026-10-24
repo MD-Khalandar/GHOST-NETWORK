@@ -27,6 +27,8 @@ const adapter = (pg: PGlite): Database => ({ query: (sql, values) => pg.query(sq
 async function fixture(path?: string, lifetime = 60000) {
   const pg = new PGlite(path), database = adapter(pg);
   await initializeDatabase(database); await initializeCoordinator(database);
+  // This suite exercises proposal generation and the manual review desk.
+  await database.query("UPDATE coordination_settings SET manual_review=TRUE WHERE id=1");
   const origin = identity(), helper = identity(), supplier = identity();
   const requestId = randomUUID(), offerId = randomUUID();
   const ingest = new SosStore(database, identity(), () => now);
@@ -282,6 +284,33 @@ test("server automatically queues runs, restricts operator retry, and exposes st
     assert.equal(state.json().configured, true); assert.equal(state.json().runs.length, 3);
     assert.equal((await app.inject({ method: "POST", url: "/v1/dashboard/sos/not-an-id/coordinate", headers: headers("operator") })).statusCode, 400);
   } finally { await app.close(); }
+});
+
+test("automatic worker sends invitations after AI generation and a manual toggle fences in-flight model results",async()=>{
+  const f=await fixture();
+  await f.database.query("UPDATE coordination_settings SET manual_review=FALSE WHERE id=1");
+  let entered=false;
+  let release!:()=>void;const gate=new Promise<void>(resolve=>{release=resolve;});
+  const pem=generateKeyPairSync("ec",{namedCurve:"prime256v1"}).privateKey.export({format:"pem",type:"pkcs8"}).toString();
+  const headers={authorization:`Bearer ${"o".repeat(43)}`};
+  const app=buildApp({database:f.database,cloudSigningKeyPem:pem,now:()=>now,
+    principals:[{id:"operator",role:"operator",token_sha256:tokenHash("o".repeat(43))}],
+    proposalModel:f.model(async()=>{entered=true;await gate;return {matches:[f.draft()]};})});
+  try {
+    await app.ready();await until(async()=>entered);
+    assert.equal((await app.inject({method:"POST",url:"/v1/dashboard/coordination-settings",headers,payload:{manual_review:true}})).statusCode,200);
+    release();
+    await until(async()=>(await f.pg.query<any>("SELECT queued FROM coordinator_jobs")).rows[0]?.queued===false);
+    assert.equal((await f.store.listProposals()).length,1);
+    assert.equal((await f.pg.query("SELECT * FROM assistance_cases")).rows.length,0);
+    assert.equal((await app.inject({method:"POST",url:"/v1/dashboard/coordination-settings",headers,payload:{manual_review:false}})).statusCode,200);
+    await until(async()=>(await f.pg.query("SELECT * FROM assistance_cases")).rows.length===1);
+    const arrangement=(await f.pg.query<any>("SELECT * FROM assistance_cases")).rows[0];
+    assert.equal(arrangement.state,1);assert.equal(arrangement.operator_id,"ai:auto");
+    assert.equal((await f.pg.query("SELECT * FROM assistance_events")).rows.length,2);
+    assert.equal((await f.store.reviewPage(now,30)).items.length,0);
+    assert.equal((await f.store.context(f.requestId,now)).resources.find(r=>r.resource_id===f.offerId)!.quantity,20);
+  }finally{release();await app.close();}
 });
 
 test("durable jobs resume with a new worker, retries are bounded and lost leases cannot save proposals", async () => {

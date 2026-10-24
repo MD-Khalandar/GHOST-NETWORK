@@ -18,7 +18,7 @@ test("gateway/viewer/operator roles are isolated on every protected route", asyn
       const session = await app.inject({ method: "GET", url: "/v1/auth/session", headers });
       assert.equal(session.statusCode, 200); assert.equal(session.json().role, role);
       assert.doesNotMatch(session.body, /token_sha256|private|BEGIN|gggg|vvvv|oooo/);
-      for (const url of ["/v1/dashboard/sos", "/v1/dashboard/sos/any", "/v1/dashboard/helpers", "/v1/dashboard/offers", "/v1/dashboard/runs", "/v1/dashboard/proposals"]) {
+      for (const url of ["/v1/dashboard/sos", "/v1/dashboard/sos/any", "/v1/dashboard/helpers", "/v1/dashboard/offers", "/v1/dashboard/runs", "/v1/dashboard/proposals", "/v1/dashboard/coordination-settings"]) {
         const allowedStatus = url === "/v1/dashboard/sos/any" ? 400 : 503;
         assert.equal((await app.inject({ method: "GET", url, headers })).statusCode, role === "gateway" ? 403 : allowedStatus);
         assert.equal((await app.inject({ method: "GET", url })).statusCode, 401);
@@ -27,6 +27,7 @@ test("gateway/viewer/operator roles are isolated on every protected route", asyn
         assert.equal((await app.inject({ method: "POST", url: `/v1/dashboard/proposals/any/${action}`, headers, payload: { role: "operator" } })).statusCode, role === "operator" ? 400 : 403);
       }
       assert.equal((await app.inject({ method: "GET", url: "/v1/sync/download", headers })).statusCode, role === "gateway" ? 503 : 403);
+      assert.equal((await app.inject({method:"POST",url:"/v1/dashboard/coordination-settings",headers,payload:{manual_review:true}})).statusCode,role==="operator"?503:403);
       assert.equal((await app.inject({ method: "POST", url: "/v1/sync/download-ack", headers, payload: {} })).statusCode, role === "gateway" ? 400 : 403);
     }
     assert.equal((await app.inject({ method: "GET", url: "/v1/auth/session", headers: { authorization: `Bearer ${"x".repeat(43)}` } })).statusCode, 401);

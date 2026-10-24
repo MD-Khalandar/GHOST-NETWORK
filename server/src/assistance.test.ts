@@ -9,10 +9,10 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Database } from "./database.js";
-import { initializeAssistance } from "./assistance.js";
+import { AssistanceService,initializeAssistance } from "./assistance.js";
 
 const key=()=>SigningIdentity.fromPem(generateKeyPairSync("ec",{namedCurve:"prime256v1"}).privateKey.export({format:"pem",type:"pkcs8"}).toString());
-async function fixture(path?: string) {
+async function fixture(path?: string,manualReview=true) {
   const pg=new PGlite(path);let clock=1792860000000;
   const cloudPem=generateKeyPairSync("ec",{namedCurve:"prime256v1"}).privateKey.export({format:"pem",type:"pkcs8"}).toString();
   const cloud=SigningIdentity.fromPem(cloudPem),requester=key(),supplier=key(),other=key();
@@ -25,6 +25,8 @@ async function fixture(path?: string) {
   const app=buildApp({database,cloudSigningKeyPem:cloudPem,now:()=>clock,
     principals:Object.entries(tokens).map(([role,token])=>({id:role,role:role as "gateway"|"viewer"|"operator",token_sha256:tokenHash(token),...(role==="gateway"?{gateway_node_id:other.nodeId}:{})}))});
   const headers=(role:keyof typeof tokens="gateway")=>({authorization:`Bearer ${tokens[role]}`});
+  await app.ready();
+  if(manualReview)assert.equal((await app.inject({method:"POST",url:"/v1/dashboard/coordination-settings",headers:headers("operator"),payload:{manual_review:true}})).statusCode,200);
   const packet=(owner:SigningIdentity,kind:number,payload:Record<string,unknown>)=>createPacket(owner,kind,payload,{packetId:randomUUID(),eventId:randomUUID(),createdAtMs:clock,expiresAtMs:clock+7200000});
   const upload=(p:WirePacket,id:string=randomUUID())=>app.inject({method:"POST",url:"/v1/sync/upload",headers:headers(),payload:{idempotency_key:id,packets:[p]}});
   const consent={public_mesh_allowed:true,cloud_processing_allowed:true};
@@ -52,7 +54,7 @@ async function fixture(path?: string) {
     return createPacket(owner,17,{proposal_id:p.proposal_id,version:p.version,decision:choice,status_envelope:Buffer.from(proof.immutable_envelope_bytes,"base64url"),status_signature:Buffer.from(proof.signature,"base64url")},{packetId:randomUUID(),eventId:randomUUID(),createdAtMs:clock,expiresAtMs:e.expires_at_ms});
   };
   const closure=(state:number)=>createPacket(requester,2,{request_id:requestId,state,original_sos_envelope:Buffer.from(original.immutable_envelope_bytes,"base64url"),original_sos_signature:Buffer.from(original.signature,"base64url")},{packetId:randomUUID(),eventId:randomUUID(),createdAtMs:clock,expiresAtMs:decode("ImmutableEnvelopeV1",Buffer.from(original.immutable_envelope_bytes,"base64url")).expires_at_ms});
-  return {pg,app,cloud,cloudPem,tokens,failStatus:(value:boolean)=>{failStatusWrite=value;},supplier,requester,other,headers,packet,upload,proposal,review,status,decision,closure,original,offer,offerId,requestId,consent,
+  return {pg,database,app,cloud,cloudPem,tokens,failStatus:(value:boolean)=>{failStatusWrite=value;},supplier,requester,other,headers,packet,upload,proposal,review,status,decision,closure,original,offer,offerId,requestId,consent,
     advance:(ms=1000)=>{clock+=ms},clock:()=>clock};
 }
 
@@ -125,6 +127,82 @@ test("confirming volunteer help received releases its commitment without closing
     assert.equal((await f.upload(f.decision(await f.status(id,2,f.requester.nodeId),4,f.requester))).statusCode,200);
     assert.equal((await f.pg.query<any>("SELECT data FROM coordinator_resource_available WHERE entity_id=$1",[f.supplier.nodeId])).rows[0].data.availability,1);
     assert.equal((await f.pg.query<any>("SELECT state FROM sos_reports WHERE request_id=$1",[f.requestId])).rows[0].state,1);
+  }finally{await f.app.close();}
+});
+
+test("automatic invitations are the default, deduplicate across workers and still require owner acceptance",async()=>{
+  const f=await fixture(undefined,false);try{
+    const settings=await f.app.inject({url:"/v1/dashboard/coordination-settings",headers:f.headers("viewer")});
+    assert.equal(settings.statusCode,200);assert.equal(settings.json().manual_review,false);
+    assert.equal(settings.headers["cache-control"],"no-store");
+    const id=await f.proposal();
+    const service=new AssistanceService(f.database,f.cloud,f.clock);
+    await Promise.all([service.autoReview(),service.autoReview()]);
+    const row=(await f.pg.query<any>("SELECT * FROM assistance_cases WHERE proposal_id=$1",[id])).rows[0];
+    assert.equal(row.state,1);assert.equal(row.operator_id,"ai:auto");
+    assert.equal((await f.pg.query("SELECT * FROM assistance_events")).rows.length,2);
+    await service.autoReview();assert.equal((await f.pg.query("SELECT * FROM assistance_events")).rows.length,2);
+    const balance=(await f.app.inject({url:"/v1/dashboard/offers",headers:f.headers("viewer")})).json().items[0];
+    assert.equal(balance.reserved_quantity,0);assert.equal(balance.available_quantity,10);
+    const invitation=await f.status(id);assert.match(decode("AssistanceStatusV1",decode("ImmutableEnvelopeV1",Buffer.from(invitation.immutable_envelope_bytes,"base64url")).payload_bytes).reason,/automatically/);
+    assert.equal((await f.upload(f.decision(invitation))).statusCode,200);
+    await f.status(id,2,f.requester.nodeId);
+  }finally{await f.app.close();}
+});
+
+test("operator-only manual toggle pauses new invitations and returning to automatic drains pending suggestions",async()=>{
+  const f=await fixture();try{
+    const url="/v1/dashboard/coordination-settings";
+    for(const role of ["viewer","gateway"] as const)
+      assert.equal((await f.app.inject({method:"POST",url,headers:f.headers(role),payload:{manual_review:false}})).statusCode,403);
+    for(const payload of [{manual_review:"false"},{manual_review:false,role:"operator"},{}])
+      assert.equal((await f.app.inject({method:"POST",url,headers:f.headers("operator"),payload})).statusCode,400);
+    const id=await f.proposal();const service=new AssistanceService(f.database,f.cloud,f.clock);
+    await service.autoReview();assert.equal((await f.pg.query("SELECT * FROM assistance_cases")).rows.length,0);
+    const enabled=await f.app.inject({method:"POST",url,headers:f.headers("operator"),payload:{manual_review:false}});
+    assert.equal(enabled.statusCode,200);assert.equal(enabled.json().manual_review,false);
+    for(let attempt=0;attempt<100;attempt++) {
+      if((await f.pg.query("SELECT * FROM assistance_cases")).rows.length)break;
+      await new Promise(resolve=>setTimeout(resolve,10));
+    }
+    await f.status(id);
+    await service.setReviewMode(true,"operator");
+    await f.upload(f.packet(f.other,1,{request_id:randomUUID(),category:3,description:"Need water",consent:f.consent}));
+    const otherRequest=(await f.pg.query<any>("SELECT request_id FROM sos_reports WHERE sender_node_id=$1",[f.other.nodeId])).rows[0].request_id;
+    await f.proposal(otherRequest);await service.autoReview();
+    assert.equal((await f.pg.query("SELECT * FROM assistance_cases")).rows.length,1);
+    assert.equal((await service.reviewMode()).manual_review,true);
+  }finally{await f.app.close();}
+});
+
+test("unknown-stock suggestions cannot block eligible automatic invitations after the batch limit",async()=>{
+  const f=await fixture();try{
+    for(let index=0;index<21;index++) {
+      const offerId=randomUUID();f.advance(1);
+      await f.upload(f.packet(f.supplier,5,{offer_id:offerId,owner_node_id:Buffer.from(f.supplier.nodeId,"hex"),resource_type:1,unit:"litres",consent:f.consent}));
+      await f.proposal(f.requestId,offerId,"offer",null);
+    }
+    f.advance(1);const valid=await f.proposal();
+    const service=new AssistanceService(f.database,f.cloud,f.clock);
+    await service.setReviewMode(false,"operator");await service.autoReview();
+    assert.equal((await f.pg.query<any>("SELECT proposal_id FROM assistance_cases")).rows[0].proposal_id,valid);
+    assert.equal((await f.pg.query("SELECT * FROM assistance_cases")).rows.length,1);
+  }finally{await f.app.close();}
+});
+
+test("automatic recovery expires old commitments before checking availability without phone polling",async()=>{
+  const f=await fixture();try{
+    const profile=()=>f.packet(f.supplier,3,{owner_node_id:Buffer.from(f.supplier.nodeId,"hex"),help_types:[6],availability:1,consent:f.consent});
+    await f.upload(profile());
+    const old=await f.proposal(f.requestId,f.supplier.nodeId,"helper",null);await f.review(old);
+    await f.upload(f.decision(await f.status(old)));
+    f.advance(1000);await f.upload(profile());
+    const next=await f.proposal(f.requestId,f.supplier.nodeId,"helper",null);
+    f.advance(3600001);
+    const service=new AssistanceService(f.database,f.cloud,f.clock);
+    await service.setReviewMode(false,"operator");await service.autoReview();
+    assert.equal((await f.pg.query<any>("SELECT state FROM assistance_cases WHERE proposal_id=$1",[old])).rows[0].state,5);
+    assert.equal((await f.pg.query<any>("SELECT state FROM assistance_cases WHERE proposal_id=$1",[next])).rows[0].state,1);
   }finally{await f.app.close();}
 });
 
@@ -232,13 +310,15 @@ test("assistance state, signed outbox and decision deduplication survive a datab
     await f.app.close();closed=true;
     const pg=new PGlite(path);const database:Database={query:(q,v)=>pg.query(q,v),transaction:work=>pg.transaction(c=>work(c)),close:()=>pg.close()};
     restored=buildApp({database,cloudSigningKeyPem:f.cloudPem,now:f.clock,
-      principals:[{id:"gateway",role:"gateway",token_sha256:tokenHash(f.tokens.gateway),gateway_node_id:f.other.nodeId}]});
+      principals:[{id:"gateway",role:"gateway",token_sha256:tokenHash(f.tokens.gateway),gateway_node_id:f.other.nodeId},
+        {id:"viewer",role:"viewer",token_sha256:tokenHash(f.tokens.viewer)}]});
     const after=await restored.inject({url:"/v1/sync/download?cursor=0&limit=50",headers:f.headers()});
     assert.equal(after.statusCode,200);assert.deepEqual(after.json(),before);
     const duplicate=await restored.inject({method:"POST",url:"/v1/sync/upload",headers:f.headers(),payload:{idempotency_key:"after-restart",packets:[decision]}});
     assert.equal(duplicate.statusCode,200,duplicate.body);
     assert.equal((await pg.query<any>("SELECT state FROM assistance_cases WHERE proposal_id=$1",[id])).rows[0].state,7);
     assert.equal((await pg.query("SELECT * FROM assistance_decisions")).rows.length,2);
+    assert.equal((await restored.inject({url:"/v1/dashboard/coordination-settings",headers:f.headers("viewer")})).json().manual_review,true);
     const sources=(await pg.query<any>("SELECT data FROM coordinator_resource_available WHERE entity_id=$1",[f.offerId])).rows;
     assert.equal(sources[0].data.quantity,3);
   }finally{if(restored)await restored.close();if(!closed)await f.app.close();await rm(path,{recursive:true,force:true});}

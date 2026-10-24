@@ -5,6 +5,10 @@ import { SigningIdentity } from "./security.js";
 
 export class AssistanceConflict extends Error { constructor(readonly code: string) { super(code); } }
 export async function initializeAssistance(c: SqlConnection) {
+  await c.query(`CREATE TABLE IF NOT EXISTS coordination_settings (
+    id INTEGER PRIMARY KEY CHECK(id=1), manual_review BOOLEAN NOT NULL DEFAULT FALSE,
+    updated_at_ms BIGINT NOT NULL DEFAULT 0, updated_by TEXT NOT NULL DEFAULT 'default')`);
+  await c.query("INSERT INTO coordination_settings(id) VALUES(1) ON CONFLICT DO NOTHING");
   await c.query(`CREATE TABLE IF NOT EXISTS assistance_cases (
     proposal_id UUID PRIMARY KEY, request_id UUID NOT NULL, resource_id TEXT NOT NULL,
     owner_node_id TEXT NOT NULL, requester_node_id TEXT NOT NULL, resource_kind INTEGER NOT NULL,
@@ -16,6 +20,7 @@ export async function initializeAssistance(c: SqlConnection) {
   await c.query("ALTER TABLE assistance_cases DROP CONSTRAINT IF EXISTS assistance_cases_state_check");
   await c.query("ALTER TABLE assistance_cases ADD CONSTRAINT assistance_cases_state_check CHECK(state BETWEEN 1 AND 7)");
   await c.query("CREATE INDEX IF NOT EXISTS assistance_resource ON assistance_cases(resource_id, state)");
+  await c.query("CREATE INDEX IF NOT EXISTS assistance_request_resource ON assistance_cases(request_id,resource_id)");
   await c.query(`CREATE TABLE IF NOT EXISTS assistance_events (
     revision BIGSERIAL PRIMARY KEY, packet_id UUID UNIQUE NOT NULL, proposal_id UUID NOT NULL,
     destination TEXT NOT NULL, expires_at_ms BIGINT NOT NULL, packet JSONB NOT NULL)`);
@@ -106,9 +111,50 @@ export async function applyAssistanceDecision(c: SqlConnection, signer: SigningI
 }
 export class AssistanceService {
   constructor(private readonly database: Database,private readonly signer: SigningIdentity,private readonly now=Date.now) {}
+  async reviewMode() {
+    const row=(await this.database.query("SELECT manual_review,updated_at_ms FROM coordination_settings WHERE id=1")).rows[0];
+    return {manual_review:row.manual_review as boolean,updated_at_ms:number(row.updated_at_ms)};
+  }
+  async setReviewMode(manual:boolean,operator:string) {
+    await this.database.transaction(async c=> {
+      await lock(c);
+      await c.query("UPDATE coordination_settings SET manual_review=$1,updated_at_ms=$2,updated_by=$3 WHERE id=1",[manual,this.now(),operator]);
+    });
+    return this.reviewMode();
+  }
   async review(proposalId:string,approve:boolean,operator:string) {
+    return (await this.reviewWithPolicy(proposalId,approve,operator,false))!;
+  }
+  /** Eligibility is filtered before LIMIT; unavailable proposals cannot block later ones. */
+  async autoReview():Promise<boolean> {
+    if((await this.reviewMode()).manual_review)return false;
+    // Expired commitments must stop blocking the availability view even with no phones polling.
+    await this.sweep();
+    const {rows}=await this.database.query(`SELECT p.proposal_id FROM coordinator_proposals p
+      JOIN sos_reports s ON s.request_id=p.request_id
+      JOIN coordinator_resource_available r ON r.entity_id=p.resource_id
+      WHERE p.status='pending_review' AND s.state=1 AND s.event_id=p.request_event_id AND s.expires_at_ms>$1
+        AND r.event_id=p.resource_event_id AND r.expires_at_ms>$1
+        AND COALESCE((r.data->>'available_until_ms')::bigint,r.expires_at_ms)>$1
+        AND ((p.resource_kind='helper' AND r.data->>'availability'='1') OR
+          (p.resource_kind='offer' AND COALESCE(r.data->>'state','1')='1' AND p.quantity>0
+           AND (r.data->>'quantity')::bigint>=p.quantity))
+        AND NOT EXISTS(SELECT 1 FROM assistance_cases a WHERE a.proposal_id=p.proposal_id OR
+          (a.request_id=p.request_id AND a.resource_id=p.resource_id AND
+            (a.state IN(1,2) OR (a.request_event_id=p.request_event_id AND a.resource_event_id=p.resource_event_id))))
+      ORDER BY p.created_at_ms,p.proposal_id LIMIT 20`,[this.now()]);
+    let progressed=false;
+    for(const row of rows) {
+      try { if(await this.reviewWithPolicy(row.proposal_id,true,"ai:auto",true))progressed=true; }
+      catch(error) { if(!(error instanceof AssistanceConflict))throw error; }
+    }
+    return progressed && rows.length===20;
+  }
+  private async reviewWithPolicy(proposalId:string,approve:boolean,operator:string,automatic:boolean) {
     return this.database.transaction(async c=> {
-      await lock(c); await reconcileAssistance(c,this.signer,this.now());
+      await lock(c);
+      if(automatic && (await c.query("SELECT manual_review FROM coordination_settings WHERE id=1")).rows[0].manual_review)return null;
+      await reconcileAssistance(c,this.signer,this.now());
       const existing=(await c.query("SELECT * FROM assistance_cases WHERE proposal_id=$1",[proposalId])).rows[0];
       if(existing) return {proposal_id:proposalId,state:existing.state};
       const p=(await c.query(`SELECT p.*,s.sender_node_id,s.description,s.coarse_area,s.state AS sos_state,
@@ -117,6 +163,9 @@ export class AssistanceService {
         LEFT JOIN LATERAL (SELECT * FROM resource_events WHERE entity_id=p.resource_id ORDER BY created_at_ms DESC,event_id DESC LIMIT 1) r ON TRUE
         WHERE proposal_id=$1`,[proposalId])).rows[0];
       if(!p) throw new AssistanceConflict("PROPOSAL_NOT_FOUND");
+      if(automatic && (await c.query(`SELECT 1 FROM assistance_cases WHERE request_id=$1 AND resource_id=$2
+        AND (state IN(1,2) OR (request_event_id=$3 AND resource_event_id=$4)) LIMIT 1`,
+        [p.request_id,p.resource_id,p.request_event_id,p.resource_event_id])).rows.length)return null;
       const data=p.resource_data;
       const deadline=Math.min(number(p.sos_expiry),number(p.resource_expiry),number(data?.available_until_ms??p.resource_expiry),this.now()+3600000);
       if(approve && (p.sos_state!==1 || p.sos_event!==p.request_event_id || p.latest_event!==p.resource_event_id || deadline<=this.now() ||
@@ -137,7 +186,7 @@ export class AssistanceService {
         VALUES($1,$2,$3,$4,$5,$6,$7,$8,1,$9,$10,$11,$12,$13::jsonb,$14,$15) RETURNING *`,
         [proposalId,p.request_id,p.resource_id,p.owner_node_id,p.sender_node_id,payload.resource_kind,p.resource_event_id,p.request_event_id,
           approve?1:3,p.quantity,payload.unit,payload.deadline_ms,JSON.stringify(persisted),operator,this.now()])).rows[0];
-      if(approve) await emit(c,this.signer,row,this.now(),"Operator approved; waiting for owner");
+      if(approve) await emit(c,this.signer,row,this.now(),automatic ? "AI invitation sent automatically; waiting for owner" : "Operator approved; waiting for owner");
       return {proposal_id:proposalId,state:row.state};
     });
   }

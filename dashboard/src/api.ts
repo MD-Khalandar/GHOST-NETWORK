@@ -36,8 +36,8 @@ export class ApiError extends Error {
 export async function get<T>(path: string, signal: AbortSignal): Promise<T> {
   return request<T>(path, signal);
 }
-export async function post<T>(path: string, csrfToken: string, signal: AbortSignal): Promise<T> {
-  return request<T>(path, signal, "POST", csrfToken);
+export async function post<T>(path: string, csrfToken: string, signal: AbortSignal, body?: object): Promise<T> {
+  return request<T>(path, signal, "POST", csrfToken, body);
 }
 export async function login(username: string, password: string, signal: AbortSignal): Promise<Session> {
   return request<Session>("auth/login", signal, "POST", undefined, { username, password });

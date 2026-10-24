@@ -2,8 +2,9 @@
 
 Goal: ask for help during outages. A phone saves an SOS, nearby phones relay it,
 and an online gateway uploads it. The server matches requests with helpers/supplies;
-a web operator approves proposals, resource owners accept/decline, and signed
+eligible AI proposals automatically invite owners, who accept/decline, and signed
 responses return through the mesh. Without internet, cloud coordination waits.
+Operators can switch the shared server to manual approval from AI suggestions.
 
 Stack: one Kotlin/Compose app with Room/Nearby, one Fastify server with
 PostgreSQL with OpenAI or Gemini, and a React/Vite dashboard. API and worker share one service.
@@ -122,6 +123,15 @@ server. Both providers share validation and queues. A persistent shared budget
 defaults to 120 provider calls per UTC hour, configurable on the server; exhausted
 work stays queued for the next hour and the dashboard shows the pause. This limits
 calls, not currency spend. Live provider testing remains.
+
+AI suggestions defaults to automatic invitations. An operator-only **Require
+operator approval** toggle stores the server-wide mode in PostgreSQL across restarts.
+Eligible pending/new proposals use the same transactional freshness/availability
+checks as manual approval; stale/unknown-stock proposals cannot block the queue.
+Existing arrangements and previously reviewed source pairs prevent repeat invitations.
+Manual mode fences in-flight AI results before invitation creation. Existing
+invitations/commitments continue. Owners must still accept before allocation; no
+additional model call is used to approve a proposal.
 
 Assistance now supports operator approval/rejection, signed invitations, owner
 accept/decline/cancel decisions and server-confirmed commitments. Gateways download

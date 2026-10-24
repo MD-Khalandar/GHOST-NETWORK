@@ -14,18 +14,18 @@ export class CoordinatorWorker {
   readonly store: CoordinatorStore;
   private readonly coordinator: CloudCoordinator;
   constructor(private readonly database: Database, readonly model: ProposalModel, private readonly now = Date.now,
-    private readonly maxCallsPerHour = 120) {
+    private readonly maxCallsPerHour = 120,private readonly autoReview?:()=>Promise<boolean>) {
     this.store = new CoordinatorStore(database);
     this.coordinator = new CloudCoordinator(this.store, model, now, maxCallsPerHour);
   }
   start() {
     this.stopped = false;
-    if (!this.model.available) return;
+    if (!this.model.available && !this.autoReview) return;
     this.timer = setInterval(() => this.wake(), 15000);
     this.timer.unref(); this.wake();
   }
   wake() {
-    if (this.stopped || !this.model.available) return;
+    if (this.stopped || !this.model.available && !this.autoReview) return;
     if (this.active) { this.wakeAgain = true; return; }
     this.active = this.tick().catch(() => { /* Durable jobs retry after storage recovers. No record/provider errors in logs. */ })
       .finally(() => {
@@ -66,6 +66,8 @@ export class CoordinatorWorker {
       WHERE coordinator_jobs.input_hash IS DISTINCT FROM EXCLUDED.input_hash`, [this.now()]);
   }
   private async tick() {
+    if(await this.autoReview?.())this.wakeAgain=true;
+    if(!this.model.available)return;
     await this.discover();
     for (let index = 0; index < 5 && !this.stopped; index++) {
       const token = randomUUID();
@@ -93,6 +95,7 @@ export class CoordinatorWorker {
       heartbeat.unref();
       try {
         const result = await this.coordinator.run(job.request_id, token);
+        if(await this.autoReview?.())this.wakeAgain=true;
         if (result.code === "MODEL_BUDGET_EXHAUSTED") {
           // A budget pause is not a failed delivery or an exhausted retry. Keep
           // the job durable until the next hourly window.

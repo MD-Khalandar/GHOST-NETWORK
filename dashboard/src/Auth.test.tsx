@@ -29,6 +29,7 @@ test("dashboard requests use cookies, CSRF for mutations and server-side logout 
     assert.deepEqual(await get("auth/session", signal), session); // Reload restores the server cookie, without a token argument.
     await post("dashboard/proposals/id/approve", session.csrf_token, signal);
     await logout(session.csrf_token, signal);
+    await post("dashboard/coordination-settings",session.csrf_token,signal,{manual_review:true});
     assert.ok(calls.every(call => call.options.credentials === "same-origin" && call.options.cache === "no-store"));
     assert.ok(calls.every(call => !new Headers(call.options.headers).has("Authorization")));
     assert.deepEqual(JSON.parse(calls[0].options.body as string), { username: "admin", password: "a password used only in this test" });
@@ -36,6 +37,8 @@ test("dashboard requests use cookies, CSRF for mutations and server-side logout 
     assert.equal(new Headers(calls[2].options.headers).get("X-CSRF-Token"), session.csrf_token);
     assert.equal(calls[3].options.method, "POST");
     assert.equal(new Headers(calls[3].options.headers).get("X-CSRF-Token"), session.csrf_token);
+    assert.deepEqual(JSON.parse(calls[4].options.body as string),{manual_review:true});
+    assert.equal(new Headers(calls[4].options.headers).get("Content-Type"),"application/json");
     globalThis.fetch = async () => Response.json({ code: "INVALID_CREDENTIALS" }, { status: 401 });
     await assert.rejects(login("admin", "wrong", signal), error => error instanceof ApiError && /Username or password/.test(error.message));
   } finally { globalThis.fetch = saved; }

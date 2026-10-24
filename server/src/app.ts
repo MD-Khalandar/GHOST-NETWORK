@@ -57,7 +57,8 @@ export function buildApp(security: AppSecurity = {}): FastifyInstance {
   }
   const authorized = new WeakMap<object, Principal>();
   const coordinator = security.database ? new CoordinatorWorker(security.database,
-    security.proposalModel ?? new OpenAIProposalModel(), security.now, security.aiMaxCallsPerHour) : undefined;
+    security.proposalModel ?? new OpenAIProposalModel(), security.now, security.aiMaxCallsPerHour,
+    assistance ? ()=>assistance.autoReview() : undefined) : undefined;
   if (security.database) {
     const database = security.database;
     app.addHook("onReady", async () => { await initializeDatabase(database); await initializeEnrollment(database); await initializeUploadLimits(database); await initializeCoordinator(database); coordinator!.start(); });
@@ -67,9 +68,10 @@ export function buildApp(security: AppSecurity = {}): FastifyInstance {
   const principals = security.principals ?? [];
   const routes: Array<{ method: "GET" | "POST"; url: string; roles: Role[] }> = [
     { method: "GET", url: "/v1/auth/session", roles: ["gateway", "viewer", "operator"] },
-    ...["/v1/dashboard/sos", "/v1/dashboard/sos/:requestId", "/v1/dashboard/helpers", "/v1/dashboard/offers", "/v1/dashboard/runs", "/v1/dashboard/proposals", "/v1/dashboard/assistance"]
+    ...["/v1/dashboard/sos", "/v1/dashboard/sos/:requestId", "/v1/dashboard/helpers", "/v1/dashboard/offers", "/v1/dashboard/runs", "/v1/dashboard/proposals", "/v1/dashboard/assistance", "/v1/dashboard/coordination-settings"]
       .map(url => ({ method: "GET" as const, url, roles: ["viewer", "operator"] as Role[] })),
     { method: "POST", url: "/v1/dashboard/sos/:requestId/coordinate", roles: ["operator"] },
+    { method: "POST", url: "/v1/dashboard/coordination-settings", roles: ["operator"] },
     ...["approve", "reject"].map(action => ({ method: "POST" as const, url: `/v1/dashboard/proposals/:proposalId/${action}`, roles: ["operator"] as Role[] })),
     { method: "POST", url: "/v1/sync/upload", roles: ["gateway"] },
     { method: "GET", url: "/v1/sync/download", roles: ["gateway"] },
@@ -99,6 +101,18 @@ export function buildApp(security: AppSecurity = {}): FastifyInstance {
       if (!route.roles.includes(principal.role)) return reply.code(403).send({ code: "FORBIDDEN", message: "Role is not authorized", retryable: false });
       authorized.set(request, principal);
     }, handler: async (request, reply) => {
+      if(route.url==="/v1/dashboard/coordination-settings") {
+        const body=request.body as {manual_review?:unknown}|undefined;
+        if(Object.keys(request.query as object).length || (route.method==="POST" &&
+          (!body || Object.keys(body).length!==1 || typeof body.manual_review!=="boolean")))
+          return reply.code(400).send({code:"INVALID_REQUEST",retryable:false});
+        if(!assistance)return reply.code(503).send({code:"STORAGE_UNAVAILABLE",retryable:true});
+        try {
+          if(route.method==="GET")return await assistance.reviewMode();
+          const settings=await assistance.setReviewMode(body!.manual_review as boolean,authorized.get(request)!.id);
+          coordinator?.wake();return settings;
+        } catch { return reply.code(503).send({code:"STORAGE_UNAVAILABLE",retryable:true}); }
+      }
       if (route.url === "/v1/dashboard/assistance") {
         if (Object.keys(request.query as object).length) return reply.code(400).send({code:"INVALID_QUERY",retryable:false});
         if (!assistance) return reply.code(503).send({code:"STORAGE_UNAVAILABLE",retryable:true});

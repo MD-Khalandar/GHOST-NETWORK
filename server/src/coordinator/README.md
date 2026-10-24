@@ -47,8 +47,16 @@ no model suggestions and saved suggestions. Queue totals and retry times are exp
 Polling refreshes the selected page. **Find help with AI** on an SOS requests an operator-only
 rerun. Viewers can read; gateways cannot access coordination routes.
 
-Operators approve/reject proposals in the review desk. Approval sends an invitation;
-the signed owner decision is validated before an atomic reservation. Durable signed
+Eligible proposals automatically send invitations after source/availability checks.
+Operators can enable **Require operator approval** in the review desk for manual
+approval/rejection. The shared mode persists in PostgreSQL, is checked inside each
+invitation transaction and applies to pending/new proposals. Background scans recover
+pending invitations after restarts without needing a configured model. Unknown stock,
+stale sources and existing arrangements are skipped before limiting each batch;
+reviewed source pairs cannot automatically invite again. Switching modes preserves
+existing invitations and commitments. Approval sends an invitation without an
+additional provider call. The signed owner decision is validated before an atomic
+reservation. Durable signed
 status messages reach owner/requester through gateways and supporting mesh phones.
 The server rechecks open SOS, current resources, remaining stock and deadlines under
 one transaction lock shared with source uploads. Requests can share remaining supply;

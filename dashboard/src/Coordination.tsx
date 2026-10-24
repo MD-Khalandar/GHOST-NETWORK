@@ -16,26 +16,27 @@ interface AiStatus { configured: boolean; model: string | null; queued_total: nu
   queued: { request_id: string; attempts: number; next_attempt_at_ms: number }[]; runs: AiRun[];
   budget?: { used: number; limit: number; resets_at_ms: number } }
 interface ProposalPage { items: AiProposal[]; next_before: string | null; evaluated_at_ms: number }
+export interface ReviewMode { manual_review:boolean; updated_at_ms:number }
 const errors: Record<string, string> = {
   MODEL_UNAVAILABLE: "AI is not configured", MODEL_ERROR: "Model request failed", INVALID_MODEL_OUTPUT: "Model suggestion rejected",
   REQUEST_UNAVAILABLE: "Request closed, expired or unavailable", STALE_SOURCE: "Availability changed during the run", STORAGE_UNAVAILABLE: "Storage interrupted",
   MODEL_BUDGET_EXHAUSTED: "AI call budget reached; request remains queued",
 };
 
-export function runLabel(run: AiRun): string {
+export function runLabel(run: AiRun, manualReview=true): string {
   if (run.status === "running") return "Checking availability…";
   if (run.status !== "completed") return errors[run.error_code ?? ""] ?? "Check failed";
   if (run.candidate_count === 0) return "No eligible helpers or supplies";
   if (run.proposal_count === 0) return "No suitable matches suggested";
-  return run.proposal_count == null ? "Check completed" : `${run.proposal_count} ${run.proposal_count === 1 ? "suggestion" : "suggestions"} for review`;
+  return run.proposal_count == null ? "Check completed" : `${run.proposal_count} ${run.proposal_count === 1 ? "suggestion" : "suggestions"} ${manualReview ? "for review" : "generated"}`;
 }
 
-export function ProposalCard({ proposal, now = Date.now(), operator=false, busy=false, onReview }: { proposal: AiProposal; now?: number; operator?:boolean; busy?:boolean; onReview?:(id:string,approve:boolean)=>void }) {
+export function ProposalCard({ proposal, now = Date.now(), operator=false, busy=false, onReview,manualReview=true }: { proposal: AiProposal; now?: number; operator?:boolean; busy?:boolean; manualReview?:boolean; onReview?:(id:string,approve:boolean)=>void }) {
   const current = proposal.freshness === "current" && (proposal.request_expires_at_ms === undefined || proposal.request_expires_at_ms > now) &&
     (proposal.resource_expires_at_ms == null || proposal.resource_expires_at_ms > now);
   return <article className="resource-card">
     <span className={`badge ${current ? "received" : "expired"}`}>
-      {current ? "Suggestion · pending human review" : "Outdated · check the SOS before rerunning"}</span>
+      {current ? manualReview ? "Suggestion · pending human review" : "Suggestion · automatic checks pending" : "Outdated · check the SOS before rerunning"}</span>
     <h2>{proposal.resource_kind === "helper" ? proposal.resource_label || "Helper" : supplyNames[proposal.resource_type ?? 0]}</h2>
     <p className="report-message">{proposal.request_description}</p>
     <p className="report-message">{proposal.explanation}</p>
@@ -48,10 +49,10 @@ export function ProposalCard({ proposal, now = Date.now(), operator=false, busy=
       <div><dt>SOS</dt><dd className="identifier">{proposal.request_id}</dd></div>
       <div><dt>Resource</dt><dd className="identifier">{proposal.resource_id}</dd></div>
     </dl>
-    <p className="subtle">Nothing is reserved or sent to a phone. Operator approval sends an invitation; stock is committed only after owner acceptance and a server check.</p>
+    <p className="subtle">{manualReview ? "Operator approval sends an invitation." : "Eligible suggestions send invitations automatically; existing arrangements, unknown stock or changed availability can prevent a new invitation."} Stock is committed only after owner acceptance and a server check.</p>
     {operator && onReview && <div className="inbox-toolbar">
-      <button className="primary-button" disabled={busy || !current || proposal.resource_kind==="offer" && proposal.quantity===null}
-        onClick={()=>onReview(proposal.proposal_id,true)}>Approve invitation</button>
+      {manualReview && <button className="primary-button" disabled={busy || !current || proposal.resource_kind==="offer" && proposal.quantity===null}
+        onClick={()=>onReview(proposal.proposal_id,true)}>Approve invitation</button>}
       <button className="secondary-button" disabled={busy} onClick={()=>onReview(proposal.proposal_id,false)}>Reject suggestion</button>
       {proposal.resource_kind==="offer" && proposal.quantity===null && <p>Owner must publish a known quantity before approval.</p>}
     </div>}
@@ -88,6 +89,8 @@ export function FindHelp({ requestId, csrfToken, operator, onAccessLost }: {
 }
 
 export default function Coordination({ csrfToken, onAccessLost, operator=false }: { csrfToken: string; onAccessLost: (message: string) => void; operator?:boolean }) {
+  const [mode,setMode]=useState<ReviewMode|null>(null);
+  const [changingMode,setChangingMode]=useState(false);
   const [status, setStatus] = useState<AiStatus | null>(null);
   const [cases,setCases]=useState<{proposal_id:string;request_id:string;resource_id:string;state:number;quantity:number|null;unit:string;deadline_ms:number}[]>([]);
   const [reviewing,setReviewing]=useState(false);
@@ -105,10 +108,10 @@ export default function Coordination({ csrfToken, onAccessLost, operator=false }
     if (pending.current) return false;
     const controller = new AbortController(); pending.current = controller; setBusy(true);
     try {
-      const [state, proposals, assistance] = await Promise.all([get<AiStatus>("dashboard/runs", controller.signal),
-        get<ProposalPage>(`dashboard/proposals?limit=30${before ? `&before=${encodeURIComponent(before)}` : ""}${requestId ? `&request_id=${encodeURIComponent(requestId)}` : ""}`, controller.signal),get<{items:typeof cases}>("dashboard/assistance",controller.signal)]);
+      const [state, proposals, assistance,settings] = await Promise.all([get<AiStatus>("dashboard/runs", controller.signal),
+        get<ProposalPage>(`dashboard/proposals?limit=30${before ? `&before=${encodeURIComponent(before)}` : ""}${requestId ? `&request_id=${encodeURIComponent(requestId)}` : ""}`, controller.signal),get<{items:typeof cases}>("dashboard/assistance",controller.signal),get<ReviewMode>("dashboard/coordination-settings",controller.signal)]);
       if (pending.current !== controller) return false;
-      setCases(assistance.items);setStatus(state); setItems(proposals.items); setError(null);
+      setMode(settings);setCases(assistance.items);setStatus(state); setItems(proposals.items); setError(null);
       setNextBefore(proposals.next_before); setCheckedAt(proposals.evaluated_at_ms);
       selection.current = { before, requestId };
       return true;
@@ -119,6 +122,18 @@ export default function Coordination({ csrfToken, onAccessLost, operator=false }
       else setError(text);
       return false;
     } finally { if (pending.current === controller) { pending.current = null; setBusy(false); } }
+  }
+  async function changeMode(manual:boolean) {
+    if(pending.current || !operator)return;
+    const controller=new AbortController();pending.current=controller;setBusy(true);setChangingMode(true);
+    try {
+      const settings=await post<ReviewMode>("dashboard/coordination-settings",csrfToken,controller.signal,{manual_review:manual});
+      if(pending.current===controller){setMode(settings);setError(null);}
+    }catch(failure){
+      if(pending.current!==controller)return;
+      if(failure instanceof ApiError && [401,403].includes(failure.status))accessLost.current(failure.message);
+      else setError(failure instanceof ApiError?failure.message:"Could not change review mode. Refresh and retry.");
+    }finally{if(pending.current===controller){pending.current=null;setBusy(false);setChangingMode(false);}}
   }
   async function review(id:string,approve:boolean) {
     if(reviewing)return;
@@ -136,7 +151,8 @@ export default function Coordination({ csrfToken, onAccessLost, operator=false }
   return <section aria-label="AI coordination" aria-busy={busy}>
     <div className="inbox-toolbar"><strong>{status ? status.configured ? "Cloud AI configured" : "Cloud AI not configured" : "Loading AI status…"}</strong>
       <button className="secondary-button" disabled={busy} onClick={() => void load()}>Refresh AI status</button></div>
-    <p className="subtle">This page refreshes every five seconds. Suggestions require human review; stock is shared across requests and is not reserved. Approved invitations and owner decisions appear below; confirmation means a commitment, not delivered assistance.</p>
+    {mode && <ReviewModeControl mode={mode} operator={operator} busy={busy || reviewing} changing={changingMode} onChange={manual=>void changeMode(manual)}/>}
+    <p className="subtle">This page refreshes every five seconds. Owners must accept invitations before stock is reserved. Invitations and owner decisions appear below; a commitment does not confirm delivered assistance.</p>
     <form className="inbox-toolbar ai-filter" onSubmit={event => { event.preventDefault(); void load(null, filter.trim()).then(ok => { if (ok) setPrevious([]); }); }}>
       <label htmlFor="ai-request-filter">Filter by SOS ID</label>
       <input id="ai-request-filter" value={filter} onChange={event => setFilter(event.target.value.trim())} placeholder="All requests"
@@ -152,7 +168,7 @@ export default function Coordination({ csrfToken, onAccessLost, operator=false }
       AI checks are paused until {time(status.budget.resets_at_ms)}. Requests remain queued; uploads and nearby relay continue.
     </p>}
     {error && <p className="error error-banner" role="alert">{error} Previously loaded results may be outdated.</p>}
-    <div className="resource-grid">{items.map(item => <ProposalCard key={item.proposal_id} proposal={item} operator={operator} busy={reviewing} onReview={(id,approve)=>void review(id,approve)}/>)}</div>
+    <div className="resource-grid">{items.map(item => <ProposalCard key={item.proposal_id} proposal={item} operator={operator} busy={reviewing || busy} manualReview={mode?.manual_review!==false} onReview={(id,approve)=>void review(id,approve)}/>)}</div>
     <nav className="inbox-toolbar ai-pages" aria-label="Suggestion pages">
       {previous.length > 0 && <>
         <button className="secondary-button" disabled={busy} onClick={() => { void load(null).then(ok => { if (ok) setPrevious([]); }); }}>Newest suggestions</button>
@@ -175,8 +191,21 @@ export default function Coordination({ csrfToken, onAccessLost, operator=false }
         SOS {job.request_id.slice(0, 8)} · {job.attempts} failed {job.attempts === 1 ? "attempt" : "attempts"} · next retry {time(job.next_attempt_at_ms)}
       </p>)}
       {status.runs.map(run => <div className="run-row" key={run.run_id}>
-        <span className="identifier">{run.request_id.slice(0, 8)}</span><strong>{runLabel(run)}</strong><span>{time(run.created_at_ms)}</span>
+        <span className="identifier">{run.request_id.slice(0, 8)}</span><strong>{runLabel(run,mode?.manual_review!==false)}</strong><span>{time(run.created_at_ms)}</span>
       </div>)}
     </div>}
   </section>;
+}
+
+export function ReviewModeControl({mode,operator,busy,changing=false,onChange}: {
+  mode:ReviewMode;operator:boolean;busy:boolean;changing?:boolean;onChange:(manual:boolean)=>void;
+}) {
+  return <div className="help-note" aria-busy={changing}>
+    <strong>{mode.manual_review?"Manual review":"Automatic invitations"}</strong>
+    {operator && <label className="review-mode-toggle"><input type="checkbox" role="switch" checked={mode.manual_review}
+      disabled={busy} onChange={event=>onChange(event.target.checked)}/>Require operator approval</label>}
+    <p>{mode.manual_review?"New invitations wait for operator approval.":"Eligible AI suggestions send invitations automatically. Helpers still choose whether to accept."}</p>
+    {operator && <p className="subtle">Applies to the whole server and survives restarts. Turning manual review off processes eligible pending suggestions too. Existing invitations and commitments continue.</p>}
+    {changing && <p role="status">Saving review mode...</p>}
+  </div>;
 }

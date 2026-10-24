@@ -1,7 +1,20 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import { FindHelp, ProposalCard, runLabel, type AiProposal } from "./Coordination";
+import { FindHelp, ProposalCard, ReviewModeControl, runLabel, type AiProposal } from "./Coordination";
+
+test("operators can select persisted manual review; automatic invitations never imply helper acceptance",()=>{
+  const automatic=renderToStaticMarkup(<ReviewModeControl mode={{manual_review:false,updated_at_ms:0}} operator busy={false} onChange={()=>{}}/>);
+  assert.match(automatic,/Automatic invitations/);assert.match(automatic,/role="switch"/);
+  assert.doesNotMatch(automatic,/checked=""/);assert.match(automatic,/Helpers still choose/);
+  const manual=renderToStaticMarkup(<ReviewModeControl mode={{manual_review:true,updated_at_ms:1}} operator busy changing onChange={()=>{}}/>);
+  assert.match(manual,/checked=""/);assert.match(manual,/disabled/);assert.match(manual,/Saving review mode/);
+  const viewer=renderToStaticMarkup(<ReviewModeControl mode={{manual_review:false,updated_at_ms:0}} operator={false} busy={false} onChange={()=>{}}/>);
+  assert.doesNotMatch(viewer,/role="switch"/);assert.match(viewer,/Automatic invitations/);
+  const p:AiProposal={proposal_id:"p",request_id:"r",request_description:"Need water",resource_kind:"offer",resource_id:"o",resource_label:null,resource_type:1,unit:"litres",coarse_area:null,quantity:7,explanation:"Possible water",freshness:"current",created_at_ms:1};
+  const card=renderToStaticMarkup(<ProposalCard proposal={p} operator manualReview={false} onReview={()=>{}}/>);
+  assert.doesNotMatch(card,/pending human review|Approve invitation/);assert.match(card,/automatic checks pending/);assert.match(card,/Reject suggestion/);
+});
 
 test("AI suggestions escape model text, show stale status and give run controls only to operators", () => {
   const proposal: AiProposal = { proposal_id: "proposal", request_id: "request", request_description: "<script>SOS</script>",
@@ -9,7 +22,7 @@ test("AI suggestions escape model text, show stale status and give run controls 
     quantity: 2, explanation: "<img src=x onerror=alert(1)>", freshness: "stale", created_at_ms: 1 };
   const html = renderToStaticMarkup(<ProposalCard proposal={proposal}/>);
   assert.match(html, /Outdated/); assert.match(html, /2 litres/); assert.doesNotMatch(html, /<script>|<img /);
-  assert.match(html, /Nothing is reserved/);
+  assert.match(html, /Stock is committed only after owner acceptance/);
   assert.doesNotMatch(renderToStaticMarkup(<FindHelp requestId="request" csrfToken="fixture" operator={false} onAccessLost={() => {}}/>), /<button/);
   assert.match(renderToStaticMarkup(<FindHelp requestId="request" csrfToken="fixture" operator onAccessLost={() => {}}/>), /Find help with AI/);
 });

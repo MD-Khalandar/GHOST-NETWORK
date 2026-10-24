@@ -238,8 +238,12 @@ Operators can use **Find help with AI** on an SOS to request another run. Withou
 the dashboard reports AI unavailable and the existing SOS/relay flow still works.
 
 Only currently available helpers/supplies are candidates. Signed supply edits and
-withdrawals invalidate older proposals. Operators can **Approve invitation** or
-**Reject suggestion**. Approval sends a signed invitation; it does not reserve stock.
+withdrawals invalidate older proposals. Eligible suggestions send signed invitations
+automatically by default. Under **AI suggestions**, operators can turn on **Require
+operator approval** to use manual **Approve invitation** / **Reject suggestion**.
+The mode applies to the whole server and survives redeploys. Turning manual review
+off processes eligible pending suggestions too. Existing arrangements continue;
+changing mode does not undo invitations or commitments. Invitations do not reserve stock.
 A known supply quantity is required before approval (edit and republish unknown stock).
 
 Owners receive invitations under **Offer help** and can **Accept request** or

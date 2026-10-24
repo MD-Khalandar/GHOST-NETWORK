@@ -181,6 +181,19 @@ States: 1 invited, 2 committed, 3 declined/rejected, 4 cancelled, 5 expired,
 A commitment does not prove physical delivery. State 7 records a requester's report,
 not independent verification; it completes only this arrangement and leaves the SOS open.
 
+Invitations are automatic by default. `GET /v1/dashboard/coordination-settings`
+returns `{manual_review, updated_at_ms}` to viewers/operators. Operator-only `POST`
+to the same route accepts only `{manual_review: true|false}`; browser mutations also
+require CSRF protection. The shared mode persists in PostgreSQL and is checked under
+the invitation transaction lock, including when an AI call finishes after a toggle.
+Switching to automatic processes eligible pending suggestions; startup/periodic
+scans recover missed work even when the model is unavailable. No provider call is
+needed for approval. Existing manual review endpoints remain usable.
+Source/availability checks precede invitations; unknown stock waits for a known
+publication and a fresh suggestion. Existing arrangements and previously reviewed
+source pairs are not automatically invited again. Helper acceptance and atomic
+reservations are still required. Existing invitations survive mode changes.
+
 Gateway-only `GET /v1/sync/download?cursor=0&limit=30` returns signed coordination
 packets and `next_cursor`; limit is 1?50. These are public-consented relay messages
 with destination IDs, not encrypted private messages. A phone verifies and stores
