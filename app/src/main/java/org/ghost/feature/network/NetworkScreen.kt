@@ -49,8 +49,8 @@ fun NetworkScreen(state: FoundationState, onRetry: () -> Unit, modifier: Modifie
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp),
                         verticalAlignment = Alignment.CenterVertically) {
                         Text(local.meshStatus(), Modifier.weight(1f), style = androidx.compose.material3.MaterialTheme.typography.bodySmall)
-                        Button(onClick = { if (local.network.active || local.network.starting) actions?.stopNearby?.invoke() else actions?.startNearby?.invoke() }, enabled = actions != null,
-                            modifier = Modifier.heightIn(min = 48.dp)) { Text(if (local.network.active || local.network.starting) "Disconnect from GHOST" else "Connect to GHOST") }
+                        Button(onClick = { if (local.network.active || local.network.starting || local.gateway.active) actions?.stopNearby?.invoke() else actions?.startNearby?.invoke() }, enabled = actions != null,
+                            modifier = Modifier.heightIn(min = 48.dp)) { Text(if (local.network.active || local.network.starting || local.gateway.active) "Disconnect from GHOST" else "Connect to GHOST") }
                     }
                 }
                 item("mesh-graph") {
@@ -69,10 +69,7 @@ fun NetworkScreen(state: FoundationState, onRetry: () -> Unit, modifier: Modifie
                 item("retry") { TextButton(onClick = { actions?.retrySends?.invoke() }, enabled = actions != null, modifier = Modifier.heightIn(min = 48.dp)) { Text("Try sending again") } }
                 item("sharing") {
                     InfoCard("Online sharing", local.gateway.message.userMessage()) {
-                        Text("Only reports with online sharing allowed are uploaded. Server receipts can travel back through nearby phones. Saving a request or offer does not mean help is arranged.")
-                        TextButton({ setup = true }, enabled = actions?.saveGateway != null, modifier = Modifier.heightIn(min = 48.dp)) {
-                            Text(if (local.gateway.configured) "Edit gateway setup" else "Configure gateway")
-                        }
+                        Text("GHOST connects to the server automatically over cellular or Wi-Fi. Local LAN servers use Wi-Fi. Only requests and offers whose owners allowed online sharing are saved online. Help is confirmed separately.")
                     }
                 }
                 item("technical-toggle") {
@@ -82,6 +79,16 @@ fun NetworkScreen(state: FoundationState, onRetry: () -> Unit, modifier: Modifie
                         }) { Text(if (showTechnicalDetails) "Hide technical details" else "Technical details") }
                 }
                 if (showTechnicalDetails) {
+                    item("server-settings") {
+                        InfoCard("Server connection", local.gateway.serverUrl.ifBlank { "No server address in this app build." }) {
+                            Text(if (local.gateway.automatic) "This app manages its own upload-only device credentials."
+                                else "This build can use manual gateway settings for compatibility.")
+                            if (!local.gateway.automatic) TextButton({ setup = true }, enabled = actions?.saveGateway != null,
+                                modifier = Modifier.heightIn(min = 48.dp)) {
+                                Text(if (local.gateway.configured) "Edit gateway setup" else "Configure gateway")
+                            }
+                        }
+                    }
                     item("identity") {
                         InfoCard("Device signing identity", when (trust.identity) {
                             IdentityStatus.CHECKING -> "Checking this phone's signing key."

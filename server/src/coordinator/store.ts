@@ -45,6 +45,9 @@ export async function initializeCoordinator(database: Database): Promise<void> {
       SELECT DISTINCT ON (entity_id) * FROM resource_events WHERE kind IN (3,5,6)
       ORDER BY entity_id, created_at_ms DESC, event_id DESC`);
     await connection.query("CREATE INDEX IF NOT EXISTS coordinator_effective_resource ON resource_events(entity_id, created_at_ms DESC, event_id DESC)");
+    await connection.query(`CREATE TABLE IF NOT EXISTS coordinator_model_budget (
+      window_start_ms BIGINT PRIMARY KEY, calls INTEGER NOT NULL CHECK (calls > 0)
+    )`);
   });
 }
 
@@ -118,6 +121,20 @@ const projection = (row: Record<string, any>): ReviewProposal => ({
 
 export class CoordinatorStore {
   constructor(private readonly database: Database) {}
+
+  async reserveModelCall(now: number, limit: number): Promise<boolean> {
+    const window = Math.floor(now / 3600000) * 3600000;
+    const result = await this.database.query(`INSERT INTO coordinator_model_budget(window_start_ms, calls) VALUES ($1,1)
+      ON CONFLICT (window_start_ms) DO UPDATE SET calls = coordinator_model_budget.calls + 1
+      WHERE coordinator_model_budget.calls < $2 RETURNING calls`, [window, limit]);
+    return result.rows.length === 1;
+  }
+
+  async modelBudget(now: number, limit: number) {
+    const window = Math.floor(now / 3600000) * 3600000;
+    const { rows } = await this.database.query("SELECT calls FROM coordinator_model_budget WHERE window_start_ms = $1", [window]);
+    return { used: Number(rows[0]?.calls ?? 0), limit, resets_at_ms: window + 3600000 };
+  }
 
   async start(requestId: string, model: string | null, now: number): Promise<string> {
     const id = randomUUID();

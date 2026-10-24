@@ -23,6 +23,8 @@ data class LocalUiState(
 )
 
 fun LocalUiState.meshStatus(): String = when {
+    gateway.online -> "Connected to GHOST — online"
+    gateway.active && gateway.automatic && peerIdentities.isNotEmpty() -> "Connected nearby — waiting for the server"
     network.starting -> "Connecting to GHOST…"
     !network.active -> "Not connected to GHOST"
     peerIdentities.isEmpty() -> "Looking for nearby phones…"

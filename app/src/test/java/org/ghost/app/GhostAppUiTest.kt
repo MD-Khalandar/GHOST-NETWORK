@@ -297,6 +297,8 @@ class GhostAppUiTest {
         compose.onNodeWithText("Help status").assertDoesNotExist()
         compose.onNodeWithText("Assistance confirmed").assertDoesNotExist()
         compose.onNode(hasText("Connections") and hasClickAction()).performClick()
+        compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("Technical details"))
+        compose.onNodeWithText("Technical details").performClick()
         compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("Configure gateway"))
         compose.onNodeWithText("Configure gateway").assertIsDisplayed().assertIsEnabled().assertHasClickAction()
     }

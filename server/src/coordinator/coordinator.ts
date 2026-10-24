@@ -30,7 +30,9 @@ export function validateSuggestions(context: MatchContext, output: unknown): Mat
 /** One bounded, on-demand run. No approval, reservation, signing or outbound delivery capability. */
 export class CloudCoordinator {
   constructor(private readonly store: CoordinatorStore, private readonly model: ProposalModel,
-    private readonly now: () => number = Date.now) {}
+    private readonly now: () => number = Date.now, private readonly maxCallsPerHour = 120) {
+    if (!Number.isSafeInteger(maxCallsPerHour) || maxCallsPerHour < 1 || maxCallsPerHour > 1000000) throw new Error("Invalid AI call budget");
+  }
 
   async run(requestId: string, leaseOwner?: string): Promise<RunResult> {
     if (!UUID.test(requestId)) return { run_id: null, status: "error", code: "REQUEST_UNAVAILABLE", proposal_ids: [] };
@@ -42,6 +44,7 @@ export class CloudCoordinator {
       await this.store.recordCandidates(runId, context.resources.length);
       let suggestions: unknown = { matches: [] };
       if (context.resources.length) {
+        if (!await this.store.reserveModelCall(this.now(), this.maxCallsPerHour)) throw new CoordinatorFailure("MODEL_BUDGET_EXHAUSTED");
         try { suggestions = await this.model.suggest(context); }
         catch (error) {
           throw error instanceof CoordinatorFailure ? error : new CoordinatorFailure("MODEL_ERROR");

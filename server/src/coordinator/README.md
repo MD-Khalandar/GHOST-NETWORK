@@ -18,6 +18,12 @@ can delay recovery up to 90 seconds; its interrupted run is marked failed when
 the queued request resumes. Transient failures retry at most three times per input
 revision with backoff. Operators can retry from an SOS after a short cooldown.
 
+A database-backed budget caps actual provider calls across workers and restarts:
+`GHOST_AI_MAX_CALLS_PER_HOUR` defaults to 120 per UTC hour. Failed calls count;
+empty-resource runs do not. When exhausted, work stays queued for the next hour
+without consuming retries, and the review desk shows the pause. Uploads continue.
+This is a call cap, not a currency spending limit.
+
 Each run reads one SOS and at most 50 helpers plus 50 current offers, preferring
 the normalized reported area (case/whitespace ignored). Category-compatible types
 are filtered before the cap, and the requester's own resources are excluded.

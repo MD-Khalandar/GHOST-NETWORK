@@ -29,6 +29,22 @@ To load a local environment file after building, run from the repository root:
 node --env-file=server/.env server/dist/index.js
 ```
 
+Phone enrollment is automatic once a configured app joins GHOST over cellular or Wi-Fi.
+`POST /v1/gateway/challenge` accepts a P-256 public key and returns a server-signed,
+60-second challenge. `POST /v1/gateway/enroll` verifies the device's signature over
+the exact challenge bytes, consumes it once, and returns a server-signed 24-hour
+upload credential. No preissued token is required for ordinary phones. Pending
+challenges are bounded and reused until consumed or expired, so public-key requests
+cannot invalidate a pending handshake. Enrollment permits 600 requests per IP and
+2,000 globally per minute per server process; each phone normally uses two requests.
+These are traffic limits, not a phone-count limit. Database-backed device
+credentials store only token hashes. Expired sessions must enroll again; renewal
+replaces the previous session. A device row with `revoked = TRUE` blocks both its
+session and re-enrollment. Key possession does not establish a person's identity.
+These devices have gateway permissions only; dashboard/operator roles still require
+separate administrator-issued credentials. Existing static gateway tokens continue
+to work for compatibility. Use HTTPS outside debug LAN testing.
+
 `POST /v1/sync/upload` accepts a gateway bearer token and
 `{"idempotency_key":"unique-batch-id","packets":[...]}` (1–50 signed SOS_CREATE,
 HELPER_PROFILE_PUBLISH, OFFER_PUBLISH, OFFER_UPDATE or terminal SOS_UPDATE packets). Both public sharing
@@ -50,6 +66,16 @@ Repeating the same key and ordered signed content returns the same response;
 changing content with that key returns 409. Idempotency keys are scoped to the
 gateway principal and retained for seven days. Re-uploading under a new key still
 deduplicates by packet/event/request IDs and reuses the original acknowledgement.
+
+Uploads have separate database-backed, packet-weighted minute budgets: 600 per
+device/principal, 6,000 per source IP and 12,000 globally. Credential renewal and
+server restarts do not reset the current window. Attempts, including retries and
+invalid packets, count before signature validation. A throttle returns retryable
+429 `UPLOAD_BUSY` with `Retry-After`, without storing a partial batch; phones retain
+their queue. Set `GHOST_UPLOAD_PACKETS_PER_DEVICE_MINUTE`,
+`GHOST_UPLOAD_PACKETS_PER_IP_MINUTE` and `GHOST_UPLOAD_PACKETS_GLOBAL_MINUTE` to tune
+these defaults. Behind a reverse proxy, the source IP is the immediate peer unless
+trusted proxy handling is configured; do not trust arbitrary forwarded headers.
 
 Server build and tests use the commands above. Storage tests use embedded
 PostgreSQL (PGlite), including a file-backed restart; an external PostgreSQL
@@ -100,11 +126,18 @@ new availability. Calls are serialized, provider calls time out after 30 seconds
 and transient failures retry up to three times per input revision. Restart resumes
 queued work after any previous lease expires (up to 90 seconds).
 
+`GHOST_AI_MAX_CALLS_PER_HOUR` defaults to 120 provider calls per UTC hour, shared
+across server instances and persisted across restarts. Failed calls count; runs
+with no candidate resources do not. At the limit, requests remain queued until
+the next hour without consuming retry attempts; uploads and mesh sharing continue.
+This bounds call volume, not currency spending. All four budget settings accept
+positive integers up to 1,000,000. Set provider-side spending controls separately.
+
 Viewer/operator routes: `GET /v1/dashboard/proposals` returns suggestions with
 source freshness from one snapshot and readable source fields. It accepts `limit`
 (1–100, default 30), `before` (the response's `next_before` cursor) and optional
 `request_id`. Pages sort by timestamp and proposal ID; follow `next_before` until null.
-`GET /v1/dashboard/runs` returns configuration availability, pending jobs and the
+`GET /v1/dashboard/runs` returns configuration availability, hourly budget usage/reset, pending jobs and the
 latest 20 runs with candidate/proposal counts, plus an accurate `queued_total`.
 Automatic reruns follow changes to each request's bounded relevant candidate set,
 including expiry; unrelated uploads do not spend another model call.

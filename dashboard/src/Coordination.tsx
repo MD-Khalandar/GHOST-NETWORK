@@ -13,11 +13,13 @@ export interface AiProposal {
 export interface AiRun { run_id: string; request_id: string; status: string; error_code: string | null; created_at_ms: number;
   finished_at_ms?: number | null; candidate_count?: number | null; proposal_count?: number | null }
 interface AiStatus { configured: boolean; model: string | null; queued_total: number;
-  queued: { request_id: string; attempts: number; next_attempt_at_ms: number }[]; runs: AiRun[] }
+  queued: { request_id: string; attempts: number; next_attempt_at_ms: number }[]; runs: AiRun[];
+  budget?: { used: number; limit: number; resets_at_ms: number } }
 interface ProposalPage { items: AiProposal[]; next_before: string | null; evaluated_at_ms: number }
 const errors: Record<string, string> = {
   MODEL_UNAVAILABLE: "AI is not configured", MODEL_ERROR: "Model request failed", INVALID_MODEL_OUTPUT: "Model suggestion rejected",
   REQUEST_UNAVAILABLE: "Request closed, expired or unavailable", STALE_SOURCE: "Availability changed during the run", STORAGE_UNAVAILABLE: "Storage interrupted",
+  MODEL_BUDGET_EXHAUSTED: "AI call budget reached; request remains queued",
 };
 
 export function runLabel(run: AiRun): string {
@@ -129,6 +131,9 @@ export default function Coordination({ token, onAccessLost }: { token: string; o
     </form>
     {checkedAt !== null && <p className="subtle">Availability last checked {time(checkedAt)} · {items.length} suggestions on this page</p>}
     {status && !status.configured && <p className="error-banner">The server needs an AI provider, its API key and a model. Saved SOS reports and mesh relay continue to work.</p>}
+    {status?.budget && status.budget.used >= status.budget.limit && <p className="help-note" role="status">
+      AI checks are paused until {time(status.budget.resets_at_ms)}. Requests remain queued; uploads and nearby relay continue.
+    </p>}
     {error && <p className="error error-banner" role="alert">{error} Previously loaded results may be outdated.</p>}
     <div className="resource-grid">{items.map(item => <ProposalCard key={item.proposal_id} proposal={item}/>)}</div>
     <nav className="inbox-toolbar ai-pages" aria-label="Suggestion pages">

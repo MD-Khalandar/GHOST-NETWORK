@@ -57,8 +57,11 @@ class GatewaySyncTest {
             assertEquals("Bearer $token", exchange.requestHeaders.getFirst("Authorization"))
             val status: Int
             val body: String
-            if (mode.get() == 503) {
-                status = 503; body = """{"code":"STORAGE_UNAVAILABLE","retryable":true}"""
+            if (mode.get() in setOf(429, 503)) {
+                status = mode.get()
+                val code = if (status == 429) "UPLOAD_BUSY" else "STORAGE_UNAVAILABLE"
+                body = """{"code":"$code","retryable":true}"""
+                if (status == 429) exchange.responseHeaders.add("Retry-After", "60")
             } else {
                 val envelope = ImmutableEnvelopeV1.parseFrom(WireCodec.unbase64(request.packets.single().immutableEnvelopeBytesBase64, 24576))
                 val ack = SignedPackets.create(cloud, 7, CloudAckV1.newBuilder().setOriginEventId(envelope.eventId)
@@ -123,10 +126,14 @@ class GatewaySyncTest {
         assertEquals(LocalCloudState.ACCEPTED, runBlocking { restored.observeRequests().first().first { it.requestId.value == requestId }.cloudState })
     }
 
-    @Test fun temporaryServerFailureKeepsQueueAndRetryUsesTheSameIdempotencyKey() = runTest {
+    @Test fun temporaryServerFailureKeepsQueueAndRetryUsesTheSameIdempotencyKey() = retryableFailure(503)
+
+    @Test fun uploadThrottlingKeepsQueueAndRetryUsesTheSameIdempotencyKey() = retryableFailure(429)
+
+    private fun retryableFailure(status: Int) = runTest {
         val key = key(); val cloud = key(); val db = open(); val repository = LocalSosRepository(db, { key }, { time })
         runBlocking { publish(repository) }
-        val uploads = CopyOnWriteArrayList<SyncUploadRequest>(); val mode = AtomicInteger(503)
+        val uploads = CopyOnWriteArrayList<SyncUploadRequest>(); val mode = AtomicInteger(status)
         val configs = MutableStateFlow<GatewayConfig?>(GatewayConfig.validated(server(cloud, mode, uploads), token, true))
         val enabled = MutableStateFlow(false)
         val sync = GatewaySync(backgroundScope, configs, enabled, HttpGatewayClient { configs.value }, repository, cloud.publicKey.encoded)

@@ -1,4 +1,6 @@
 import com.google.protobuf.gradle.*
+import java.net.URI
+import java.util.Properties
 
 plugins {
     alias(libs.plugins.android.application)
@@ -6,6 +8,27 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
     alias(libs.plugins.protobuf)
+}
+
+// Public deployment settings only. No bearer token, private key or provider credential enters the APK.
+val clientConfig = Properties().apply {
+    val configFile = rootProject.file(".local/phone-server-test/client.properties")
+    if (configFile.isFile) configFile.inputStream().use { load(it) }
+}
+val configuredServer = providers.gradleProperty("ghostServerUrl")
+    .orElse(providers.environmentVariable("GHOST_SERVER_URL"))
+    .orElse(clientConfig.getProperty("server_url", "")).get().trim().trimEnd('/')
+val configuredCloudKey = providers.gradleProperty("ghostCloudPublicKey")
+    .orElse(providers.environmentVariable("GHOST_CLOUD_PUBLIC_KEY"))
+    .orElse(clientConfig.getProperty("cloud_public_key") ?: rootProject.file(".local/phone-server-test/server-public-key.txt")
+        .takeIf { it.isFile }?.readText()?.trim().orEmpty()).get()
+if (configuredServer.isNotEmpty()) {
+    val address = URI(configuredServer)
+    require(address.scheme in listOf("http", "https") && !address.host.isNullOrBlank() &&
+        address.rawUserInfo == null && address.rawQuery == null && address.rawFragment == null &&
+        address.port in -1..65535 && address.port != 0 && configuredServer.length <= 512) {
+        "ghostServerUrl must be a server address without credentials, query or fragment"
+    }
 }
 
 android {
@@ -18,11 +41,12 @@ android {
         targetSdk = 36
         versionCode = 1
         versionName = "0.1.0-dev"
-        val cloudKey = providers.gradleProperty("ghostCloudPublicKey").orElse("").get()
+        val cloudKey = configuredCloudKey
         require(cloudKey.length <= 128 && cloudKey.matches(Regex("[A-Za-z0-9_-]*"))) {
             "ghostCloudPublicKey must be a base64url P-256 SPKI public key"
         }
         buildConfigField("String", "CLOUD_PUBLIC_KEY", "\"$cloudKey\"")
+        buildConfigField("String", "SERVER_URL", "\"$configuredServer\"")
     }
 
     buildFeatures {
@@ -50,6 +74,14 @@ android {
         unitTests.all {
             it.jvmArgs("--add-opens=java.base/java.lang=ALL-UNNAMED", "--add-opens=java.base/java.util=ALL-UNNAMED")
             it.systemProperty("robolectric.dependency.repo.url", "https://repo.maven.apache.org/maven2")
+        }
+    }
+}
+
+tasks.matching { it.name == "preReleaseBuild" }.configureEach {
+    doFirst {
+        require(configuredServer.startsWith("https://") && configuredCloudKey.isNotEmpty()) {
+            "Release builds require ghostServerUrl (HTTPS) and the trusted ghostCloudPublicKey"
         }
     }
 }
