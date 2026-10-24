@@ -41,10 +41,10 @@ class NearbyMeshGraphInteractionTest {
             }
         }
         compose.onNodeWithTag("mesh-node-B").performClick().assertIsSelected()
-        compose.onNodeWithText("Checking identity before relay starts.").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Getting connected. Requests can be shared once this finishes.").performScrollTo().assertIsDisplayed()
         compose.runOnIdle { identities.value = identities.value + ("B" to "b".repeat(64)) }
         compose.onNodeWithText("Phone bbbbbbbb").assertExists()
-        compose.onNodeWithText("Identity checked · ready to relay public SOS reports.").assertExists()
+        compose.onNodeWithText("Ready to pass along requests.").assertExists()
         compose.runOnIdle { peers.value = listOf(a) }
         compose.onNodeWithTag("mesh-connection-details").assertDoesNotExist()
         compose.onNodeWithTag("mesh-node-B").assertDoesNotExist()

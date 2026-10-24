@@ -37,7 +37,7 @@ fun GhostScreen(title: String, subtitle: String, modifier: Modifier = Modifier,
 @Composable
 fun SimulationNotice() {
     Surface(color = MaterialTheme.colorScheme.tertiaryContainer, shape = MaterialTheme.shapes.medium) {
-        Text("Simulated preview · no messages are sent", modifier = Modifier.fillMaxWidth().padding(16.dp),
+        Text("Preview only · no messages are sent", modifier = Modifier.fillMaxWidth().padding(16.dp),
             color = MaterialTheme.colorScheme.onTertiaryContainer, style = MaterialTheme.typography.labelLarge)
     }
 }
@@ -62,11 +62,11 @@ fun StatusLabel(text: String) {
 }
 
 @Composable
-fun LoadingCard() = InfoCard("Loading local information", "Your reports will appear here when ready.") {
+fun LoadingCard() = InfoCard("Opening saved requests…", "Your requests will appear here shortly.") {
     LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
 }
 
 @Composable
-fun ErrorCard(onRetry: () -> Unit) = InfoCard("Couldn’t load local information", "Try again to load saved information.") {
+fun ErrorCard(onRetry: () -> Unit) = InfoCard("Couldn't open saved requests", "Try again to see the requests on this phone.") {
     OutlinedButton(onClick = onRetry, modifier = Modifier.heightIn(min = 48.dp)) { Text("Try again") }
 }

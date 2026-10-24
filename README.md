@@ -33,7 +33,7 @@ cloud uploads are not implemented yet.
 
 For two phones with Google Play services:
 
-1. Keep Bluetooth/Wi-Fi on and both apps open. Tap **Connect to mesh** on each and allow Android's required permissions. Discovery, connections and reconnection are automatic; no phone selection or pairing approval.
+1. Keep Bluetooth/Wi-Fi on and both apps open. Tap **Connect to GHOST** on each and allow Android's required permissions. Discovery, connections and reconnection are automatic; no phone selection or pairing approval.
 2. Tap **Send SOS**, describe the help needed, then **Send SOS**. Category, area and a +/− people counter are under **Optional details**. There is no review screen.
 3. Check Requests on the other phone. The sender shows receipt only after the receiver saves the report and returns a valid signature.
 
@@ -54,14 +54,14 @@ data upgrades in place. Physical three-phone testing is still pending.
 The mesh is open to nearby GHOST phones; connections have no manual code check.
 Signing verifies report integrity and key possession, not a person's identity.
 Relay pauses when the app backgrounds and resumes when returning to the app;
-**Disconnect from mesh** stops it until you join again.
-Network's **Your nearby mesh** graph updates as direct neighbors connect and leave.
+**Disconnect from GHOST** stops it until you join again.
+Connections' **Nearby phones** graph updates as direct neighbors connect and leave.
 Solid links are ready to relay; dashed links are still checking identity. It shows
 only this phone's direct connections, not the entire mesh or an SOS delivery path.
 
 Each phone has independent bounded queues. A report waits for its neighbor's
 signed receipt before the next report goes out on that link. Missing receipts
-trigger up to three attempts per connection; **Retry queued sends** resumes them
+trigger up to three attempts per connection; **Try sending again** resumes them
 without forgetting saved receipts. Requests shows relay acknowledgements and
 the remaining transfer budget. Expired reports are never queued for another send.
 This relay handles public SOS reports and neighbor receipts; cloud uploads and

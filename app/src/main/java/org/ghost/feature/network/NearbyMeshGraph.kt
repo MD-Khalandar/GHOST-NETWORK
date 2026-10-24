@@ -78,11 +78,11 @@ fun NearbyMeshGraph(peers: List<PeerHandle>, identities: Map<String, String>, ac
     val selected = selectedPeer?.takeIf { it in neighbors }
     val ready = neighbors.count { identities.containsKey(it.endpointId) }
     val summary = when {
-        starting -> "Connecting to mesh"
-        !active -> "Mesh is off"
-        neighbors.isEmpty() -> "Searching for nearby phones"
-        neighbors.size == 1 -> "1 direct connection"
-        else -> "${neighbors.size} direct connections"
+        starting -> "Connecting to GHOST…"
+        !active -> "Disconnected from GHOST"
+        neighbors.isEmpty() -> "Looking for nearby phones…"
+        neighbors.size == 1 -> "1 nearby phone"
+        else -> "${neighbors.size} nearby phones"
     }
     LaunchedEffect(active) {
         if (!active) { selectedPeer = null; zoom = 1f; pan = Offset.Zero }
@@ -105,7 +105,7 @@ fun NearbyMeshGraph(peers: List<PeerHandle>, identities: Map<String, String>, ac
             Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("Your nearby mesh", style = MaterialTheme.typography.titleMedium,
+                    Text("Nearby phones", style = MaterialTheme.typography.titleMedium,
                         modifier = Modifier.semantics { heading() })
                     Text(summary, color = GraphMuted, style = MaterialTheme.typography.bodySmall)
                 }
@@ -117,8 +117,8 @@ fun NearbyMeshGraph(peers: List<PeerHandle>, identities: Map<String, String>, ac
             BoxWithConstraints(Modifier.fillMaxWidth().aspectRatio(0.95f).clipToBounds()
                 .testTag("nearby-mesh-graph")
                 .semantics {
-                    contentDescription = "Your nearby mesh. $summary. Your phone has ${neighbors.size} direct connections: " +
-                        "$ready ready to relay, ${neighbors.size - ready} checking identity. Only direct neighbors are shown."
+                    contentDescription = "Nearby phones. $summary. ${neighbors.size} ${if (neighbors.size == 1) "phone" else "phones"} connected to you: " +
+                        "$ready ready to pass along requests, ${neighbors.size - ready} getting connected. Only phones connected to you are shown."
                     stateDescription = "Zoom ${(zoom * 100).roundToInt()} percent"
                     customActions = listOf(
                         CustomAccessibilityAction("Zoom in") { zoom = (zoom * 1.25f).coerceAtMost(2.4f); true },
@@ -201,7 +201,7 @@ fun NearbyMeshGraph(peers: List<PeerHandle>, identities: Map<String, String>, ac
                             }.size(88.dp, 56.dp)
                                 .testTag("mesh-node-${motion.peer.endpointId}")
                                 .semantics {
-                                    contentDescription = if (nodeId == null) "Nearby phone, checking identity" else "Phone ${nodeId.take(8)}, ready to relay"
+                                    contentDescription = if (nodeId == null) "Nearby phone, getting connected" else "Phone ${nodeId.take(8)}, ready to pass along requests"
                                     this.selected = selected == motion.peer
                                 }
                                 .clickable(role = Role.Button) { selectedPeer = motion.peer }
@@ -233,7 +233,7 @@ fun NearbyMeshGraph(peers: List<PeerHandle>, identities: Map<String, String>, ac
                                         } finally { motion.dragging = false }
                                     }
                                 }, contentAlignment = Alignment.BottomCenter) {
-                                Text(nodeId?.take(8) ?: "Checking", color = if (nodeId == null) GraphMuted else GraphForeground,
+                                Text(nodeId?.take(8) ?: "Connecting", color = if (nodeId == null) GraphMuted else GraphForeground,
                                     style = MaterialTheme.typography.labelSmall, maxLines = 1)
                             }
                         }
@@ -242,7 +242,7 @@ fun NearbyMeshGraph(peers: List<PeerHandle>, identities: Map<String, String>, ac
             }
             Column(Modifier.padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text("Drag phones · pinch to zoom", color = GraphMuted, style = MaterialTheme.typography.labelSmall,
+                    Text("Drag to move · pinch to zoom", color = GraphMuted, style = MaterialTheme.typography.labelSmall,
                         modifier = Modifier.weight(1f))
                     TextButton(onClick = {
                         zoom = 1f; pan = Offset.Zero
@@ -255,29 +255,29 @@ fun NearbyMeshGraph(peers: List<PeerHandle>, identities: Map<String, String>, ac
                         color = Color(0xFF20262F), shape = RoundedCornerShape(12.dp), contentColor = GraphForeground) {
                         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text(nodeId?.let { "Phone ${it.take(8)}" } ?: "Nearby phone", style = MaterialTheme.typography.titleSmall)
-                            Text(if (nodeId == null) "Checking identity before relay starts." else "Identity checked · ready to relay public SOS reports.",
+                            Text(if (nodeId == null) "Getting connected. Requests can be shared once this finishes." else "Ready to pass along requests.",
                                 color = if (nodeId == null) GraphMuted else GraphTeal, style = MaterialTheme.typography.bodySmall)
-                            Text("Connected directly to your phone.", color = GraphMuted, style = MaterialTheme.typography.bodySmall)
+                            Text("Connected to your phone.", color = GraphMuted, style = MaterialTheme.typography.bodySmall)
                         }
                     }
                 }
                 if (neighbors.isEmpty()) {
-                    Text(if (active || starting) "Nearby phones appear here automatically." else "Connect to the mesh to see nearby phones.",
+                    Text(if (active || starting) "Nearby phones appear here automatically." else "Connect to GHOST to see nearby phones.",
                         color = GraphMuted, style = MaterialTheme.typography.bodySmall)
                 } else {
-                    Text("Solid link: ready to relay · dashed: checking identity", color = GraphMuted,
+                    Text("Solid line: ready to share · dashed line: getting connected", color = GraphMuted,
                         style = MaterialTheme.typography.labelSmall)
                     // These buttons also provide keyboard and screen-reader access to each node.
                     neighbors.forEach { peer ->
                         val nodeId = identities[peer.endpointId]
                         TextButton(onClick = { selectedPeer = peer }, modifier = Modifier.heightIn(min = 48.dp)) {
-                            Text(if (nodeId == null) "Checking phone…" else "Phone ${nodeId.take(8)} · ready to relay",
+                            Text(if (nodeId == null) "Getting connected…" else "Phone ${nodeId.take(8)} · ready to share",
                                 color = if (nodeId == null) GraphMuted else GraphTeal,
                                 style = MaterialTheme.typography.labelMedium)
                         }
                     }
                 }
-                Text("Direct neighbors only. Links show connections, not SOS delivery paths.",
+                Text("Only phones connected to yours are shown. A line doesn't mean a request has been saved by that phone.",
                     color = GraphMuted, style = MaterialTheme.typography.bodySmall)
             }
         }

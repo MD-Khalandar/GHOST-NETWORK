@@ -8,9 +8,12 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Button
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import org.ghost.design.*
 import org.ghost.feature.foundation.FoundationState
@@ -32,7 +35,8 @@ fun NetworkScreen(state: FoundationState, onRetry: () -> Unit, modifier: Modifie
                   contentPadding: PaddingValues = PaddingValues(0.dp), trust: DeviceTrustState = DeviceTrustState(),
                   onRetryIdentity: (() -> Unit)? = null, local: LocalUiState = LocalUiState(), actions: LocalActions? = null) {
     val context = LocalContext.current
-    GhostScreen("Network", "Nearby SOS relay. Keep Bluetooth and Wi-Fi on.", modifier, contentPadding, state.simulated) {
+    var showTechnicalDetails by rememberSaveable { mutableStateOf(false) }
+    GhostScreen("Connections", "Connect with nearby phones to pass along requests for help.", modifier, contentPadding, state.simulated) {
         when {
             state.loading -> item { LoadingCard() }
             state.failed -> item { ErrorCard(onRetry) }
@@ -42,49 +46,57 @@ fun NetworkScreen(state: FoundationState, onRetry: () -> Unit, modifier: Modifie
                         verticalAlignment = Alignment.CenterVertically) {
                         Text(local.meshStatus(), Modifier.weight(1f), style = androidx.compose.material3.MaterialTheme.typography.bodySmall)
                         Button(onClick = { if (local.network.active || local.network.starting) actions?.stopNearby?.invoke() else actions?.startNearby?.invoke() }, enabled = actions != null,
-                            modifier = Modifier.heightIn(min = 48.dp)) { Text(if (local.network.active || local.network.starting) "Disconnect from mesh" else "Connect to mesh") }
+                            modifier = Modifier.heightIn(min = 48.dp)) { Text(if (local.network.active || local.network.starting) "Disconnect from GHOST" else "Connect to GHOST") }
                     }
                 }
                 item("mesh-graph") {
                     NearbyMeshGraph(state.peers, local.peerIdentities, local.network.active, local.network.starting)
                 }
                 item("radio-details") {
-                    InfoCard("Mesh", local.meshStatus()) {
-                        Text(local.network.message)
-                        Text("Phones connect automatically while this app is open and relay public SOS reports.")
+                    InfoCard("Connecting nearby", "Keep Bluetooth and Wi-Fi on.") {
+                        Text(local.network.message.userMessage())
+                        Text("Keep GHOST open so nearby phones can connect and pass along requests you've chosen to share.")
                         TextButton(onClick = { context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}"))) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Open app settings") }
                     }
                 }
-                local.error?.let { message -> item("local-error") { InfoCard("Local action unavailable", message) } }
-                (local.exchangeStatus ?: local.notice)?.let { message -> item("exchange") { InfoCard("Exchange status", message) } }
-                item("cloud") { InfoCard(state.cloud.label(), "Reachability alone does not confirm an uploaded report or assistance.") }
-                item("retry") { TextButton(onClick = { actions?.retrySends?.invoke() }, enabled = actions != null, modifier = Modifier.heightIn(min = 48.dp)) { Text("Retry queued sends") } }
-                item("sharing") { InfoCard("Gateway sharing is off", "Cloud uploads are not implemented yet. Receipts confirm saving by the next phone, not server delivery.") }
-                item("identity") {
-                    InfoCard("Device signing identity", when (trust.identity) {
-                        IdentityStatus.CHECKING -> "Checking this phone's signing key."
-                        IdentityStatus.READY -> "A signing key is loaded from Android Keystore. Hardware protection depends on this device."
-                        IdentityStatus.UNAVAILABLE -> "Signing key unavailable. Sending must wait until the key can be loaded."
-                    }) {
-                        trust.nodeId?.let { Text("Node ID: $it") }
-                        if (trust.identity == IdentityStatus.UNAVAILABLE && onRetryIdentity != null) {
-                            TextButton(onClick = onRetryIdentity, modifier = Modifier.heightIn(min = 48.dp)) { Text("Retry identity") }
+                local.error?.let { message -> item("local-error") { InfoCard("Something went wrong", message.userMessage()) } }
+                (local.exchangeStatus ?: local.notice)?.let { message -> item("exchange") { InfoCard("Latest update", message.userMessage()) } }
+                item("cloud") { InfoCard(state.cloud.label(), "An online connection doesn't mean your request has been saved online or that help is confirmed.") }
+                item("retry") { TextButton(onClick = { actions?.retrySends?.invoke() }, enabled = actions != null, modifier = Modifier.heightIn(min = 48.dp)) { Text("Try sending again") } }
+                item("sharing") { InfoCard("Online coordination isn't available yet.", "A nearby phone can confirm saving your request. This does not mean help has been arranged.") }
+                item("technical-toggle") {
+                    TextButton(onClick = { showTechnicalDetails = !showTechnicalDetails },
+                        modifier = Modifier.heightIn(min = 48.dp).semantics {
+                            stateDescription = if (showTechnicalDetails) "Expanded" else "Collapsed"
+                        }) { Text(if (showTechnicalDetails) "Hide technical details" else "Technical details") }
+                }
+                if (showTechnicalDetails) {
+                    item("identity") {
+                        InfoCard("Device signing identity", when (trust.identity) {
+                            IdentityStatus.CHECKING -> "Checking this phone's signing key."
+                            IdentityStatus.READY -> "A signing key is loaded from Android Keystore. Hardware protection depends on this device."
+                            IdentityStatus.UNAVAILABLE -> "Signing key unavailable. Sending must wait until the key can be loaded."
+                        }) {
+                            trust.nodeId?.let { Text("Node ID: $it") }
+                            if (trust.identity == IdentityStatus.UNAVAILABLE && onRetryIdentity != null) {
+                                TextButton(onClick = onRetryIdentity, modifier = Modifier.heightIn(min = 48.dp)) { Text("Retry identity") }
+                            }
                         }
                     }
-                }
-                item("trust") {
-                    InfoCard("Cloud signature verification", when (trust.cloudTrust) {
-                        CloudTrustStatus.NOT_CONFIGURED -> "Cloud signing key is not configured. Cloud results cannot be trusted yet."
-                        CloudTrustStatus.PINNED -> "Cloud results must match the configured signing key. This does not confirm connectivity."
-                        CloudTrustStatus.INVALID -> "Cloud signing key is invalid. Cloud results will be rejected."
-                    }) { trust.cloudNodeId?.let { Text("Cloud identity: $it") } }
-                }
-                item("operator") {
-                    InfoCard(when (trust.operatorAccess) {
-                        OperatorAccess.SIGN_IN_REQUIRED -> "Operator sign-in required"
-                        OperatorAccess.NOT_AUTHORIZED -> "Operator access denied"
-                        OperatorAccess.AUTHENTICATED_OPERATOR -> "Operator session authenticated"
-                    }, "Operator actions belong in the authenticated web dashboard. This phone cannot grant approval authority.")
+                    item("trust") {
+                        InfoCard("Cloud signature verification", when (trust.cloudTrust) {
+                            CloudTrustStatus.NOT_CONFIGURED -> "Cloud signing key is not configured. Cloud results cannot be trusted yet."
+                            CloudTrustStatus.PINNED -> "Cloud results must match the configured signing key. This does not confirm connectivity."
+                            CloudTrustStatus.INVALID -> "Cloud signing key is invalid. Cloud results will be rejected."
+                        }) { trust.cloudNodeId?.let { Text("Cloud identity: $it") } }
+                    }
+                    item("operator") {
+                        InfoCard(when (trust.operatorAccess) {
+                            OperatorAccess.SIGN_IN_REQUIRED -> "Operator sign-in required"
+                            OperatorAccess.NOT_AUTHORIZED -> "Operator access denied"
+                            OperatorAccess.AUTHENTICATED_OPERATOR -> "Operator session authenticated"
+                        }, "Operator actions belong in the authenticated web dashboard. This phone cannot grant approval authority.")
+                    }
                 }
             }
         }

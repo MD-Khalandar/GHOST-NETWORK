@@ -21,6 +21,8 @@ Signing, cloud-key pinning, consent and server authentication also work.
 SOS sending needs only a message and Send; optional details and remembered sharing
 settings expand in place. Mesh joining alone never creates an SOS. Connections
 are open without manual code verification; signatures do not prove human identity.
+Android uses plain-language actions and delivery updates; connection diagnostics
+sit under optional Technical details.
 Radio behavior and handset key persistence still need physical testing.
 
 Next: gateway sync → dashboard
