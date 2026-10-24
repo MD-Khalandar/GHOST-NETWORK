@@ -39,6 +39,7 @@ export class CloudCoordinator {
       runId = await this.store.start(requestId, this.model.name, this.now());
       if (!this.model.available) throw new CoordinatorFailure("MODEL_UNAVAILABLE");
       const context = await this.store.context(requestId, this.now());
+      await this.store.recordCandidates(runId, context.resources.length);
       let suggestions: unknown = { matches: [] };
       if (context.resources.length) {
         try { suggestions = await this.model.suggest(context); }

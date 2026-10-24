@@ -82,12 +82,18 @@ latest-only forwarding and projections prevent delayed originals undoing changes
 Dashboard shows withdrawn offers. The coordinator should read resource_offer_latest
 and exclude withdrawn (data.state = 2), expired or unavailable supplies.
 
-The cloud AI coordinator now queues active SOS after uploads/restarts and on
-availability changes. It uses current supply versions, validates bounded model
-suggestions and stores proposals without allocating stock. Leases, bounded retries
+The cloud AI coordinator queues active SOS after uploads/restarts and when their
+bounded candidate inputs change, including expiry; unrelated uploads and old replays
+do not rerun unchanged inputs. It filters help/supply types by SOS category, excludes
+self matches and ranks normalized reported areas; unknown/other areas remain eligible.
+Unspecified SOS categories retain all help types. It uses current supply versions,
+validates bounded model suggestions and stores proposals without allocating stock. Leases, bounded retries
 and source checks guard processing. Dashboard AI suggestions shows runs and stale
-proposals; operators can request a rerun. Select GHOST_AI_PROVIDER=openai (default)
-or gemini, set its OPENAI_API_KEY/GEMINI_API_KEY and GHOST_COORDINATOR_MODEL on the
+proposals with pagination, SOS filtering and a shared snapshot for freshness checks.
+Run results distinguish no eligible resources, no suitable suggestions and saved
+suggestions, with retry information and accurate queue totals. Operators can request
+a rerun. Select GHOST_AI_PROVIDER=openai (default) or gemini, set its
+OPENAI_API_KEY/GEMINI_API_KEY and GHOST_COORDINATOR_MODEL on the
 server. Both providers share validation and queues. Live provider testing remains.
 
 Next: operator approval → owner decisions, allocation and signed assistance returns.

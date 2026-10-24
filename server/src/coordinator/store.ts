@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { candidateSql } from "./candidates.js";
 import type { Database, SqlConnection } from "../database.js";
 import { CANDIDATES_PER_KIND, CoordinatorFailure, UUID, type MatchContext, type MatchDraft,
   type ResourceSource, type ReviewProposal, type RunResult, type SosSource, type SourceVersion } from "./types.js";
@@ -37,6 +38,13 @@ export async function initializeCoordinator(database: Database): Promise<void> {
       id INTEGER PRIMARY KEY CHECK (id = 1), owner TEXT, expires_at_ms BIGINT NOT NULL DEFAULT 0
     )`);
     await connection.query("INSERT INTO coordinator_lease(id) VALUES (1) ON CONFLICT DO NOTHING");
+    await connection.query("ALTER TABLE coordinator_jobs ADD COLUMN IF NOT EXISTS input_hash TEXT");
+    await connection.query("ALTER TABLE coordinator_runs ADD COLUMN IF NOT EXISTS candidate_count INTEGER");
+    await connection.query("ALTER TABLE coordinator_runs ADD COLUMN IF NOT EXISTS proposal_count INTEGER");
+    await connection.query(`CREATE OR REPLACE VIEW coordinator_resource_latest AS
+      SELECT DISTINCT ON (entity_id) * FROM resource_events WHERE kind IN (3,5,6)
+      ORDER BY entity_id, created_at_ms DESC, event_id DESC`);
+    await connection.query("CREATE INDEX IF NOT EXISTS coordinator_effective_resource ON resource_events(entity_id, created_at_ms DESC, event_id DESC)");
   });
 }
 
@@ -122,13 +130,20 @@ export class CoordinatorStore {
     return this.database.transaction(async connection => {
       await connection.query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ");
       const request = await readRequest(connection, requestId, now);
-      return { request, resources: await readResources(connection, now, undefined, request.coarse_area) };
+      const { rows } = await connection.query(`SELECT candidates.* FROM sos_reports s
+        CROSS JOIN LATERAL (${candidateSql}) candidates WHERE s.request_id = $2
+        ORDER BY CASE WHEN candidates.kind = 3 THEN 0 ELSE 1 END, candidates.candidate_rank`, [now, requestId]);
+      return { request, resources: rows.map(row => resource(row, now)).filter((r): r is ResourceSource => !!r) };
     });
   }
 
   async fail(runId: string, status: "unavailable" | "error", code: RunResult["code"], now: number): Promise<void> {
     await this.database.query(`UPDATE coordinator_runs SET status = $2, error_code = $3, finished_at_ms = $4
       WHERE run_id = $1 AND status = 'running'`, [runId, status, code, now]);
+  }
+
+  async recordCandidates(runId: string, count: number): Promise<void> {
+    await this.database.query("UPDATE coordinator_runs SET candidate_count = $2 WHERE run_id = $1 AND status = 'running'", [runId, count]);
   }
 
   async save(runId: string, context: MatchContext, drafts: MatchDraft[], now: number, leaseOwner?: string): Promise<string[]> {
@@ -159,7 +174,7 @@ export class CoordinatorStore {
           WHERE request_event_id = $1 AND resource_event_id = $2`, [request.source.event_id, latest.source.event_id]);
         ids.push(existing.rows[0].proposal_id);
       }
-      await connection.query("UPDATE coordinator_runs SET status = 'completed', finished_at_ms = $2 WHERE run_id = $1", [runId, now]);
+      await connection.query("UPDATE coordinator_runs SET status = 'completed', finished_at_ms = $2, proposal_count = $3 WHERE run_id = $1", [runId, now, ids.length]);
       return ids;
     });
   }
@@ -171,26 +186,53 @@ export class CoordinatorStore {
     return rows.map(projection);
   }
 
-  async review(now: number) {
+  async review(now: number) { return (await this.reviewPage(now)).items; }
+
+  async reviewPage(now: number, limit = 30, before?: { createdAt: number; id: string }, requestId?: string) {
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100 ||
+        before && (!Number.isSafeInteger(before.createdAt) || before.createdAt < 1 || !UUID.test(before.id)) ||
+        requestId !== undefined && !UUID.test(requestId)) throw new RangeError("Invalid proposal pagination");
     const { rows } = await this.database.query(`SELECT p.*, s.description AS request_description,
-      r.data AS resource_data FROM coordinator_proposals p
+      s.coarse_area AS request_area, s.state AS request_state, s.expires_at_ms AS request_expires_at_ms,
+      s.cloud_revision AS current_request_revision,
+      r.data AS resource_data, current.kind AS current_kind, current.data AS current_data,
+      current.entity_id AS current_entity, current.owner_node_id AS current_owner,
+      current.event_id AS current_event, current.cloud_revision AS current_revision,
+      current.expires_at_ms AS current_expiry
+      FROM coordinator_proposals p
       JOIN sos_reports s ON s.event_id = p.request_event_id
       JOIN resource_events r ON r.event_id = p.resource_event_id
-      WHERE p.status = 'pending_review' ORDER BY p.created_at_ms DESC, p.proposal_id LIMIT 30`);
-    const items = [];
-    for (const row of rows) items.push({ ...projection(row), request_description: row.request_description,
-      resource_label: row.resource_kind === "helper" ? row.resource_data.display_name ?? "Unnamed helper" : null,
-      resource_type: row.resource_data.resource_type ?? null, unit: row.resource_data.unit ?? null,
-      coarse_area: row.resource_data.coarse_area ?? null, freshness: await this.checkProposal(row.proposal_id, now) });
-    return items;
+      LEFT JOIN coordinator_resource_latest current ON current.entity_id = p.resource_id
+      WHERE p.status = 'pending_review' AND ($2::bigint IS NULL OR (p.created_at_ms, p.proposal_id) < ($2, $3::uuid))
+        AND ($4::uuid IS NULL OR p.request_id = $4)
+      ORDER BY p.created_at_ms DESC, p.proposal_id DESC LIMIT $1`, [limit + 1, before?.createdAt ?? null, before?.id ?? null, requestId ?? null]);
+    const items = rows.slice(0, limit).map(row => {
+      const proposal = projection(row);
+      const latest = row.current_event ? resource({ kind: row.current_kind, data: row.current_data,
+        entity_id: row.current_entity, owner_node_id: row.current_owner, event_id: row.current_event,
+        cloud_revision: row.current_revision, expires_at_ms: row.current_expiry }, now) : undefined;
+      const current = row.request_state === 1 && Number(row.request_expires_at_ms) > now &&
+        Number(row.current_request_revision) === proposal.request_source.cloud_revision && latest &&
+        sameSource(latest.source, proposal.resource_source) && validQuantity(proposal, latest);
+      return { ...proposal, request_description: row.request_description, request_area: row.request_area,
+        request_expires_at_ms: Number(row.request_expires_at_ms),
+        resource_label: row.resource_kind === "helper" ? row.resource_data.display_name ?? "Unnamed helper" : null,
+        resource_type: row.resource_data.resource_type ?? null, unit: row.resource_data.unit ?? null,
+        coarse_area: row.resource_data.coarse_area ?? null, resource_expires_at_ms: latest?.expires_at_ms ?? null,
+        freshness: current ? "current" as const : "stale" as const };
+    });
+    const last = items.at(-1);
+    return { items, next_before: rows.length > limit && last ? `${last.created_at_ms}.${last.proposal_id}` : null, evaluated_at_ms: now };
   }
 
   async history() {
     const { rows } = await this.database.query(`SELECT run_id, request_id, model_name, status, error_code,
-      created_at_ms, finished_at_ms FROM coordinator_runs ORDER BY created_at_ms DESC, run_id LIMIT 20`);
+      created_at_ms, finished_at_ms, candidate_count, proposal_count FROM coordinator_runs ORDER BY created_at_ms DESC, run_id DESC LIMIT 20`);
     return rows.map(row => ({ run_id: row.run_id as string, request_id: row.request_id as string,
       model_name: row.model_name as string | null, status: row.status as string, error_code: row.error_code as string | null,
       created_at_ms: Number(row.created_at_ms),
+      candidate_count: row.candidate_count === null ? null : Number(row.candidate_count),
+      proposal_count: row.proposal_count === null ? null : Number(row.proposal_count),
       finished_at_ms: row.finished_at_ms === null ? null : Number(row.finished_at_ms) }));
   }
 

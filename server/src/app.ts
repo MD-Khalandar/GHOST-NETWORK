@@ -60,13 +60,21 @@ export function buildApp(security: AppSecurity = {}): FastifyInstance {
       }
       if (route.url === "/v1/dashboard/runs" || route.url === "/v1/dashboard/proposals" || route.url.endsWith("/coordinate")) {
         const id = (request.params as { requestId?: string }).requestId;
-        if (Object.keys(request.query as object).length || route.method === "POST" &&
+        const query = request.query as Record<string, unknown>;
+        const proposals = route.url === "/v1/dashboard/proposals";
+        const positive = (v: unknown): v is string => typeof v === "string" && /^[1-9][0-9]{0,15}$/.test(v) && Number.isSafeInteger(Number(v));
+        const cursor = typeof query.before === "string" ? query.before.split(".") : [];
+        if ((proposals ? Object.keys(query).some(k => !["limit", "before", "request_id"].includes(k)) ||
+          query.limit !== undefined && (!positive(query.limit) || Number(query.limit) > 100) ||
+          query.before !== undefined && (cursor.length !== 2 || !positive(cursor[0]) || !UUID.test(cursor[1] ?? "")) ||
+          query.request_id !== undefined && (typeof query.request_id !== "string" || !UUID.test(query.request_id)) : Object.keys(query).length > 0) || route.method === "POST" &&
           (!UUID.test(id ?? "") || request.body !== undefined && (!request.body || typeof request.body !== "object" || Array.isArray(request.body) || Object.keys(request.body).length)))
           return reply.code(400).send({ code: "INVALID_REQUEST", message: "Use a request ID and no extra parameters", retryable: false });
         if (!coordinator) return reply.code(503).send({ code: "STORAGE_UNAVAILABLE", message: "Coordination storage is not configured", retryable: true });
         try {
           if (route.url === "/v1/dashboard/runs") return await coordinator.status();
-          if (route.url === "/v1/dashboard/proposals") return { items: await coordinator.store.review((security.now ?? Date.now)()) };
+          if (proposals) return await coordinator.store.reviewPage((security.now ?? Date.now)(), Number(query.limit ?? 30),
+            query.before === undefined ? undefined : { createdAt: Number(cursor[0]), id: cursor[1] }, query.request_id as string | undefined);
           if (!coordinator.model.available) return reply.code(503).send({ code: "MODEL_UNAVAILABLE", message: "AI coordination is not configured", retryable: false });
           if (!await coordinator.enqueue(id!)) return reply.code(429).send({ code: "RUN_COOLDOWN", message: "Wait briefly before retrying this request", retryable: true });
           return reply.code(202).send({ request_id: id, status: "queued" });

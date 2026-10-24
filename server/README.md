@@ -100,10 +100,15 @@ new availability. Calls are serialized, provider calls time out after 30 seconds
 and transient failures retry up to three times per input revision. Restart resumes
 queued work after any previous lease expires (up to 90 seconds).
 
-Viewer/operator routes: `GET /v1/dashboard/proposals` returns the latest 30
-suggestions with source freshness and readable source fields;
+Viewer/operator routes: `GET /v1/dashboard/proposals` returns suggestions with
+source freshness from one snapshot and readable source fields. It accepts `limit`
+(1–100, default 30), `before` (the response's `next_before` cursor) and optional
+`request_id`. Pages sort by timestamp and proposal ID; follow `next_before` until null.
 `GET /v1/dashboard/runs` returns configuration availability, pending jobs and the
-latest 20 runs. Operator-only `POST /v1/dashboard/sos/:requestId/coordinate`
+latest 20 runs with candidate/proposal counts, plus an accurate `queued_total`.
+Automatic reruns follow changes to each request's bounded relevant candidate set,
+including expiry; unrelated uploads do not spend another model call.
+Operator-only `POST /v1/dashboard/sos/:requestId/coordinate`
 queues an active SOS and returns 202; repeated completed runs have a 30-second
 cooldown (429). Missing model settings return `MODEL_UNAVAILABLE` (503) for reruns.
 No record text or provider errors are logged. Model names may be shown; API keys

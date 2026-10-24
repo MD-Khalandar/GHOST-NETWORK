@@ -3,6 +3,7 @@ import { CloudCoordinator } from "./coordinator.js";
 import { CoordinatorFailure, UUID, type ProposalModel } from "./types.js";
 import { CoordinatorStore } from "./store.js";
 import { randomUUID } from "node:crypto";
+import { inputHashSql } from "./candidates.js";
 
 /** Durable queue inside the existing server. One model call at a time across instances. */
 export class CoordinatorWorker {
@@ -48,16 +49,20 @@ export class CoordinatorWorker {
   }
 
   private async discover() {
-    // Source rows remain the queue's durable input, including uploads just before a restart.
-    await this.database.query(`INSERT INTO coordinator_jobs(request_id, input_revision, requested_at_ms)
-      SELECT s.request_id, GREATEST(s.cloud_revision, r.revision), $1 FROM sos_reports s
-      CROSS JOIN (SELECT COALESCE(MAX(cloud_revision), 0) AS revision FROM resource_events) r
-      LEFT JOIN coordinator_jobs j ON j.request_id = s.request_id
+    // A generation advances only when this SOS's candidate set changes. Expiry,
+    // withdrawals and type changes are discovered even without a new upload.
+    await this.database.query(`WITH current_resources AS MATERIALIZED (SELECT * FROM coordinator_resource_latest), inputs AS MATERIALIZED (
+      SELECT s.request_id, s.created_at_ms, ${inputHashSql} AS input_hash FROM sos_reports s
       WHERE s.state = 1 AND s.expires_at_ms > $1 AND s.public_mesh_allowed AND s.cloud_processing_allowed
-        AND (j.request_id IS NULL OR j.input_revision < GREATEST(s.cloud_revision, r.revision))
-      ORDER BY s.created_at_ms LIMIT 20
-      ON CONFLICT (request_id) DO UPDATE SET input_revision = EXCLUDED.input_revision,
-        queued = TRUE, attempts = 0, next_attempt_at_ms = 0, requested_at_ms = EXCLUDED.requested_at_ms`, [this.now()]);
+    ) INSERT INTO coordinator_jobs(request_id, input_revision, requested_at_ms, input_hash)
+      SELECT i.request_id, 1, $1, i.input_hash FROM inputs i
+      LEFT JOIN coordinator_jobs j ON j.request_id = i.request_id
+      WHERE j.request_id IS NULL OR j.input_hash IS DISTINCT FROM i.input_hash
+      ORDER BY i.created_at_ms, i.request_id LIMIT 20
+      ON CONFLICT (request_id) DO UPDATE SET
+        input_hash = EXCLUDED.input_hash, input_revision = coordinator_jobs.input_revision + 1,
+        queued = TRUE, attempts = 0, next_attempt_at_ms = 0, requested_at_ms = EXCLUDED.requested_at_ms
+      WHERE coordinator_jobs.input_hash IS DISTINCT FROM EXCLUDED.input_hash`, [this.now()]);
   }
   private async tick() {
     await this.discover();
@@ -98,13 +103,14 @@ export class CoordinatorWorker {
         clearInterval(heartbeat);
         await this.database.query("UPDATE coordinator_lease SET owner = NULL WHERE id = 1 AND owner = $1", [token]);
       }
+      if (index === 4) this.wakeAgain = true; // Continue draining bounded batches without a 15-second gap.
     }
   }
   async status() {
-    const { rows } = await this.database.query(`SELECT j.request_id, j.attempts, j.next_attempt_at_ms FROM coordinator_jobs j
+    const { rows } = await this.database.query(`SELECT j.request_id, j.attempts, j.next_attempt_at_ms, COUNT(*) OVER() AS total_queued FROM coordinator_jobs j
       JOIN sos_reports s ON s.request_id = j.request_id WHERE j.queued AND s.state = 1 AND s.expires_at_ms > $1
       ORDER BY j.requested_at_ms LIMIT 30`, [this.now()]);
-    return { configured: this.model.available, model: this.model.name, queued: rows.map(row => ({ ...row,
+    return { configured: this.model.available, model: this.model.name, queued_total: Number(rows[0]?.total_queued ?? 0), queued: rows.map(row => ({ request_id: row.request_id, attempts: row.attempts,
       next_attempt_at_ms: Number(row.next_attempt_at_ms) })), runs: await this.store.history() };
   }
 }

@@ -59,6 +59,123 @@ const until = async (condition: () => Promise<boolean>) => {
   assert.fail("Coordinator did not reach expected state");
 };
 
+test("candidate selection filters unrelated types and self matches before the cap, and ranks normalized reported areas", async () => {
+  const f = await fixture();
+  try {
+    const helperPacket = (owner: SigningIdentity, types: number[], area: string, created = now) => f.packet(owner, 3,
+      { owner_node_id: Buffer.from(owner.nodeId, "hex"), help_types: types, coarse_area: area, availability: 1, consent }, created);
+    // More than a full helper batch must not crowd out relevant water volunteers.
+    await f.upload(Array.from({ length: 55 }, () => helperPacket(identity(), [1], "Station")));
+    const nearby = identity(), elsewhere = identity();
+    await f.upload([helperPacket(nearby, [6], "  sTaTiOn  ", now - 500), helperPacket(elsewhere, [6], "East gate"),
+      helperPacket(f.origin, [6], "Station")]);
+    await f.upload([f.packet(f.supplier, 5, { offer_id: randomUUID(), owner_node_id: Buffer.from(f.supplier.nodeId, "hex"),
+      resource_type: 2, quantity: 12, coarse_area: "Station", consent })]);
+    const context = await f.store.context(f.requestId, now);
+    const helpers = context.resources.filter(r => r.kind === "helper");
+    assert.equal(helpers[0].owner_node_id, nearby.nodeId);
+    assert.ok(helpers.some(r => r.owner_node_id === elsewhere.nodeId)); // Area mismatch is not proof of inaccessibility.
+    assert.ok(context.resources.every(r => r.owner_node_id !== f.origin.nodeId));
+    assert.ok(helpers.every(r => r.help_types.includes(6)));
+    assert.deepEqual(context.resources.filter(r => r.kind === "offer").map(r => r.resource_type), [1]);
+  } finally { await f.pg.close(); }
+});
+
+test("scheduling ignores unrelated uploads and old replays, but detects type changes and expiry without new uploads", async () => {
+  const f = await fixture(); let clock = now; let calls = 0;
+  const worker = new CoordinatorWorker(f.database, f.model(async () => { calls++; return { matches: [] }; }), () => clock);
+  const job = async () => (await f.pg.query<any>("SELECT * FROM coordinator_jobs WHERE request_id = $1", [f.requestId])).rows[0];
+  try {
+    worker.start(); await until(async () => (await job())?.queued === false); await worker.stop();
+    const initial = await job(); assert.equal(calls, 1);
+    await f.upload([f.packet(f.supplier, 5, { offer_id: randomUUID(), owner_node_id: Buffer.from(f.supplier.nodeId, "hex"), resource_type: 2, quantity: 10, consent })]);
+    await f.publishHelper(f.helper, 1, now - 2000);
+    worker.start(); await worker.stop();
+    assert.equal((await job()).input_revision, initial.input_revision);
+    assert.equal((await job()).queued, false); assert.equal(calls, 1);
+    await f.upload([f.packet(f.helper, 3, { owner_node_id: Buffer.from(f.helper.nodeId, "hex"),
+      help_types: [1], availability: 1, coarse_area: "Station", consent }, now)]);
+    worker.start(); await until(async () => calls === 2 && (await job()).queued === false); await worker.stop();
+    clock = now + 50001; // The water offer expires; the food offer remains irrelevant.
+    worker.start(); await until(async () => (await f.store.history()).length === 3 && (await job()).queued === false); await worker.stop();
+    assert.equal(calls, 2); // No model call for the now-empty candidate set.
+    const history = await f.store.history();
+    assert.equal(history[0].candidate_count, 0); assert.equal(history[0].proposal_count, 0);
+    assert.ok(Number((await job()).input_revision) > Number(initial.input_revision));
+  } finally { await worker.stop(); await f.pg.close(); }
+});
+
+test("a candidate change discovered during inference survives completion of the older generation", async () => {
+  const f = await fixture(); let calls = 0;
+  let release!: () => void;
+  const continueRun = new Promise<void>(resolve => { release = resolve; });
+  const worker = new CoordinatorWorker(f.database, f.model(async () => {
+    calls++; if (calls === 1) await continueRun;
+    return { matches: [f.draft()] };
+  }), () => now);
+  const other = new CoordinatorWorker(f.database, f.model(), () => now);
+  try {
+    worker.start(); await until(async () => calls === 1);
+    await f.publishHelper(f.helper, 2, now);
+    other.start(); await other.stop(); // Discovers a new input while the first worker holds the lease.
+    release();
+    await until(async () => calls === 2 && (await f.pg.query<any>("SELECT queued FROM coordinator_jobs")).rows[0].queued === false);
+    assert.equal((await f.store.history()).filter(run => run.status === "completed").length, 2);
+  } finally { release(); await worker.stop(); await other.stop(); await f.pg.close(); }
+});
+
+test("queue totals exceed the preview limit and bounded batches drain without waiting for another polling interval", async () => {
+  const f = await fixture(); let calls = 0;
+  const worker = new CoordinatorWorker(f.database, f.model(async () => { calls++; return { matches: [] }; }), () => now);
+  try {
+    const ids = [f.requestId, ...Array.from({ length: 35 }, () => randomUUID())];
+    await f.upload(ids.slice(1).map(id => f.packet(f.origin, 1,
+      { request_id: id, category: 3, description: "Need water", coarse_area: "Station", consent })));
+    for (const id of ids) await worker.enqueue(id);
+    const status = await worker.status();
+    assert.equal(status.queued.length, 30); assert.equal(status.queued_total, 36);
+    worker.start();
+    await until(async () => (await f.pg.query<{ remaining: number }>("SELECT COUNT(*)::integer AS remaining FROM coordinator_jobs WHERE queued")).rows[0].remaining === 0);
+    assert.equal(calls, 36);
+    assert.equal((await worker.status()).queued_total, 0);
+  } finally { await worker.stop(); await f.pg.close(); }
+});
+
+test("review pagination handles equal timestamps, request filters and batched freshness through the protected API", async () => {
+  const f = await fixture();
+  const pem = generateKeyPairSync("ec", { namedCurve: "prime256v1" }).privateKey.export({ format: "pem", type: "pkcs8" }).toString();
+  const headers = { authorization: `Bearer ${"v".repeat(43)}` };
+  const app = buildApp({ database: f.database, cloudSigningKeyPem: pem, now: () => now,
+    principals: [{ id: "viewer", role: "viewer", token_sha256: tokenHash("v".repeat(43)) }] });
+  try {
+    const requestIds = Array.from({ length: 32 }, () => randomUUID());
+    for (const id of requestIds) {
+      await f.upload([f.packet(f.origin, 1, { request_id: id, category: 3, description: "Need water", coarse_area: "Station", consent })]);
+      const result = await new CloudCoordinator(f.store, f.model(async () => ({ matches: [{ ...f.draft(), request_id: id }] })), () => now).run(id);
+      assert.equal(result.status, "completed");
+    }
+    const seen: string[] = [];
+    let before: string | null = null;
+    do {
+      const response: { statusCode: number; body: string; json(): any } = await app.inject({ url: `/v1/dashboard/proposals?limit=7${before ? `&before=${before}` : ""}`, headers });
+      assert.equal(response.statusCode, 200, response.body);
+      const page = response.json();
+      assert.ok(page.items.length <= 7);
+      assert.ok(page.items.every((p: any) => p.freshness === "current" && p.request_area === "Station"));
+      seen.push(...page.items.map((p: any) => p.proposal_id)); before = page.next_before;
+    } while (before);
+    assert.equal(seen.length, 32); assert.equal(new Set(seen).size, 32);
+    const filtered = await app.inject({ url: `/v1/dashboard/proposals?request_id=${requestIds[0]}`, headers });
+    assert.equal(filtered.json().items.length, 1); assert.equal(filtered.json().next_before, null);
+    await f.publishHelper(f.helper, 2, now);
+    const expired = await f.store.reviewPage(now + 50001, 100);
+    assert.ok(expired.items.every(p => p.freshness === "stale"));
+    for (const query of ["limit=101", "limit=0", "before=broken", "before=1.bad-id", "request_id=nope", "unknown=1"])
+      assert.equal((await app.inject({ url: `/v1/dashboard/proposals?${query}`, headers })).statusCode, 400);
+    assert.equal((await app.inject({ url: "/v1/dashboard/proposals?limit=7" })).statusCode, 401);
+  } finally { await app.close(); }
+});
+
 test("closing an SOS during inference discards suggestions, makes saved proposals stale, and prevents scheduling", async () => {
   const f = await fixture();
   let calls = 0;

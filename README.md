@@ -194,9 +194,13 @@ GHOST_COORDINATOR_MODEL=<Gemini model ID available to your project>
 Restart the server after configuration. Both providers use the same validated
 suggestion tool; OpenAI uses Responses and Gemini uses Google's Chat Completions
 compatibility endpoint. Keys stay server-side. No Android rebuild is needed.
-New SOS and availability uploads trigger matching automatically. **AI suggestions**
-shows model suggestions, run progress/failures and outdated results. Operators can
-use **Find help with AI** on an SOS to request another run. Without model settings,
+New SOS and relevant availability changes trigger matching automatically. **AI suggestions**
+shows model suggestions, run progress/failures and outdated results. You can
+page through older suggestions or filter by SOS ID; the selected page keeps
+refreshing. Run results distinguish missing candidates from no suitable matches
+and saved suggestions. Relevant candidate changes and expiry trigger automatic
+rechecks; unrelated uploads and delayed originals do not rerun unchanged inputs.
+Operators can use **Find help with AI** on an SOS to request another run. Without model settings,
 the dashboard reports AI unavailable and the existing SOS/relay flow still works.
 
 Only currently available helpers/supplies are candidates. Signed supply edits and
