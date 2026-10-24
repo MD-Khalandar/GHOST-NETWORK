@@ -20,7 +20,7 @@ class AppGraph(application: Application) : AndroidViewModel(application) {
     private val identity by lazy { AndroidSigningIdentity().loadOrCreate() }
     val nearby = NearbyAdapter(application)
     val repository = LocalSosRepository(db, { identity })
-    private val exchange = DirectExchange(viewModelScope, nearby, repository) { identity }
+    private val exchange = DirectExchange(viewModelScope, nearby, repository, { identity })
     val dependencies = GhostAppDependencies(nearby, UnavailableGateway, repository, UnavailableOffers, UnavailableCoordination)
     private val operation = MutableStateFlow(LocalUiState())
     private data class DraftWrite(val draft: SosDraft, val complete: (() -> Unit)? = null)

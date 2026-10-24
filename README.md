@@ -48,6 +48,14 @@ neighbors already hold a report across restarts and reconnects; unacknowledged
 sends remain eligible for retry. Duplicates are saved only once. Existing local
 data upgrades in place. Physical three-phone testing is still pending.
 
+Each phone has independent bounded queues. A report waits for its neighbor's
+signed receipt before the next report goes out on that link. Missing receipts
+trigger up to three attempts per connection; **Retry queued sends** resumes them
+without forgetting saved receipts. Requests shows relay acknowledgements and
+the remaining transfer budget. Expired reports are never queued for another send.
+This relay handles public SOS reports and neighbor receipts; cloud uploads and
+cloud responses returning through the mesh are separate upcoming work.
+
 The server public signing key can be pinned with
 `-PghostCloudPublicKey=<base64url-SPKI>`. Empty configuration rejects cloud results.
 Shared wire definitions live in `contracts/ghost.proto`; signature vectors use

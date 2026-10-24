@@ -43,9 +43,12 @@ data class NeighborDeliveryRow(
     val receiptToPeer: ByteArray? = null,
 )
 
+data class ReportStatusRow(@Embedded val report: ReportRow, val acknowledgedNeighbors: Int)
+
 @Dao
 interface SosDao {
-    @Query("SELECT * FROM reports ORDER BY receivedAt DESC LIMIT 1000") fun observe(): Flow<List<ReportRow>>
+    @Query("SELECT reports.*, (SELECT COUNT(*) FROM neighbor_deliveries d WHERE d.packetId = reports.packetId AND d.receiptFromPeer IS NOT NULL) AS acknowledgedNeighbors FROM reports ORDER BY receivedAt DESC LIMIT 1000")
+    fun observe(): Flow<List<ReportStatusRow>>
     @Query("SELECT * FROM reports WHERE requestId = :id") suspend fun request(id: String): ReportRow?
     @Query("SELECT * FROM reports WHERE packetId = :id") suspend fun packet(id: String): ReportRow?
     @Query("SELECT * FROM reports WHERE eventId = :id") suspend fun event(id: String): ReportRow?
@@ -54,6 +57,10 @@ interface SosDao {
     @Query("SELECT COUNT(*) FROM reports WHERE owned = 1 AND expiresAt > :now") suspend fun activeOwned(now: Long): Int
     @Query("SELECT * FROM reports WHERE publicSharing = 1 AND expiresAt > :now AND (:peerNode IS NULL OR NOT EXISTS (SELECT 1 FROM neighbor_deliveries d WHERE d.packetId = reports.packetId AND d.peerNodeId = :peerNode)) ORDER BY owned DESC, createdAt LIMIT 1000")
     suspend fun outgoing(now: Long, peerNode: String? = null): List<ReportRow>
+    @Query("SELECT * FROM reports WHERE packetId = :packetId AND publicSharing = 1 AND expiresAt > :now AND NOT EXISTS (SELECT 1 FROM neighbor_deliveries d WHERE d.packetId = reports.packetId AND d.peerNodeId = :peerNode)")
+    suspend fun outgoingPacket(packetId: String, peerNode: String, now: Long): ReportRow?
+    @Query("SELECT packetId FROM reports WHERE publicSharing = 1 AND expiresAt > :now")
+    suspend fun activePacketIds(now: Long): List<String>
     @Query("SELECT * FROM neighbor_deliveries WHERE packetId = :packetId AND peerNodeId = :peerNode")
     suspend fun delivery(packetId: String, peerNode: String): NeighborDeliveryRow?
     @Upsert suspend fun saveDelivery(row: NeighborDeliveryRow)
@@ -62,6 +69,8 @@ interface SosDao {
     @Query("UPDATE reports SET sentAt = :now WHERE packetId = :packetId AND owned = 1") suspend fun markSent(packetId: String, now: Long)
     @Query("UPDATE reports SET receivedBy = :recipient, receipt = :receipt WHERE packetId = :packetId AND owned = 1") suspend fun markReceived(packetId: String, recipient: String, receipt: ByteArray)
     @Query("DELETE FROM reports WHERE owned = 0 AND expiresAt <= :now") suspend fun pruneReceived(now: Long)
+    @Query("DELETE FROM reports WHERE eventId IN (SELECT eventId FROM reports WHERE owned = 1 AND expiresAt <= :now ORDER BY createdAt DESC LIMIT -1 OFFSET 100)")
+    suspend fun pruneOldOwned(now: Long)
     @Query("SELECT * FROM draft WHERE id = 1") fun observeDraft(): Flow<DraftRow?>
     @Query("SELECT * FROM draft WHERE id = 1") suspend fun draft(): DraftRow?
     @Upsert suspend fun saveDraft(row: DraftRow)

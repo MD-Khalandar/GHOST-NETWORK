@@ -3,24 +3,39 @@ package org.ghost.mesh
 import com.google.protobuf.ByteString
 import java.security.SecureRandom
 import kotlinx.coroutines.*
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.*
+import org.ghost.contracts.v1.DeliveryReceiptV1
+import org.ghost.contracts.v1.ImmutableEnvelopeV1
 import org.ghost.contracts.v1.PeerHelloV1
 import org.ghost.data.local.LocalSosRepository
 import org.ghost.domain.model.WirePacket
 import org.ghost.protocol.*
 import org.ghost.security.SigningIdentity
 import org.ghost.transport.api.*
-import org.ghost.transport.nearby.NearbyAdapter
 
-/** Paired neighbor exchange, including store-and-forward of public SOS reports. */
-class DirectExchange(private val scope: CoroutineScope, private val transport: NearbyAdapter,
-    private val repository: LocalSosRepository, private val identity: () -> SigningIdentity) {
-    private data class Session(val challenge: ByteArray, val startedAt: Long = System.currentTimeMillis(),
-        var nodeId: String? = null, var replied: Boolean = false, val pending: MutableList<WirePacket> = mutableListOf(),
-        val sent: MutableSet<String> = mutableSetOf(), val confirmed: MutableSet<String> = mutableSetOf(),
-        val attempts: MutableMap<String, Int> = mutableMapOf(), val lastAttempt: MutableMap<String, Long> = mutableMapOf())
+/** Bounded store-and-forward over authenticated, explicitly paired neighbor links.
+ * Session state belongs to the caller's single-threaded scope (the app's main scope).
+ */
+class DirectExchange(private val scope: CoroutineScope, private val transport: GhostTransport,
+    private val repository: LocalSosRepository, private val identity: () -> SigningIdentity,
+    private val now: () -> Long = System::currentTimeMillis) {
+    private class Session(val scope: CoroutineScope, val startedAt: Long) {
+        val challenge = ByteArray(32).also { SecureRandom().nextBytes(it) }
+        var nodeId: String? = null
+        var helloNode: String? = null
+        var replied = false
+        val incoming = Channel<ByteArray>(16)
+        val controls = Channel<WirePacket>(16)
+        val pending = mutableListOf<WirePacket>()
+        val sent = mutableSetOf<String>()
+        val confirmed = mutableSetOf<String>()
+        val attempts = mutableMapOf<String, Int>()
+        val lastAttempt = mutableMapOf<String, Long>()
+        val receipts = mutableMapOf<String, CompletableDeferred<Unit>>()
+        var sending: Job? = null
+    }
     private val sessions = mutableMapOf<String, Session>()
-    private val sending = mutableMapOf<String, Job>()
     private val mutableIdentities = MutableStateFlow<Map<String, String>>(emptyMap())
     val identities = mutableIdentities.asStateFlow()
     private val mutableMessage = MutableStateFlow<String?>(null)
@@ -30,117 +45,209 @@ class DirectExchange(private val scope: CoroutineScope, private val transport: N
         scope.launch(start = CoroutineStart.UNDISPATCHED) {
             transport.events.collect { event ->
                 val peer = event.peer ?: return@collect
-                try {
-                    when (event.type) {
-                        TransportEventType.PEER_CONNECTED -> {
-                            sessions[peer.endpointId] = Session(ByteArray(32).also { SecureRandom().nextBytes(it) })
-                            sendHello(peer)
-                        }
-                        TransportEventType.PEER_DISCONNECTED -> remove(peer.endpointId)
-                        TransportEventType.PACKET_RECEIVED -> event.packetBytes?.let { receive(peer, WireCodec.decode(it)) }
-                        else -> Unit
+                when (event.type) {
+                    TransportEventType.PEER_CONNECTED -> if (peer in transport.peers.value) connect(peer)
+                    TransportEventType.PEER_DISCONNECTED -> remove(peer.endpointId)
+                    TransportEventType.PACKET_RECEIVED -> event.packetBytes?.let { bytes ->
+                        val session = sessions[peer.endpointId] ?: return@let
+                        if (bytes.size > PacketValidator.MAX_PACKET || !session.incoming.trySend(bytes).isSuccess)
+                            disconnect(peer, "Receive queue full. Reconnect to retry saved reports.")
                     }
-                } catch (cancelled: CancellationException) { throw cancelled }
-                  catch (error: ProtocolException) { mutableMessage.value = "Packet rejected: ${error.code.name}. Check clocks and app versions."; transport.disconnect(peer.endpointId) }
-                  catch (_: Exception) { mutableMessage.value = "A packet was rejected or could not be saved."; transport.disconnect(peer.endpointId) }
-            }
-        }
-        scope.launch {
-            transport.peers.collect { peers -> sessions.keys.toList().filter { id -> peers.none { it.endpointId == id } }.forEach(::remove) }
-        }
-        scope.launch { repository.observeRequests().collect { flush() } }
-        scope.launch {
-            while (isActive) {
-                delay(10000)
-                if (transport.state.value.active) {
-                    sessions.toMap().filterValues { it.nodeId == null && System.currentTimeMillis() - it.startedAt > 30000 }
-                        .keys.forEach { transport.disconnect(it) }
-                    flush()
+                    else -> Unit
                 }
             }
         }
+        scope.launch {
+            transport.peers.collect { peers ->
+                sessions.keys.toList().filter { id -> peers.none { it.endpointId == id } }.forEach(::remove)
+            }
+        }
+        scope.launch {
+            repository.observeRequests().catch { mutableMessage.value = "Local storage unavailable. Relay is waiting." }
+                .collect { flush() }
+        }
+        scope.launch {
+            while (isActive) {
+                delay(RETRY_DELAY)
+                sessions.toMap().forEach { (endpoint, session) ->
+                    if (session.nodeId == null && now() - session.startedAt >= 30000)
+                        disconnect(PeerHandle(transport.id, endpoint), "Identity verification timed out. Reconnect to try again.")
+                }
+                flush()
+            }
+        }
     }
+
+    private fun current(peer: PeerHandle, session: Session) =
+        sessions[peer.endpointId] === session && peer in transport.peers.value
+
     private fun remove(endpoint: String) {
-        sessions.remove(endpoint); sending.remove(endpoint)?.cancel()
+        sessions.remove(endpoint)?.let { session ->
+            session.incoming.close(); session.controls.close(); session.scope.cancel()
+        }
         mutableIdentities.update { it - endpoint }
     }
-    private suspend fun sendHello(peer: PeerHandle, replyTo: ByteString = ByteString.EMPTY) {
-        val session = sessions[peer.endpointId] ?: return
+
+    private fun disconnect(peer: PeerHandle, message: String) {
+        mutableMessage.value = message
+        remove(peer.endpointId)
+        transport.disconnect(peer.endpointId)
+    }
+
+    private fun connect(peer: PeerHandle) {
+        remove(peer.endpointId)
+        if (sessions.size >= 4) { transport.disconnect(peer.endpointId); return }
+        val child = CoroutineScope(scope.coroutineContext + SupervisorJob(scope.coroutineContext[Job]))
+        val session = Session(child, now())
+        sessions[peer.endpointId] = session
+        // Independent, bounded workers prevent one slow phone blocking the others.
+        child.launch {
+            for (bytes in session.incoming) {
+                try { if (current(peer, session)) receive(peer, session, WireCodec.decode(bytes)) }
+                catch (cancelled: CancellationException) { throw cancelled }
+                catch (error: ProtocolException) {
+                    if (error.code == Rejection.EXPIRED) mutableMessage.value = "Expired packet ignored. Other SOS reports can still relay."
+                    else disconnect(peer, "Packet rejected: ${error.code.name}. Check clocks and app versions.")
+                }
+                catch (_: Exception) { disconnect(peer, "Packet rejected or local storage unavailable. Reports remain saved; reconnect to retry.") }
+            }
+        }
+        child.launch {
+            try {
+                for (packet in session.controls) {
+                    if (!current(peer, session)) break
+                    if (transport.send(peer, packet).code != SendResultCode.ACCEPTED_BY_TRANSPORT)
+                        disconnect(peer, "Reply interrupted. Reports remain saved; reconnect to retry.")
+                }
+            } catch (cancelled: CancellationException) { throw cancelled }
+              catch (_: Exception) { disconnect(peer, "Reply unavailable. Reconnect to retry saved reports.") }
+        }
+        child.launch {
+            try { sendHello(peer, session) }
+            catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { disconnect(peer, "Signing identity unavailable. Reconnect to retry.") }
+        }
+    }
+
+    private fun control(peer: PeerHandle, session: Session, packet: WirePacket) {
+        if (current(peer, session) && !session.controls.trySend(packet).isSuccess)
+            disconnect(peer, "Reply queue full. Reconnect to retry saved reports.")
+    }
+
+    private suspend fun sendHello(peer: PeerHandle, session: Session, replyTo: ByteString = ByteString.EMPTY) {
         val packet = withContext(Dispatchers.IO) {
             SignedPackets.create(identity(), 13, PeerHelloV1.newBuilder().setChallenge(ByteString.copyFrom(session.challenge))
-                .setReplyTo(replyTo).build().toByteString(), System.currentTimeMillis(), ttl = 300000)
+                .setReplyTo(replyTo).build().toByteString(), now(), ttl = 300000)
         }
-        // Do not block the receive collector waiting for radio transfer callbacks.
-        scope.launch { if (transport.send(peer, packet).code != SendResultCode.ACCEPTED_BY_TRANSPORT) transport.disconnect(peer.endpointId) }
+        control(peer, session, packet)
     }
-    private suspend fun receive(peer: PeerHandle, packet: WirePacket) {
-        val session = sessions[peer.endpointId] ?: return
-        if (peer !in transport.peers.value) return
-        val envelope = org.ghost.contracts.v1.ImmutableEnvelopeV1.parseFrom(WireCodec.unbase64(packet.immutableEnvelopeBytesBase64, PacketValidator.MAX_ENVELOPE))
+
+    private suspend fun receive(peer: PeerHandle, session: Session, packet: WirePacket) {
+        val envelope = ImmutableEnvelopeV1.parseFrom(WireCodec.unbase64(packet.immutableEnvelopeBytesBase64, PacketValidator.MAX_ENVELOPE))
         if (envelope.kindValue == 13) {
-            val verified = withContext(Dispatchers.IO) { PacketValidator().verify(packet, System.currentTimeMillis()) }
+            val verified = withContext(Dispatchers.IO) { PacketValidator().verify(packet, now()) }
             val hello = verified.payload as PeerHelloV1
             val node = SigningIdentity.hex(verified.envelope.senderNodeId.toByteArray())
-            if (sessions[peer.endpointId] !== session) return
-            require(session.nodeId == null || session.nodeId == node)
+            require(node != withContext(Dispatchers.IO) { identity().nodeId.value })
+            if (!current(peer, session)) return
+            require(session.helloNode == null || session.helloNode == node)
+            session.helloNode = node
             if (hello.replyTo.isEmpty) {
-                if (!session.replied) { session.replied = true; sendHello(peer, hello.challenge) }
-            }
-            else {
+                if (!session.replied) { session.replied = true; sendHello(peer, session, hello.challenge) }
+            } else {
                 require(hello.replyTo.toByteArray().contentEquals(session.challenge))
-                require(node != withContext(Dispatchers.IO) { identity().nodeId.value })
+                if (session.nodeId != null) return
                 session.nodeId = node
                 mutableIdentities.update { it + (peer.endpointId to node) }
-                mutableMessage.value = "Phone identity verified. Public SOS reports can be exchanged."
+                mutableMessage.value = "Phone identity verified. Public SOS relay is ready."
                 val waiting = session.pending.toList(); session.pending.clear()
-                waiting.forEach { receive(peer, it) }
+                waiting.forEach { receive(peer, session, it) }
                 flush()
             }
             return
         }
-        if (session.nodeId == null) {
+        val node = session.nodeId
+        if (node == null) {
             require(envelope.kindValue in setOf(1, 12) && session.pending.size < 4)
             session.pending.add(packet); return
         }
-        val node = session.nodeId!!
         when (envelope.kindValue) {
             1 -> {
                 val receipt = repository.receiveSos(packet, node)
-                session.confirmed.add(envelope.packetId) // This neighbor already holds the report.
-                val outgoing = WireCodec.decode(receipt)
-                scope.launch { transport.send(peer, outgoing) }
-                mutableMessage.value = "SOS saved from a nearby phone. Public reports can be relayed."
+                if (!current(peer, session)) return
+                session.confirmed.add(envelope.packetId)
+                session.receipts[envelope.packetId]?.complete(Unit)
+                control(peer, session, WireCodec.decode(receipt))
+                mutableMessage.value = "SOS saved from a nearby phone. Eligible reports are queued for relay."
                 flush()
             }
             12 -> {
                 repository.receiveReceipt(packet, node, session.sent.toSet())
-                session.confirmed.add(org.ghost.contracts.v1.DeliveryReceiptV1.parseFrom(envelope.payloadBytes).packetId)
-                mutableMessage.value = "Signed receipt received. A nearby phone saved the SOS."
+                if (!current(peer, session)) return
+                val id = DeliveryReceiptV1.parseFrom(envelope.payloadBytes).packetId
+                session.confirmed.add(id)
+                session.receipts[id]?.complete(Unit)
+                mutableMessage.value = "Signed receipt received. The next phone saved the SOS."
             }
-            else -> error("Unsupported direct-exchange packet")
+            else -> throw ProtocolException(Rejection.UNSUPPORTED_KIND)
         }
     }
+
     fun flush() {
         transport.peers.value.forEach { peer ->
             val session = sessions[peer.endpointId]?.takeIf { it.nodeId != null } ?: return@forEach
-            if (sending[peer.endpointId]?.isActive == true) return@forEach
-            sending[peer.endpointId] = scope.launch {
+            if (session.sending?.isActive == true) return@forEach
+            session.sending = session.scope.launch {
                 try {
-                    val excluded = session.confirmed + session.attempts.filterValues { it >= 3 }.keys
-                    for (row in repository.outgoing(session.nodeId!!, excluded)) {
-                        if (sessions[peer.endpointId] !== session || peer !in transport.peers.value) break
-                        if (row.packetId in session.confirmed || row.receivedBy == session.nodeId ||
-                            (session.attempts[row.packetId] ?: 0) >= 3 || System.currentTimeMillis() - (session.lastAttempt[row.packetId] ?: 0) < 10000) continue
-                        session.attempts[row.packetId] = (session.attempts[row.packetId] ?: 0) + 1
-                        session.lastAttempt[row.packetId] = System.currentTimeMillis()
+                    val active = repository.activePacketIds()
+                    if (!current(peer, session)) return@launch
+                    session.sent.retainAll(active); session.confirmed.retainAll(active)
+                    session.attempts.keys.retainAll(active); session.lastAttempt.keys.retainAll(active)
+                    val excluded = session.confirmed + session.attempts.filterValues { it >= MAX_ATTEMPTS }.keys +
+                        session.lastAttempt.filterValues { now() - it < RETRY_DELAY }.keys
+                    for (candidate in repository.outgoing(session.nodeId!!, excluded)) {
+                        if (!current(peer, session)) break
+                        // Reload because a receipt or expiry can arrive during a batch.
+                        val row = repository.prepareOutgoing(candidate.packetId, session.nodeId!!) ?: continue
+                        if (!current(peer, session) || row.packetId in session.confirmed) continue
+                        val completion = CompletableDeferred<Unit>()
+                        session.receipts[row.packetId] = completion
                         session.sent.add(row.packetId)
-                        if (transport.send(peer, WireCodec.decode(row.wire)).code == SendResultCode.ACCEPTED_BY_TRANSPORT) repository.markSent(row.packetId)
-                        else { mutableMessage.value = "Send interrupted. The SOS remains saved for retry."; break }
+                        session.attempts[row.packetId] = (session.attempts[row.packetId] ?: 0) + 1
+                        session.lastAttempt[row.packetId] = now()
+                        try {
+                            val result = transport.send(peer, WireCodec.decode(row.wire))
+                            if (result.code == SendResultCode.ACCEPTED_BY_TRANSPORT) {
+                                repository.markSent(row.packetId)
+                                // One unacknowledged report per neighbor bounds pressure.
+                                // The receive worker verifies and commits the receipt.
+                                if (withTimeoutOrNull(RETRY_DELAY) { completion.await(); true } != true)
+                                    mutableMessage.value = "Receipt pending. The SOS stays saved for retry."
+                            } else mutableMessage.value = "Send interrupted. The SOS stays saved for retry."
+                            if (row.packetId !in session.confirmed && session.attempts.getValue(row.packetId) >= MAX_ATTEMPTS)
+                                mutableMessage.value = "Automatic retries paused for an SOS. Use Retry queued sends or reconnect."
+                            if (result.code != SendResultCode.ACCEPTED_BY_TRANSPORT) break
+                        } finally {
+                            if (session.receipts[row.packetId] === completion) session.receipts.remove(row.packetId)
+                        }
                     }
                 } catch (cancelled: CancellationException) { throw cancelled }
-                  catch (_: Exception) { mutableMessage.value = "Send unavailable. Reports remain saved locally." }
+                  catch (_: Exception) { mutableMessage.value = "Relay unavailable. Reports remain saved locally; retry when storage and radios are ready." }
             }
         }
     }
-    fun retry() { sessions.values.forEach { it.attempts.clear(); it.lastAttempt.clear() }; flush() }
+
+    fun retry() {
+        sessions.values.forEach { session ->
+            session.sending?.cancel(); session.sending = null
+            session.attempts.clear(); session.lastAttempt.clear()
+        }
+        mutableMessage.value = "Retrying unacknowledged reports. Saved receipts are preserved."
+        flush()
+    }
+
+    companion object {
+        private const val RETRY_DELAY = 10000L
+        private const val MAX_ATTEMPTS = 3
+    }
 }

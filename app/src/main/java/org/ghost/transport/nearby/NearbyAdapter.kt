@@ -170,10 +170,14 @@ class NearbyAdapter(private val context: Context) : GhostTransport {
           catch (cancelled: CancellationException) { throw cancelled }
           catch (_: Exception) { disconnect(endpointId); error("Pairing failed. Check permissions and reconnect.") }
     }
-    fun disconnect(endpointId: String) {
+    override fun disconnect(endpointId: String) {
         accepted.remove(endpointId)
+        transfers.keys.filter { it.first == endpointId }.forEach { key ->
+            transfers.remove(key)?.completeExceptionally(IOException("Phone disconnected"))
+        }
         try { client?.disconnectFromEndpoint(endpointId) } catch (_: Exception) { /* connection is already unusable */ }
         mutablePeers.update { it.filterNot { p -> p.endpointId == endpointId } }
+        mutableState.update { it.copy(pairing = it.pairing.filterNot { p -> p.endpointId == endpointId }) }
         event(TransportEvent(TransportEventType.PEER_DISCONNECTED, PeerHandle(id, endpointId)))
     }
     override suspend fun stop() {
@@ -181,7 +185,9 @@ class NearbyAdapter(private val context: Context) : GhostTransport {
     }
     fun close() {
         generation++
-        try { client?.stopAdvertising(); client?.stopDiscovery(); client?.stopAllEndpoints() } catch (_: Exception) { /* revoked permissions */ }
+        runCatching { client?.stopAdvertising() }
+        runCatching { client?.stopDiscovery() }
+        runCatching { client?.stopAllEndpoints() }
         transfers.values.forEach { it.completeExceptionally(IOException("Nearby stopped")) }; transfers.clear()
         accepted.clear()
         mutablePeers.value = emptyList()
@@ -202,7 +208,7 @@ class NearbyAdapter(private val context: Context) : GhostTransport {
         } catch (cancelled: TimeoutCancellationException) { SendResult(SendResultCode.FAILED_RETRYABLE) }
           catch (cancelled: CancellationException) { throw cancelled }
           catch (_: Exception) { SendResult(SendResultCode.FAILED_RETRYABLE) }
-          finally { transfers.remove(key) }
+          finally { transfers.remove(key); if (!completion.isCompleted) runCatching { client?.cancelPayload(payload.id) } }
     }
 
     companion object {

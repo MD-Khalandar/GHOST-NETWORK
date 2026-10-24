@@ -1,6 +1,7 @@
 package org.ghost.transport.api
 
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.StateFlow
 import org.ghost.domain.model.PacketId
 import org.ghost.domain.model.WirePacket
 
@@ -45,11 +46,13 @@ data class SendResult(
 interface GhostTransport {
     val id: String
     val events: Flow<TransportEvent>
-    val peers: Flow<List<PeerHandle>>
+    val peers: StateFlow<List<PeerHandle>>
 
     suspend fun start(): Result<Unit>
 
     suspend fun stop()
+
+    fun disconnect(endpointId: String)
 
     suspend fun send(peer: PeerHandle, packet: WirePacket): SendResult
 }

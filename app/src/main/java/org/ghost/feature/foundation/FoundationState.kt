@@ -21,7 +21,9 @@ fun LocalDelivery.label(): String = when (this) {
     LocalDelivery.QUEUED -> "Queued for nearby phones"
     LocalDelivery.SENT_TO_NEIGHBOR -> "Transferred to neighbor · receipt pending"
     LocalDelivery.RECEIVED_BY_PHONE -> "Saved by a nearby phone · signed receipt"
-    LocalDelivery.RECEIVED_FROM_PEER -> "Received and saved from a nearby phone"
+    LocalDelivery.RECEIVED_FROM_PEER -> "Received and saved · queued for relay"
+    LocalDelivery.RELAYED -> "Relayed · next phone saved the SOS"
+    LocalDelivery.RELAY_LIMIT_REACHED -> "Saved · relay hop limit reached"
     LocalDelivery.EXPIRED -> "Expired · no longer sent"
 }
 

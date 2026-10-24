@@ -176,6 +176,7 @@ class LocalSosRepositoryTest {
         }
         assertTrue(phones.last().outgoing(keys.last().nodeId.value).isEmpty())
         assertEquals(1, dbs.last().sos().count())
+        assertEquals(LocalDelivery.RELAY_LIMIT_REACHED, phones.last().observeRequests().first().single().localDelivery)
         val expired = LocalSosRepository(dbs[1], { keys[1] }, { time + 21600000 })
         assertTrue(expired.outgoing(keys.last().nodeId.value).isEmpty())
     }
@@ -217,7 +218,10 @@ class LocalSosRepositoryTest {
         db.close(); databases.remove(db)
         val restoredDb = open(name)
         val restored = LocalSosRepository(restoredDb, { b }, { time + 1000 })
-        for (peer in listOf(a, c, d)) assertTrue(restored.outgoing(peer.nodeId.value).isEmpty())
+        for (peer in listOf(a, c, d)) {
+            assertTrue(restored.outgoing(peer.nodeId.value).isEmpty())
+            assertNull(restored.prepareOutgoing(first.packetId, peer.nodeId.value))
+        }
         assertArrayEquals(receipt, restoredDb.sos().delivery(first.packetId, c.nodeId.value)!!.receiptFromPeer)
         assertArrayEquals(reply, restored.receiveSos(duplicate, d.nodeId.value))
         assertArrayEquals(pending.wire, restored.outgoing(e.nodeId.value).single().wire)
@@ -225,6 +229,7 @@ class LocalSosRepositoryTest {
 
         val expired = LocalSosRepository(restoredDb, { b }, { first.expiresAt })
         assertTrue(expired.outgoing(e.nodeId.value).isEmpty())
+        assertNull(expired.prepareOutgoing(first.packetId, e.nodeId.value))
         assertNull(restoredDb.sos().delivery(first.packetId, c.nodeId.value))
     }
 

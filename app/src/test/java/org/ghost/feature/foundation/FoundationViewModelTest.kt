@@ -106,6 +106,7 @@ class FoundationViewModelTest {
                 override val peers = peerList
                 override suspend fun start(): Result<Unit> = command()
                 override suspend fun stop(): Unit = command()
+                override fun disconnect(endpointId: String): Unit = command()
                 override suspend fun send(peer: PeerHandle, packet: WirePacket): SendResult = command()
             },
             object : GatewayClient {

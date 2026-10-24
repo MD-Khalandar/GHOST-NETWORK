@@ -49,6 +49,9 @@ data class DashboardSosSummary(
     val stale: Boolean,
     val localDelivery: LocalDelivery = LocalDelivery.SAVED_LOCALLY,
     val createdHere: Boolean = false,
+    val relayHops: Int = 0,
+    val remainingRelayHops: Int = 4,
+    val acknowledgedNeighbors: Int = 0,
 )
 
 @Serializable

@@ -24,6 +24,8 @@ fun RequestsScreen(state: FoundationState, onRetry: () -> Unit, modifier: Modifi
                 items(state.requests, key = { "request-${it.requestId.value}" }) { request ->
                     InfoCard(request.category.name.displayName(), request.description ?: "No description provided") {
                         StatusLabel(request.localDelivery.label())
+                        if (!request.createdHere) Text("${request.relayHops} transfers from source · ${request.remainingRelayHops} remaining")
+                        if (request.acknowledgedNeighbors > 0) Text("${request.acknowledgedNeighbors} next phones acknowledged saving this SOS")
                         request.peopleCount?.let { Text("People needing help: $it") }
                         Text(request.coarseArea ?: "Area not provided")
                         Text("Source ${request.sourceNodeId.value.take(8)} · reported ${fixtureTime(request.reportedAtMs)}",

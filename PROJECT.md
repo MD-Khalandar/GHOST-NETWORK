@@ -9,8 +9,10 @@ Stack: one Kotlin/Compose app with Room/Nearby, one Fastify server with
 PostgreSQL/OpenAI, and a React/Vite dashboard. API and worker share one service.
 
 Built: SOS forms/drafts and signed reports in Room, local-only saves, foreground
-Nearby discovery/pairing, basic multi-hop SOS relay (four transfers), bounded retries
-and signed neighbor receipts. Per-neighbor delivery knowledge survives restarts.
+Nearby discovery/pairing and foreground SOS store-and-forward with a four-transfer
+budget, bounded per-phone queues, receipt-driven retries and visible relay status.
+Signed neighbor receipts and delivery knowledge survive restarts. Local-only
+reports stay private to the device; original signatures and expiry are preserved.
 Signing, cloud-key pinning, consent and server authentication also work.
 Radio behavior and handset key persistence still need physical testing.
 

@@ -42,20 +42,24 @@ class LocalSosRepository(
     override fun observeRequests(): Flow<List<DashboardSosSummary>> = combine(dao.observe(), flow {
         while (true) { emit(now()); delay(30000) }
     }) { rows, timestamp ->
-        rows.map { row ->
+        rows.map { status ->
+            val row = status.report
+            val relay = relayMetadata(row)
             val expired = row.expiresAt <= timestamp
             DashboardSosSummary(RequestId(row.requestId), SosCategory.valueOf(row.category), SosState.OPEN,
                 row.description, row.people, row.area, NodeId(row.sender), row.createdAt, row.receivedAt, expired,
                 when {
                     expired -> LocalDelivery.EXPIRED
+                    !row.owned && status.acknowledgedNeighbors > 0 -> LocalDelivery.RELAYED
+                    !row.owned && relay.remainingHops == 0 -> LocalDelivery.RELAY_LIMIT_REACHED
                     !row.owned -> LocalDelivery.RECEIVED_FROM_PEER
                     !row.publicSharing -> LocalDelivery.SAVED_LOCALLY
                     row.receivedBy != null -> LocalDelivery.RECEIVED_BY_PHONE
                     row.sentAt != null -> LocalDelivery.SENT_TO_NEIGHBOR
                     else -> LocalDelivery.QUEUED
-                }, row.owned)
+                }, row.owned, relay.hopCount, relay.remainingHops, status.acknowledgedNeighbors)
         }
-    }
+    }.flowOn(Dispatchers.IO)
     override suspend fun publish(payload: SosCreatePayload): Result<LocalPublishResult> = withContext(Dispatchers.IO) {
         try {
             writes.withLock {
@@ -78,6 +82,9 @@ class LocalSosRepository(
                         require(existing.owned && existing.sender == key.nodeId.value && original.payloadBytes == data.toByteString()) { "This request has already been saved with different content." }
                         LocalPublishResult(existing.eventId, existing.publicSharing)
                     } else {
+                        dao.pruneReceived(timestamp)
+                        dao.pruneOldOwned(timestamp)
+                        require(dao.count() < 1000) { "Local report storage is full. Wait for older reports to expire." }
                         require(dao.activeOwned(timestamp) < 100) { "Local send queue is full. Wait for older reports to expire." }
                         val row = ReportRow(verified.eventId, verified.packetId, payload.requestId.value, key.nodeId.value,
                             payload.category.name, payload.description, payload.peopleCount, payload.coarseArea, timestamp, timestamp,
@@ -99,15 +106,26 @@ class LocalSosRepository(
         val rows = dao.outgoing(now(), peerNode).filterNot { it.packetId in excludedPacketIds }
         if (peerNode == null) return@withContext rows
         val localNode = identity().nodeId
-        rows.asSequence().mapNotNull { row ->
-            val packet = WireCodec.decode(row.wire)
-            // Also count the first transfer for reports saved by the old direct-only app.
-            val relay = if (!row.owned && packet.relay.hopCount == 0) RelayMetadata(3, 1, NodeId(row.sender)) else packet.relay
-            if (peerNode == localNode.value || row.sender == peerNode || row.receivedBy == peerNode ||
-                relay.previousNodeId?.value == peerNode || relay.remainingHops == 0) null
-            else row.copy(wire = WireCodec.encode(packet.copy(relay = RelayMetadata(
-                relay.remainingHops - 1, relay.hopCount + 1, localNode))))
-        }.take(100).toList()
+        rows.asSequence().mapNotNull { prepare(it, peerNode, localNode) }.take(100).toList()
+    }
+    suspend fun activePacketIds(): Set<String> = withContext(Dispatchers.IO) { dao.activePacketIds(now()).toSet() }
+
+    suspend fun prepareOutgoing(packetId: String, peerNode: String): ReportRow? = withContext(Dispatchers.IO) {
+        dao.outgoingPacket(packetId, peerNode, now())?.let { prepare(it, peerNode, identity().nodeId) }
+    }
+
+    private fun relayMetadata(row: ReportRow): RelayMetadata {
+        val relay = WireCodec.decode(row.wire).relay
+        // Also count the first transfer for reports saved by the old direct-only app.
+        return if (!row.owned && relay.hopCount == 0) RelayMetadata(3, 1, NodeId(row.sender)) else relay
+    }
+
+    private fun prepare(row: ReportRow, peerNode: String, localNode: NodeId): ReportRow? {
+        val relay = relayMetadata(row)
+        if (peerNode == localNode.value || row.sender == peerNode || row.receivedBy == peerNode ||
+            relay.previousNodeId?.value == peerNode || relay.remainingHops == 0) return null
+        return row.copy(wire = WireCodec.encode(WireCodec.decode(row.wire).copy(relay = RelayMetadata(
+            relay.remainingHops - 1, relay.hopCount + 1, localNode))))
     }
     suspend fun markSent(packetId: String) = withContext(Dispatchers.IO) { dao.markSent(packetId, now()) }
 
