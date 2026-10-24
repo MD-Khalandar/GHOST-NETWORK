@@ -5,11 +5,11 @@ GHOST is an Android mesh communication app. **Current phase: SOS sending, one cl
 ## Checkpoints and team work
 
 - Follow the current one of [10 checkpoints](docs/CHECKPOINTS.md); preserve the existing Android scaffold/toolchain.
-- Each checkpoint has four [team prompts](docs/BUILD_PHASES.md): A contracts/integration first; B Android, C cloud/database and D Android UI/web dashboard may then work in parallel from the same user-published baseline. A verifies the user-merged result. SOS sending stays the first working slice.
-- Follow prompt file ownership. Only A changes shared schemas/interfaces, app composition/build files and consolidated checkpoint status. Do not independently invent a conflicting API.
-- Separate branch/worktree/clone per implementer. Work only on the current checkpoint; no later checkpoint without user direction.
-- The user/team stages, commits, pushes and performs merge commits. Never run `git add`, `git commit` or `git push` for checkpoint work. AI may review/fix merge conflicts within authorized scope.
-- Intermediate contract commits enable collaboration, not checkpoint completion. At final handoff report changes, checks/results, missing hardware/cloud evidence and status, then stop.
+- Work directly on `main` by default, per the user's 24 October 2026 instruction. Create a separate branch/worktree only when the user asks. Work only on the current checkpoint; no later checkpoint without user direction.
+- The four [team prompts](docs/BUILD_PHASES.md) describe optional parallel team work: A establishes contracts before B Android, C cloud/database and D UI/dashboard implementation. A single implementer can perform these responsibilities sequentially on `main`. SOS sending stays the first working slice.
+- During parallel team work, follow prompt file ownership: A owns shared schemas/interfaces, composition/build files and consolidated status. Keep one shared contract; do not invent conflicting APIs.
+- AI may stage, commit, merge and push when the user authorizes those actions. Do not force-push or rewrite published history without explicit user direction.
+- Intermediate contract commits enable collaboration, not checkpoint completion. Verify integrated changes on `main`; at final handoff report changes, checks/results, missing hardware/cloud evidence and status, then stop.
 - Advance after the user confirms the completed checkpoint was pushed, or asks to continue and a fresh read-only upstream check verifies it. A local commit/stale remote reference is insufficient. A push does not satisfy missing acceptance evidence.
 
 ## Boundaries

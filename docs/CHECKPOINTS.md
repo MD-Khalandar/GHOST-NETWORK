@@ -10,7 +10,7 @@ make small changes and run relevant checks once per affected area. The role
 prompts below apply when coordinating parallel checkpoint work; they do not
 require four separate implementation layers or services.
 
-Each checkpoint has **four copyable prompts** in [BUILD_PHASES.md](BUILD_PHASES.md): A establishes contracts and owns final integration; B handles Android data/network; C handles cloud/database; D handles Android UI and web dashboard. Run A's preparation first. B/C/D then use the same published contract baseline and may work in parallel. A verifies the merged result before the checkpoint closes.
+Each checkpoint has **four copyable prompts** in [BUILD_PHASES.md](BUILD_PHASES.md): A establishes contracts and owns final integration; B handles Android data/network; C handles cloud/database; D handles Android UI and web dashboard. Default to sequential implementation directly on `main`; these roles describe responsibilities rather than required branches. If the user requests parallel team work, A publishes the common contract first and verifies the integrated result before the checkpoint closes.
 
 ## Checkpoints and outcomes
 
@@ -30,9 +30,9 @@ Each checkpoint has **four copyable prompts** in [BUILD_PHASES.md](BUILD_PHASES.
 ## Working and handoff rules
 
 - Work on the current checkpoint only. Within it, B/C/D may run in parallel after A's contract baseline. Do not run dependent checkpoints concurrently.
-- Each friend uses a separate branch/worktree/clone. Shared contracts and integration files have one owner; no independently invented API/schema changes.
-- The user/team owns staging, commits, pushes and merge commits. AI returns changes/tests and may help resolve conflicts; it does not run `git add`, `git commit` or `git push`.
-- Intermediate user-pushed contract commits enable team work; they do not mark a checkpoint complete. After the user merges work, A runs integration checks and records evidence.
+- Work directly on `main`. Create separate branches/worktrees only when the user requests them. During parallel team work, shared contracts and integration files have one owner; no independently invented API/schema changes.
+- AI may stage, commit, merge and push when explicitly authorized by the user. Do not force-push or rewrite published history without explicit direction.
+- Published contract commits enable team work; they do not mark a checkpoint complete. Verify integrated changes on `main` and record actual evidence.
 - At checkpoint handoff report changes, actual checks/results, missing device/cloud evidence and status, then stop. Resume the next checkpoint after push confirmation, or a request to continue plus fresh read-only upstream verification.
 - Run relevant Android, server and dashboard checks for implementation changes using the documented commands. Doc-only work does not build. A green merge/build cannot replace physical or real-provider evidence.
 - Missing hardware/service means blocked or evidence pending. Explain it before advancing; only the user can change the gate/order.

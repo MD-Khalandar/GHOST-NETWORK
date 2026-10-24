@@ -1,6 +1,11 @@
 # SOS team prompts
 
-Use these four prompts per checkpoint on separate branches/computers. They implement the [10-checkpoint plan](CHECKPOINTS.md). **A goes first; B/C/D then run in parallel; A finishes integration after the user merges their branches.** With three people, one can take A plus one implementation role sequentially.
+These four role prompts implement the [10-checkpoint plan](CHECKPOINTS.md).
+**Default workflow: work directly on `main`.** One implementer can perform the
+roles sequentially, establishing contracts before dependent implementation.
+Separate branches/worktrees and parallel team work apply only when requested
+by the user. For that workflow, A goes first, B/C/D share its published baseline
+and A verifies integration.
 
 ## Shared instructions for every prompt
 
@@ -17,7 +22,10 @@ A records exact boundary-interface paths at each checkpoint. Generated files are
 
 Android package paths above are relative to `app/src/main/java/org/ghost/`; `app/**` in A's row means that composition package, not the whole Gradle module. Each role owns corresponding test packages. Server paths are mapped to the chosen framework at CP01.
 
-Use branches such as `cp01-contract`, `cp01-android`, `cp01-cloud`, `cp01-ui` from the same agreed baseline. The team user commits/pushes A's preparation before B/C/D start. User merges implementation branches into an integration branch; A reviews conflicts against the shared contract and runs combined checks. No auto-commit, force-push or silent schema compromise.
+Template references to branches and merging apply to an explicitly requested
+parallel workflow. On `main`, perform the same contract-first work and verify
+the integrated changes directly. AI may stage, commit, merge and push when the
+user authorizes those actions; do not force-push or silently compromise schemas.
 
 Each prompt ends with changed files, actual commands/results, contract assumptions, missing evidence and merge notes. Run relevant tests; Android command is `./gradlew assembleDebug testDebugUnitTest` when tooling exists. Server/dashboard commands are selected in CP01 and recorded when their scaffolds exist. Missing tools/devices/services are reported, never passed. B/C/D do not independently mark the checkpoint complete. Their evidence may use `docs/evidence/cpNN/<role>.md`; A owns the consolidated checkpoint status. Prioritize the SOS sending slice; dashboard work proceeds alongside it and cannot gate local SOS sending.
 
