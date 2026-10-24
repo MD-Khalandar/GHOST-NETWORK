@@ -67,6 +67,24 @@ class LocalSosRepositoryTest {
         assertEquals(LocalDelivery.QUEUED, restored.observeRequests().first().single().localDelivery)
     }
 
+    @Test fun olderUnsignedDraftEnablesBothSharingFlagsAndKeepsGpsChoiceAcrossRestart() = runBlocking {
+        val name="sharing-draft-${UUID.randomUUID()}.db";val db=open(name);val owner=key()
+        val draft=SosDraft(description="Unfinished request",publicSharing=false,cloudConsent=false,locationSharing=false)
+        db.sos().saveDraft(DraftRow(value=kotlinx.serialization.json.Json.encodeToString(draft)))
+        val repo=LocalSosRepository(db,{owner},{time})
+        repo.initializeDraft()
+        val current=repo.observeDraft().first()!!
+        assertTrue(current.publicSharing);assertTrue(current.cloudConsent);assertFalse(current.locationSharing)
+        assertEquals(draft.requestId,current.requestId);assertEquals(draft.description,current.description)
+        repo.saveDraft(draft.copy(area="Station")) // A late old form cannot disable sharing again.
+        db.close();databases.remove(db)
+        val restored=LocalSosRepository(open(name),{owner},{time})
+        val saved=restored.observeDraft().first()!!
+        assertTrue(saved.publicSharing);assertTrue(saved.cloudConsent);assertFalse(saved.locationSharing)
+        assertEquals("Station",saved.area)
+        assertTrue(restored.outgoing().isEmpty()) // Updating an unfinished draft does not publish it.
+    }
+
     @Test fun localOnlySaveIsNotTransmittedAndRepeatedSendDoesNotDuplicateOrReviveTheDraft() = runBlocking {
         val db = open(); val identity = key()
         val repo = LocalSosRepository(db, { identity }, { time })
@@ -81,7 +99,7 @@ class LocalSosRepositoryTest {
         assertTrue(repo.outgoing().isEmpty())
         assertEquals(LocalDelivery.SAVED_LOCALLY, repo.observeRequests().first().single().localDelivery)
         val next = repo.observeDraft().first()!!
-        assertFalse(next.publicSharing)
+        assertTrue(next.publicSharing)
         assertTrue(next.cloudConsent)
         assertFalse(next.locationSharing)
         assertNotEquals(draft.requestId, next.requestId)

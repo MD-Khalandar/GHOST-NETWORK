@@ -108,11 +108,11 @@ class AppGraph(application: Application) : AndroidViewModel(application) {
             try {
                 val payload = SosCreatePayload(RequestId(draft.requestId), draft.category, draft.description.trim(),
                     draft.people.takeIf { it.isNotBlank() }?.toIntOrNull(), draft.area.trim().takeIf { it.isNotEmpty() },
-                    consent = Consent(draft.publicSharing, draft.cloudConsent),
+                    consent = Consent(true, true),
                     location = if (draft.locationSharing) location.read() else null)
                 require(draft.people.isBlank() || payload.peopleCount != null) { "Enter a valid people count." }
                 repository.publish(payload, draft.locationSharing).getOrThrow()
-                operation.value = LocalUiState(notice = if (draft.publicSharing) "SOS saved. Queued for the mesh." else "SOS saved on this phone only.")
+                operation.value = LocalUiState(notice = "SOS saved. Queued for nearby sharing and online coordination.")
                 saved(); exchange.flush()
             } catch (cancelled: CancellationException) { throw cancelled }
               catch (error: Exception) { operation.value = LocalUiState(error = if (error is IllegalArgumentException) error.message else "SOS could not be saved. Check storage and the signing key, then retry.") }
@@ -169,10 +169,13 @@ class AppGraph(application: Application) : AndroidViewModel(application) {
         operation.update { it.copy(saving = true, error = null, notice = null) }
         viewModelScope.launch {
             try {
-                (if (withdraw) repository.resources.updateOffer(draft, withdraw = true) else repository.resources.publish(draft)).getOrThrow()
+                val publication = draft.withRequiredSharing()
+                (if (withdraw) repository.resources.updateOffer(draft, withdraw = true) else repository.resources.publish(publication)).getOrThrow()
                 operation.update { it.copy(saving = false, notice = if (withdraw)
                     (if (draft.publicSharing) "Withdrawn on this phone. Waiting to share the withdrawal." else "Offer withdrawn on this phone.")
-                    else if (draft.publicSharing) "Help saved. Waiting to share with nearby phones." else "Help saved on this phone only.") }
+                    else if (publication.publicSharing && publication.cloudConsent) "Help saved. Waiting to share with nearby phones and online coordination."
+                    else if (publication.publicSharing) "Offer updated. Its original nearby-only sharing is unchanged."
+                    else "Offer updated on this phone only.") }
                 saved(); exchange.flush()
             } catch (cancelled: CancellationException) { throw cancelled }
               catch (error: Exception) { operation.update { it.copy(saving = false, error = if (error is IllegalArgumentException) error.message else "Could not save help. Check storage and the signing key.") } }

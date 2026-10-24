@@ -78,7 +78,8 @@ class GhostAppUiTest {
         compose.onNodeWithText("Edit offer").performScrollTo().performClick()
         compose.onNodeWithText("Edit supply offer").assertIsDisplayed()
         compose.onNodeWithText("Quantity (optional)").performScrollTo().performTextReplacement("7")
-        compose.onNodeWithText("Share with nearby phones").performScrollTo().assertIsNotEnabled().assertIsOn()
+        compose.onNodeWithText("Share with nearby phones").assertDoesNotExist()
+        compose.onNodeWithText("Allow online help coordination").assertDoesNotExist()
         compose.onNodeWithText("Save changes").performClick()
         assertEquals(draft.id, saved!!.id); assertEquals("7", saved!!.quantity); assertTrue(saved!!.editing)
         compose.onNodeWithText("Withdraw offer").performScrollTo().performClick()
@@ -87,7 +88,7 @@ class GhostAppUiTest {
         assertEquals(draft.id, withdrawn!!.id); assertEquals(draft.baseEventId, withdrawn!!.baseEventId)
     }
 
-    @Test fun offerHelpOnlyPublishesOnSaveAndKeepsSharingChoicesIndependent() {
+    @Test fun offerHelpOnlyPublishesOnSaveAndAlwaysSharesNearbyAndOnline() {
         var saved: org.ghost.domain.model.ResourceDraft? = null
         val actions = LocalActions({}, { _, done -> done() }, { _, _ -> }, {}, {}, {},
             publishResource = { value, done -> saved = value; done() })
@@ -100,12 +101,11 @@ class GhostAppUiTest {
         compose.onNodeWithText("Save and share help").performClick()
         assertNull(saved)
         compose.onNodeWithText("Quantity (optional)").performScrollTo().performTextReplacement("12")
-        compose.onNodeWithText("Allow online help coordination").performScrollTo().assertIsOff().performClick()
-        compose.onNodeWithText("Share with nearby phones").performScrollTo().assertIsOn().performClick()
-        compose.onNodeWithText("Allow online help coordination").assertIsOn()
-        compose.onNodeWithText("Save on this phone").performClick()
+        compose.onNodeWithText("Share with nearby phones").assertDoesNotExist()
+        compose.onNodeWithText("Allow online help coordination").assertDoesNotExist()
+        compose.onNodeWithText("Save and share help").performClick()
         assertEquals("12", saved!!.quantity)
-        assertTrue(saved!!.supply); assertFalse(saved!!.publicSharing); assertTrue(saved!!.cloudConsent)
+        assertTrue(saved!!.supply); assertTrue(saved!!.publicSharing); assertTrue(saved!!.cloudConsent)
     }
 
     @Test
@@ -137,7 +137,7 @@ class GhostAppUiTest {
         assertFalse(saved!!.available)
         assertEquals(draft.name, saved!!.name); assertEquals(draft.area, saved!!.area)
         assertEquals(draft.helpType, saved!!.helpType)
-        assertFalse(saved!!.publicSharing); assertTrue(saved!!.cloudConsent)
+        assertTrue(saved!!.publicSharing); assertTrue(saved!!.cloudConsent)
         compose.onNodeWithText("Requests").performClick()
         compose.onNode(hasText("Offer help") and hasClickAction()).performClick()
         compose.onNodeWithText("Update availability").performScrollTo().performClick()
@@ -193,24 +193,23 @@ class GhostAppUiTest {
     }
 
     @Test
-    fun sharingChoicesRemainIndependentWithoutAnExtraReviewScreen() {
+    fun oldSosDraftAlwaysSharesNearbyAndOnlineWhileGpsRemainsOptional() {
         var saved: SosDraft? = null
-        val draft = SosDraft(publicSharing = true)
+        val draft = SosDraft(publicSharing = false, cloudConsent = false)
         val actions = LocalActions({}, { _, done -> done() }, { value, done -> saved = value; done() }, {}, {}, {})
         compose.setContent { GhostTheme { GhostApp(FoundationPreviewFixtures.loaded, {}, local = LocalUiState(draft = draft), actions = actions) } }
         compose.onNodeWithText("Send SOS").performScrollTo().performClick()
-        compose.onNodeWithText("Sharing settings").performScrollTo().performClick()
-        compose.onNodeWithText("Share with nearby phones").performScrollTo().assertIsOn()
-        compose.onNodeWithText("Allow online help coordination").performScrollTo().assertIsOff().performClick().assertIsOn()
-        compose.onNodeWithText("Share with nearby phones").performScrollTo().performClick().assertIsOff()
-        compose.onNodeWithText("Allow online help coordination").performScrollTo().assertIsOn()
+        compose.onNodeWithText("Share with nearby phones").assertDoesNotExist()
+        compose.onNodeWithText("Allow online help coordination").assertDoesNotExist()
+        compose.onNodeWithText("Share GPS location if available").performScrollTo().assertIsOn().performClick().assertIsOff()
         compose.onNodeWithText("What help do you need?").performScrollTo().performTextInput("Need drinking water")
         assertNull(saved)
         compose.onNodeWithText("Review SOS").assertDoesNotExist()
-        compose.onNodeWithText("Save on this phone").performClick()
+        compose.onNodeWithTag("sos-send").performClick()
         assertEquals("Need drinking water", saved!!.description)
-        assertFalse(saved!!.publicSharing)
+        assertTrue(saved!!.publicSharing)
         assertTrue(saved!!.cloudConsent)
+        assertFalse(saved!!.locationSharing)
     }
 
     @Test
@@ -235,7 +234,7 @@ class GhostAppUiTest {
         assertEquals("Need water", saved!!.description)
         assertEquals("1", saved!!.people)
         assertTrue(saved!!.publicSharing)
-        assertFalse(saved!!.cloudConsent)
+        assertTrue(saved!!.cloudConsent)
     }
 
     @Test

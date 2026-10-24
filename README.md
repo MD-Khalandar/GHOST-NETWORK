@@ -37,15 +37,14 @@ For two phones with Google Play services:
 2. Tap **Send SOS**, describe the help needed, then **Send SOS**. Category, area and a +/− people counter are under **Optional details**. There is no review screen.
 3. Check Requests on the other phone. The sender shows receipt only after the receiver saves the report and returns a valid signature.
 
-The form shows the sharing audience before sending. **Sharing settings** keeps
-mesh sharing, GPS location sharing and cloud consent separate and remembers them
-for the next SOS. GPS location sharing is on by default; when location permission
-and a fix no older than five minutes are available, the signed SOS includes latitude and
-longitude. If unavailable or disabled, the SOS is sent without location.
-New installations start with mesh sharing on and cloud consent off; existing
-drafts keep their choices. With mesh sharing off, **Save on this phone** saves
-locally. Public reports stay queued without peers. Joining alone never sends a
-new SOS, though previously queued public reports resume automatically.
+New SOS requests always enable nearby sharing and online help coordination; there
+are no sharing checkboxes. The form explains that nearby people can read/relay the
+request and a gateway can upload it. **Share GPS location if available** remains
+optional and remembered. With permission and a cached fix no older than five
+minutes, the SOS includes coordinates; otherwise it sends without location.
+Older unfinished drafts use the same sharing policy when sent. Existing signed
+reports keep their original consent. Joining alone never creates a new SOS;
+previously queued public reports resume automatically.
 
 In **Requests**, your own unexpired SOS has **Cancel SOS** and **Mark resolved**.
 Confirm either action to end the request; send a new SOS if you need help again.
@@ -127,8 +126,7 @@ The phone checks both enrollment replies against its trusted server key and prov
 possession of its existing Android Keystore identity. An expiring gateway-only
 credential is stored encrypted and renewed automatically, including after a 401.
 Disconnection, backgrounding or losing all usable networks pauses online transfers; reconnecting
-resumes them. Sharing choices are unchanged: only public, online-consented reports
-upload, and **Received by server** requires a verified, saved acknowledgement.
+resumes them. New publications enable both sharing flags; uploads still require those signed flags, and **Received by server** requires a verified, saved acknowledgement.
 No connection status creates an SOS or confirms assistance. Manual gateway tokens
 remain available only under **Connections → Technical details** in legacy builds
 without bundled automatic connection settings. Wire definitions remain in
@@ -139,14 +137,12 @@ without bundled automatic connection settings. Wire definitions remain in
 From Home, tap **Offer help**. Choose **Volunteer** (help type, optional name and
 area, available/unavailable) or **Supplies** (resource type, optional quantity,
 unit and area). Save before sharing; availability expires after six hours.
-**Share with nearby phones** and **Allow online help coordination** are separate
-choices. With nearby sharing off, the publication stays on the phone even if
-online consent is checked. Saving alone does not assign help or reserve stock.
-For volunteers, turning sharing off also queues an unavailable report for the
-previous audience, without a name or area. New private details stay local. Turning
-only online sharing off can leave your new availability shared nearby while the
-server receives the withdrawal. The withdrawal keeps the previous expiry and waits
-for delivery; a separate verified receipt shows when the server has received it.
+New volunteer publications and supply offers always share nearby and allow online
+coordination. There are no sharing checkboxes. Saving alone does not assign help or
+reserve stock. Volunteers can mark themselves unavailable; supply owners can
+withdraw offers. Updates wait for delivery to other phones/server, with a separate
+verified receipt. Existing signed offers retain their original audience when edited;
+create a new offer to broaden an older offer's sharing.
 
 Updated phones relay publications with the same four-transfer limit, signed
 neighbor receipts and gateway upload/return path as SOS. Older phones continue

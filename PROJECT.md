@@ -24,8 +24,11 @@ reports stay private to the device; original signatures and expiry are preserved
 Verified duplicate SOS arriving by a shorter route improve the stored forwarding
 budget, preserving signed bytes, expiry, cloud state and all neighbor receipts.
 Signing, cloud-key pinning, consent and server authentication also work.
-SOS sending needs only a message and Send; optional details and remembered sharing
-settings expand in place. GPS sharing is on by default but optional and remembered
+SOS sending needs only a message and Send. New SOS, volunteers and supply offers
+always enable nearby sharing and online coordination, without sharing checkboxes.
+Older unsigned SOS drafts adopt these settings; existing signed records retain their
+original audience. Supply edits keep the signed audience; a new offer broadens it.
+GPS sharing is on by default but optional and remembered
 after sending; a cached location is included only with permission and a valid fix
 no older than five minutes, measured with Android's monotonic clock. Mesh joining
 alone never creates an SOS. Connections
@@ -71,7 +74,7 @@ become stale. Dashboard labels closures and removes them from the active map.
 Older/offline phones may retain open copies until delivery or expiry. Host tests
 cover these paths; physical closure/gateway testing remains.
 Offer help lists owned volunteer availability and supplies separately from forms,
-and loads the saved volunteer name, skill, area and sharing choices when updating.
+and loads the saved volunteer name, skill and area when updating.
 It saves signed volunteer profiles and supply offers in Room.
 Publications relay to supporting phones and upload with separate online consent;
 verified server receipts return through the mesh. Help types, area, quantity/unit
@@ -80,11 +83,9 @@ owner-signed helper report controls availability; supplies are separate offers.
 Helper/supply relay scans the bounded saved queue before limiting each batch to
 100 eligible packets, so exhausted, excluded or unsupported updates cannot block later help.
 Existing phone data migrates in place. Local-only publications stay local.
-Turning volunteer sharing off now queues a signed unavailable report for its previous
-audience, omitting name/area and preserving the previous expiry. New private details
-and sharing choices stay local. Withdrawals survive restarts, supersede old queued
-availability and show their separate server receipt; offline copies wait for delivery
-or expiry. Nearby availability can remain shared while online availability is withdrawn.
+Older signed withdrawals remain supported. Current volunteer updates publish their
+available/unavailable state to nearby phones and online coordination. Changes wait
+for delivery; offline copies may remain until updated or expired.
 Owners can edit supply quantity/unit/area or withdraw the same offer. Signed full
 updates carry the original ownership proof and keep its expiry and sharing flags;
 latest-only forwarding and projections prevent delayed originals undoing changes.
@@ -123,6 +124,6 @@ cover the loop. Physical three-phone and deployed PostgreSQL testing remain.
 Next: field-test assistance, improve fresh GPS and background operation. Server
 commitment and requester-reported resolution do not independently prove delivery.
 
-Keep public/cloud consent separate, preserve signed bytes, reject forged/duplicate
+Validate signed sharing consent, preserve signed bytes, reject forged/duplicate
 events, and keep cloud/provider secrets server-side. Queued, received and confirmed are distinct.
 Private messaging comes last. Local AI and LoRa wait.

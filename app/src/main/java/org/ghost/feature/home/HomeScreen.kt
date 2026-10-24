@@ -80,14 +80,13 @@ private val DraftSaver = Saver<SosDraft, String>(save = { Json.encodeToString(it
 fun SosFormDialog(initial: SosDraft, busy: Boolean, error: String?, canSave: Boolean,
                   onChange: (SosDraft) -> Unit, onSave: (SosDraft) -> Unit, onClose: (SosDraft) -> Unit,
                   onRequestLocation: (() -> Unit)? = null) {
-    var draft by rememberSaveable(initial.requestId, stateSaver = DraftSaver) { mutableStateOf(initial) }
+    var draft by rememberSaveable(initial.requestId, stateSaver = DraftSaver) { mutableStateOf(initial.withRequiredSharing()) }
     var details by rememberSaveable { mutableStateOf(false) }
-    var sharing by rememberSaveable { mutableStateOf(false) }
     var categoryMenu by remember { mutableStateOf(false) }
     var validation by remember { mutableStateOf<String?>(null) }
-    fun update(value: SosDraft) { draft = value; validation = null; onChange(value) }
+    fun update(value: SosDraft) { draft = value.withRequiredSharing(); validation = null; onChange(draft) }
     LaunchedEffect(Unit) { if (draft.locationSharing) onRequestLocation?.invoke() }
-    Dialog(onDismissRequest = { if (!busy) onClose(draft) }, properties = DialogProperties(
+    Dialog(onDismissRequest = { if (!busy) onClose(draft.withRequiredSharing()) }, properties = DialogProperties(
         dismissOnClickOutside = false, dismissOnBackPress = !busy, usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         Surface(modifier = Modifier.fillMaxSize().safeDrawingPadding().imePadding(), tonalElevation = 6.dp) {
             Column(Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -117,18 +116,13 @@ fun SosFormDialog(initial: SosDraft, busy: Boolean, error: String?, canSave: Boo
                         OutlinedTextField(draft.area, { if (it.length <= 120) update(draft.copy(area = it)) }, enabled = !busy,
                             label = { Text("Area or landmark (optional)") }, modifier = Modifier.fillMaxWidth())
                     }
-                    Text(if (draft.publicSharing) "Nearby people can read this request. Their phones can pass it along." else "This request will be saved only on your phone.")
-                    Text(if (draft.cloudConsent) "Online help coordination: allowed" else "Online help coordination: off", style = MaterialTheme.typography.bodySmall)
-                    TextButton({ sharing = !sharing }, enabled = !busy, modifier = Modifier.heightIn(min = 48.dp)) { Text("Sharing settings") }
-                    if (sharing) {
-                        ConsentChoice("Share with nearby phones", "Nearby people can read your request and pass it to more phones.", draft.publicSharing, !busy) { update(draft.copy(publicSharing = it)) }
-                        ConsentChoice("Allow online help coordination", "Allow a phone with internet to save your request online. Saving online does not mean help has been arranged.", draft.cloudConsent, !busy) { update(draft.copy(cloudConsent = it)) }
-                        ConsentChoice("Share GPS location if available", "Include a cached location up to five minutes old. If unavailable, the SOS is sent without it.", draft.locationSharing, !busy) {
-                            update(draft.copy(locationSharing = it))
-                            if (it) onRequestLocation?.invoke()
-                        }
-                        Text("We'll remember these choices for your next request.", style = MaterialTheme.typography.bodySmall)
+                    Text("Your SOS is shared with nearby phones and online help coordination. Nearby people can read and relay it; an online gateway uploads it when available.")
+                    Text("Sharing does not confirm that help has been arranged.", style = MaterialTheme.typography.bodySmall)
+                    ConsentChoice("Share GPS location if available", "Include a cached location up to five minutes old. If unavailable, the SOS is sent without it.", draft.locationSharing, !busy) {
+                        update(draft.copy(locationSharing = it))
+                        if (it) onRequestLocation?.invoke()
                     }
+                    Text("We'll remember your GPS choice for your next request.", style = MaterialTheme.typography.bodySmall)
                     (validation ?: error)?.let { Text(it.userMessage(), color = MaterialTheme.colorScheme.error) }
                     if (!canSave) Text("This is a preview. Requests can't be saved.")
                 }
@@ -138,11 +132,11 @@ fun SosFormDialog(initial: SosDraft, busy: Boolean, error: String?, canSave: Boo
                         draft.people.isNotBlank() && (draft.people.toIntOrNull() ?: 0) !in 1..1000 -> "Check the people count in Optional details."
                         else -> null
                     }
-                    if (validation == null) onSave(draft)
+                    if (validation == null) onSave(draft.withRequiredSharing())
                 }, enabled = !busy && canSave, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("sos-send")) {
-                    Text(if (busy) "Saving…" else if (draft.publicSharing) "Send SOS" else "Save on this phone")
+                    Text(if (busy) "Saving…" else "Send SOS")
                 }
-                TextButton({ onClose(draft) }, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Close") }
+                TextButton({ onClose(draft.withRequiredSharing()) }, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Close") }
             }
         }
     }

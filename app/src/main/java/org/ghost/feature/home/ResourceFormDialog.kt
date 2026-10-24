@@ -26,7 +26,7 @@ private val ResourceSaver = Saver<ResourceDraft, String>(save = { Json.encodeToS
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ResourceFormDialog(local: LocalUiState, actions: LocalActions?, onClose: () -> Unit, initial: ResourceDraft) {
-    var draft by rememberSaveable(initial.id, stateSaver = ResourceSaver) { mutableStateOf(initial) }
+    var draft by rememberSaveable(initial.id, stateSaver = ResourceSaver) { mutableStateOf(initial.withRequiredSharing()) }
     var validation by remember { mutableStateOf<String?>(null) }
     Dialog(onDismissRequest = { if (!local.saving) onClose() }, properties = DialogProperties(
         usePlatformDefaultWidth = false, decorFitsSystemWindows = false, dismissOnClickOutside = false)) {
@@ -52,7 +52,7 @@ fun ResourceFormDialog(local: LocalUiState, actions: LocalActions?, onClose: () 
                                 { Text(type.name.lowercase().replace('_', ' ')) }, enabled = !local.saving && !draft.editing) }
                         }
                         ResourceChoice("Available to help", draft.available, !local.saving) { draft = draft.copy(available = it) }
-                        Text("Turning sharing off also sends a withdrawal of your earlier shared availability, without your name or area. Other phones and the server update when it arrives; offline copies may remain until expiry.", style = MaterialTheme.typography.bodySmall)
+                        Text("Mark yourself unavailable when you cannot help. Other phones and the server update when that change arrives.", style = MaterialTheme.typography.bodySmall)
                     } else {
                         Text("What can you provide?")
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -66,21 +66,20 @@ fun ResourceFormDialog(local: LocalUiState, actions: LocalActions?, onClose: () 
                             else "Each new save creates a separate supply offer. Manage saved offers in the Offer help tab.", style = MaterialTheme.typography.bodySmall)
                     }
                     OutlinedTextField(draft.area, { if (it.length <= 120) draft = draft.copy(area = it) }, label = { Text("Area (optional)") }, enabled = !local.saving, modifier = Modifier.fillMaxWidth())
-                    ResourceChoice("Share with nearby phones", draft.publicSharing, !local.saving && !draft.editing) { draft = draft.copy(publicSharing = it) }
-                    ResourceChoice("Allow online help coordination", draft.cloudConsent, !local.saving && !draft.editing) { draft = draft.copy(cloudConsent = it) }
-                    Text(if (draft.publicSharing) "Nearby phones can read and relay this information. Online sharing also needs your permission above."
-                        else if (!draft.supply) "Your new details stay on this phone. A withdrawal of earlier shared availability may still be sent."
-                        else "Saved on this phone only. Nothing is uploaded while nearby sharing is off.", style = MaterialTheme.typography.bodySmall)
+                    Text(if (draft.editing && (!draft.publicSharing || !draft.cloudConsent))
+                        "This older offer keeps its original sharing. Create a new offer to share it with nearby phones and online help coordination."
+                        else "Your availability is shared with nearby phones and online help coordination. Nearby people can read and relay it; an online gateway uploads it when available.",
+                        style = MaterialTheme.typography.bodySmall)
                     (validation ?: local.error)?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                     local.notice?.let { Text(it) }
                     if (actions?.publishResource == null) Text("Preview only. Saving is unavailable.")
                 }
                 Button(onClick = {
                     validation = if (draft.supply && draft.quantity.isNotBlank() && draft.quantity.toIntOrNull() !in 1..1000000) "Enter a positive quantity up to 1,000,000." else null
-                    if (validation == null) actions?.publishResource?.invoke(draft) { onClose() }
+                    if (validation == null) actions?.publishResource?.invoke(draft.withRequiredSharing()) { onClose() }
                 }, enabled = !local.saving && actions?.publishResource != null, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
                     Text(if (local.saving) "Saving…" else if (draft.editing) "Save changes" else if (!draft.supply) "Save availability"
-                        else if (draft.publicSharing) "Save and share help" else "Save on this phone")
+                        else "Save and share help")
                 }
             }
         }

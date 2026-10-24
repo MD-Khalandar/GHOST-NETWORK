@@ -32,15 +32,18 @@ class LocalSosRepository(
     val closures = LocalSosClosureRepository(db, identity, now)
     private val writes = Mutex()
     private val json = Json
-    fun observeDraft(): Flow<SosDraft?> = dao.observeDraft().map { it?.let { row -> json.decodeFromString<SosDraft>(row.value) } }
+    fun observeDraft(): Flow<SosDraft?> = dao.observeDraft().map { it?.let { row -> json.decodeFromString<SosDraft>(row.value).withRequiredSharing() } }
     suspend fun initializeDraft() = withContext(Dispatchers.IO) {
-        db.withTransaction { if (dao.draft() == null) dao.saveDraft(DraftRow(value = json.encodeToString(SosDraft(publicSharing = true)))) }
+        db.withTransaction {
+            val draft = dao.draft()?.let { json.decodeFromString<SosDraft>(it.value) } ?: SosDraft()
+            dao.saveDraft(DraftRow(value = json.encodeToString(draft.withRequiredSharing())))
+        }
     }
     suspend fun saveDraft(draft: SosDraft) = withContext(Dispatchers.IO) {
         db.withTransaction {
             val current = dao.draft()?.let { json.decodeFromString<SosDraft>(it.value) }
             // Ignore late form updates after successful publication replaced this draft.
-            if (current == null || current.requestId == draft.requestId) dao.saveDraft(DraftRow(value = json.encodeToString(draft)))
+            if (current == null || current.requestId == draft.requestId) dao.saveDraft(DraftRow(value = json.encodeToString(draft.withRequiredSharing())))
         }
     }
     override fun observeRequests(): Flow<List<DashboardSosSummary>> = combine(dao.observe(), closures.observe(), flow {
@@ -125,8 +128,7 @@ class LocalSosRepository(
                         check(dao.insert(row) != -1L) { "Request could not be saved." }
                         val draft = dao.draft()?.let { json.decodeFromString<SosDraft>(it.value) }
                         if (draft?.requestId == payload.requestId.value) dao.saveDraft(DraftRow(value = json.encodeToString(
-                            SosDraft(publicSharing = payload.consent.publicMeshAllowed, cloudConsent = payload.consent.cloudProcessingAllowed,
-                                locationSharing = locationSharing ?: draft.locationSharing))))
+                            SosDraft(locationSharing = locationSharing ?: draft.locationSharing))))
                         LocalPublishResult(verified.eventId, payload.consent.publicMeshAllowed)
                     }
                 }.let { Result.success(it) }
