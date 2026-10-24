@@ -1,4 +1,5 @@
 import { AssistanceService, AssistanceConflict } from "./assistance.js";
+import { DashboardAuth, DeskAuthError, deskSessionResponse, type DeskSession } from "./dashboard-auth.js";
 import Fastify, { type FastifyInstance } from "fastify";
 import { authenticate, SigningIdentity, type Principal, type Role } from "./security.js";
 import { PacketError, validatePacket, type AuthorityLookup, type WirePacket } from "./protocol.js";
@@ -14,7 +15,7 @@ import { GatewayEnrollment, initializeEnrollment, registerEnrollment } from "./e
 import { initializeUploadLimits, UploadLimiter, UploadThrottled, type UploadLimits } from "./upload-limits.js";
 
 export interface AppSecurity { principals?: readonly Principal[]; cloudSigningKeyPem?: string; lookup?: AuthorityLookup; now?: () => number; database?: Database;
-  proposalModel?: ProposalModel; uploadLimits?: Partial<UploadLimits>; aiMaxCallsPerHour?: number }
+  proposalModel?: ProposalModel; uploadLimits?: Partial<UploadLimits>; aiMaxCallsPerHour?: number; dashboardOrigin?: string }
 
 export function buildApp(security: AppSecurity = {}): FastifyInstance {
   const app = Fastify({ logger: false, bodyLimit: 2400000 });
@@ -35,6 +36,25 @@ export function buildApp(security: AppSecurity = {}): FastifyInstance {
   const enrollment = security.database && signer ? new GatewayEnrollment(security.database, signer, security.now) : undefined;
   const uploads = security.database ? new UploadLimiter(security.database, security.uploadLimits, security.now) : undefined;
   registerEnrollment(app, enrollment);
+  const desk = security.database ? new DashboardAuth(security.database, security.dashboardOrigin, security.now) : undefined;
+  const browserSessions = new WeakMap<object, DeskSession>();
+  for (const action of ["login", "logout"] as const) {
+    app.post(`/v1/auth/${action}`, { bodyLimit: 4096 }, async (request, reply) => {
+      reply.header("Cache-Control", "no-store");
+      if (!desk) return reply.code(503).send({ code: "AUTH_UNAVAILABLE", retryable: true });
+      try {
+        if (action === "login") return deskSessionResponse(await desk.login(request, reply));
+        await desk.logout(request, reply);
+        return reply.code(204).send();
+      } catch (error) {
+        if (error instanceof DeskAuthError) {
+          if (error.retryAfter) reply.header("Retry-After", String(error.retryAfter));
+          return reply.code(error.status).send({ code: error.code, retryable: error.status === 429 });
+        }
+        return reply.code(503).send({ code: "AUTH_UNAVAILABLE", retryable: true });
+      }
+    });
+  }
   const authorized = new WeakMap<object, Principal>();
   const coordinator = security.database ? new CoordinatorWorker(security.database,
     security.proposalModel ?? new OpenAIProposalModel(), security.now, security.aiMaxCallsPerHour) : undefined;
@@ -59,8 +79,22 @@ export function buildApp(security: AppSecurity = {}): FastifyInstance {
     app.route({ ...route, onRequest: async (request, reply) => {
       reply.header("Cache-Control", "no-store");
       let principal = authenticate(request.headers.authorization, principals);
-      try { principal ??= await enrollment?.authenticate(request.headers.authorization); }
-      catch { return reply.code(503).send({ code: "AUTH_UNAVAILABLE", retryable: true }); }
+      try {
+        principal ??= await enrollment?.authenticate(request.headers.authorization);
+        // Browser cookies grant dashboard access only. Phone sync still requires its bearer credential.
+        if (!request.headers.authorization && (route.url.startsWith("/v1/dashboard/") || route.url === "/v1/auth/session")) {
+          const session = await desk?.authenticate(request);
+          if (session) {
+            principal = session.principal;
+            browserSessions.set(request, session);
+            if (route.method === "POST") desk!.checkMutation(request, session);
+          }
+        }
+      }
+      catch (error) {
+        if (error instanceof DeskAuthError) return reply.code(error.status).send({ code: error.code, retryable: false });
+        return reply.code(503).send({ code: "AUTH_UNAVAILABLE", retryable: true });
+      }
       if (!principal) return reply.code(401).send({ code: "UNAUTHENTICATED", message: "Authentication required", retryable: false });
       if (!route.roles.includes(principal.role)) return reply.code(403).send({ code: "FORBIDDEN", message: "Role is not authorized", retryable: false });
       authorized.set(request, principal);
@@ -104,6 +138,8 @@ export function buildApp(security: AppSecurity = {}): FastifyInstance {
         return reply.code(204).send();
       }
       if (route.url === "/v1/auth/session") {
+        const session = browserSessions.get(request);
+        if (session) return deskSessionResponse(session);
         const p = authorized.get(request)!;
         return { id: p.id, role: p.role, ...(p.gateway_node_id ? { gateway_node_id: p.gateway_node_id } : {}) };
       }

@@ -184,18 +184,32 @@ npm --prefix server run build
 npm --prefix server start
 ```
 
-Open `http://127.0.0.1:3000/dashboard/` and enter a **viewer or operator** token
-supplied by the server administrator. It lists uploaded SOS reports and plots
+Create a dashboard account once with `server/.env` configured:
+
+```sh
+npm --prefix server run account -- --username admin --role operator
+```
+
+Enter a password of at least 15 characters when prompted; it stays hidden. Use
+`--role viewer` for read-only access. Running the command again resets that account
+and signs out its existing sessions. Production also needs
+`GHOST_DASHBOARD_ORIGIN=https://<your-host>` on the server.
+
+Open `http://127.0.0.1:3000/dashboard/` and sign in with your username and password.
+It lists uploaded SOS reports and plots
 reports with shared GPS coordinates on the built-in server map. Select a marker
 to open its request details; reports without coordinates remain in the list but
 are not plotted. Leaflet provides pan/zoom and clickable markers over OpenStreetMap
 tiles. The basemap needs internet; tile requests reveal the viewed map area to
 OpenStreetMap but do not send SOS text or access tokens. Refresh checks for new arrivals;
-older reports load in pages. Expiry does not mean help was provided. Tokens stay
-in tab memory; reload/sign-out clears access. Use HTTPS in deployment.
+older reports load in pages. Expiry does not mean help was provided. A protected
+cookie keeps you signed in across refreshes and browser restarts for up to seven
+days; 24 hours of inactivity ends the session. **Sign out** revokes access on the
+server. Use HTTPS in deployment. Phone enrollment remains automatic and separate.
 
 For UI development, run `npm --prefix dashboard run dev` alongside the server;
-open `http://127.0.0.1:5173/dashboard/`. Vite proxies `/v1` to port 3000.
+open `http://127.0.0.1:5173/dashboard/`. Vite proxies `/v1` to port 3000. If setting
+`GHOST_DASHBOARD_ORIGIN` for this mode, use `http://127.0.0.1:5173`, the browser origin.
 Checks: `npm --prefix dashboard test` and `npm --prefix dashboard run build`.
 
 ## Cloud AI matching

@@ -31,8 +31,8 @@ export function ResourceCard({ item, kind, now }: { item: ResourceRecord; kind: 
   </article>;
 }
 
-export default function Resources({ kind, token, onAccessLost }: {
-  kind: "helpers" | "offers"; token: string; onAccessLost: (message: string) => void;
+export default function Resources({ kind, onAccessLost }: {
+  kind: "helpers" | "offers"; onAccessLost: (message: string) => void;
 }) {
   const [items, setItems] = useState<ResourceRecord[]>([]);
   const [before, setBefore] = useState<number | null>(null);
@@ -46,7 +46,7 @@ export default function Resources({ kind, token, onAccessLost }: {
     pending.current?.abort(); const controller = new AbortController(); pending.current = controller;
     setBusy(true); setError(null);
     try {
-      const page = await get<{ items: ResourceRecord[]; next_before: number | null }>(`dashboard/${kind}?limit=30${cursor === undefined ? "" : `&before=${cursor}`}`, token, controller.signal);
+      const page = await get<{ items: ResourceRecord[]; next_before: number | null }>(`dashboard/${kind}?limit=30${cursor === undefined ? "" : `&before=${cursor}`}`, controller.signal);
       if (pending.current !== controller) return;
       setItems(previous => cursor === undefined ? page.items : [...previous, ...page.items.filter(item => !previous.some(old =>
         (old.offer_id ?? old.owner_node_id) === (item.offer_id ?? item.owner_node_id)))]);
@@ -61,7 +61,7 @@ export default function Resources({ kind, token, onAccessLost }: {
   useEffect(() => {
     void load(); const timer = window.setInterval(() => setNow(Date.now()), 30000);
     return () => { window.clearInterval(timer); pending.current?.abort(); pending.current = null; };
-  }, [kind, token]);
+  }, [kind]);
   return <section aria-label={kind === "helpers" ? "Helper directory" : "Supply directory"} aria-busy={busy}>
     <div className="inbox-toolbar"><strong>{items.length} {kind === "helpers" ? "helpers" : "supply offers"} loaded</strong>
       <button className="secondary-button" disabled={busy} onClick={() => void load()}>{busy ? "Loading…" : "Refresh availability"}</button></div>

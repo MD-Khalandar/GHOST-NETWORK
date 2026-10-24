@@ -1,4 +1,5 @@
 import { initializeAssistance } from "./assistance.js";
+import { initializeDashboardAuth } from "./dashboard-auth.js";
 import { Pool } from "pg";
 
 export interface SqlConnection {
@@ -37,6 +38,7 @@ export async function initializeDatabase(database: Database): Promise<void> {
   await database.transaction(async connection => {
     // Serialize first-time schema creation across server instances only.
     await connection.query("SELECT pg_advisory_xact_lock(715422701)");
+    await initializeDashboardAuth(connection);
     await connection.query("CREATE SEQUENCE IF NOT EXISTS cloud_revision_seq AS bigint MINVALUE 1 MAXVALUE 9007199254740991");
     await connection.query(`CREATE TABLE IF NOT EXISTS sos_reports (
       event_id UUID PRIMARY KEY,

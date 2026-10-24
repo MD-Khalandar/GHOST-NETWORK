@@ -58,8 +58,8 @@ export function ProposalCard({ proposal, now = Date.now(), operator=false, busy=
   </article>;
 }
 
-export function FindHelp({ requestId, token, operator, onAccessLost }: {
-  requestId: string; token: string; operator: boolean; onAccessLost: (message: string) => void;
+export function FindHelp({ requestId, csrfToken, operator, onAccessLost }: {
+  requestId: string; csrfToken: string; operator: boolean; onAccessLost: (message: string) => void;
 }) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -70,7 +70,7 @@ export function FindHelp({ requestId, token, operator, onAccessLost }: {
     const controller = new AbortController(); pending.current = controller;
     setBusy(true); setError(false); setMessage(null);
     try {
-      await post(`dashboard/sos/${requestId}/coordinate`, token, controller.signal);
+      await post(`dashboard/sos/${requestId}/coordinate`, csrfToken, controller.signal);
       if (pending.current === controller) setMessage("Queued. Open AI suggestions to follow progress.");
     } catch (failure) {
       if (pending.current !== controller) return;
@@ -87,7 +87,7 @@ export function FindHelp({ requestId, token, operator, onAccessLost }: {
   </div>;
 }
 
-export default function Coordination({ token, onAccessLost, operator=false }: { token: string; onAccessLost: (message: string) => void; operator?:boolean }) {
+export default function Coordination({ csrfToken, onAccessLost, operator=false }: { csrfToken: string; onAccessLost: (message: string) => void; operator?:boolean }) {
   const [status, setStatus] = useState<AiStatus | null>(null);
   const [cases,setCases]=useState<{proposal_id:string;request_id:string;resource_id:string;state:number;quantity:number|null;unit:string;deadline_ms:number}[]>([]);
   const [reviewing,setReviewing]=useState(false);
@@ -105,8 +105,8 @@ export default function Coordination({ token, onAccessLost, operator=false }: { 
     if (pending.current) return false;
     const controller = new AbortController(); pending.current = controller; setBusy(true);
     try {
-      const [state, proposals, assistance] = await Promise.all([get<AiStatus>("dashboard/runs", token, controller.signal),
-        get<ProposalPage>(`dashboard/proposals?limit=30${before ? `&before=${encodeURIComponent(before)}` : ""}${requestId ? `&request_id=${encodeURIComponent(requestId)}` : ""}`, token, controller.signal),get<{items:typeof cases}>("dashboard/assistance",token,controller.signal)]);
+      const [state, proposals, assistance] = await Promise.all([get<AiStatus>("dashboard/runs", controller.signal),
+        get<ProposalPage>(`dashboard/proposals?limit=30${before ? `&before=${encodeURIComponent(before)}` : ""}${requestId ? `&request_id=${encodeURIComponent(requestId)}` : ""}`, controller.signal),get<{items:typeof cases}>("dashboard/assistance",controller.signal)]);
       if (pending.current !== controller) return false;
       setCases(assistance.items);setStatus(state); setItems(proposals.items); setError(null);
       setNextBefore(proposals.next_before); setCheckedAt(proposals.evaluated_at_ms);
@@ -124,7 +124,7 @@ export default function Coordination({ token, onAccessLost, operator=false }: { 
     if(reviewing)return;
     if(!window.confirm(approve?"Send this invitation to the owner? Nothing is reserved until acceptance.":"Reject this suggestion?"))return;
     setReviewing(true);const controller=new AbortController();
-    try{await post(`dashboard/proposals/${id}/${approve?"approve":"reject"}`,token,controller.signal);await load();}
+    try{await post(`dashboard/proposals/${id}/${approve?"approve":"reject"}`,csrfToken,controller.signal);await load();}
     catch(failure){if(failure instanceof ApiError && [401,403].includes(failure.status))accessLost.current(failure.message);
       else setError(failure instanceof ApiError?failure.message:"Could not save review. Refresh and retry.");}
     finally{setReviewing(false);}
@@ -132,7 +132,7 @@ export default function Coordination({ token, onAccessLost, operator=false }: { 
   useEffect(() => {
     void load(); const timer = window.setInterval(() => { if (!document.hidden) void load(); }, 5000);
     return () => { window.clearInterval(timer); pending.current?.abort(); pending.current = null; };
-  }, [token]);
+  }, [csrfToken]);
   return <section aria-label="AI coordination" aria-busy={busy}>
     <div className="inbox-toolbar"><strong>{status ? status.configured ? "Cloud AI configured" : "Cloud AI not configured" : "Loading AI status…"}</strong>
       <button className="secondary-button" disabled={busy} onClick={() => void load()}>Refresh AI status</button></div>

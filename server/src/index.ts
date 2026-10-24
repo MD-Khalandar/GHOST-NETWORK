@@ -8,6 +8,7 @@ export async function start(): Promise<void> {
   const app = buildApp({ principals: config.authPrincipals, cloudSigningKeyPem: config.cloudSigningKeyPem,
     proposalModel: createProposalModel(config),
     uploadLimits: config.uploadLimits, aiMaxCallsPerHour: config.aiMaxCallsPerHour,
+    dashboardOrigin: config.dashboardOrigin,
     ...(config.databaseUrl ? { database: postgresDatabase(config.databaseUrl) } : {}) });
   try { await app.listen({ host: config.host, port: config.port }); }
   catch (error) { await app.close(); throw error; }

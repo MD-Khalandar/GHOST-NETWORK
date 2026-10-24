@@ -60,8 +60,15 @@ The web SOS desk lists server-received reports with request details, pagination,
 manual refresh and expiry labels. Its authenticated Leaflet map plots shared GPS
 locations with pan/zoom and links markers to request details. OpenStreetMap tiles
 need internet and reveal the viewed area to the tile provider, without sending
-SOS text or access tokens. Viewer/operator tokens stay in tab memory; gateway tokens
-cannot read it. Local browser checks pass against signed uploads.
+SOS text or credentials. Viewer/operator accounts use username/password sign-in
+and persistent HttpOnly cookies; sessions last up to seven days with a one-day idle
+timeout. A local server command creates/resets/disables accounts; passwords use
+scrypt, resets revoke sessions, and sign-out revokes server access. Production
+requires a configured HTTPS dashboard origin; browser mutations check origin/CSRF.
+Login budgets persist in PostgreSQL. Gateway tokens cannot read the desk, and
+browser sessions cannot sync as phones. Legacy API bearer access remains supported.
+Session, permissions, expiry and restart tests pass locally. A local browser check
+also covers login, refresh/browser restart restoration and persistent sign-out.
 Navigation is Home, Requests, Offer help and Connections. Requests shows each SOS's
 upload status and an optional explanation; the old Help status tab is removed.
 Request owners can cancel an SOS or mark it resolved after confirmation. Signed

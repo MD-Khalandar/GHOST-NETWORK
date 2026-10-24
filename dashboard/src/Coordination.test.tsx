@@ -10,8 +10,8 @@ test("AI suggestions escape model text, show stale status and give run controls 
   const html = renderToStaticMarkup(<ProposalCard proposal={proposal}/>);
   assert.match(html, /Outdated/); assert.match(html, /2 litres/); assert.doesNotMatch(html, /<script>|<img /);
   assert.match(html, /Nothing is reserved/);
-  assert.doesNotMatch(renderToStaticMarkup(<FindHelp requestId="request" token="fixture" operator={false} onAccessLost={() => {}}/>), /<button/);
-  assert.match(renderToStaticMarkup(<FindHelp requestId="request" token="fixture" operator onAccessLost={() => {}}/>), /Find help with AI/);
+  assert.doesNotMatch(renderToStaticMarkup(<FindHelp requestId="request" csrfToken="fixture" operator={false} onAccessLost={() => {}}/>), /<button/);
+  assert.match(renderToStaticMarkup(<FindHelp requestId="request" csrfToken="fixture" operator onAccessLost={() => {}}/>), /Find help with AI/);
 });
 
 test("expired suggestions cannot appear current between polls and completed checks distinguish empty outcomes", () => {

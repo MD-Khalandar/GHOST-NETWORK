@@ -11,14 +11,17 @@ Local default: `http://127.0.0.1:3000`; `GET /v1/health` returns `{"status":"ok"
 To check changes, run `npm --prefix server test` and `npm --prefix server run build`.
 
 `GHOST_HOST`, `GHOST_PORT` and `GHOST_ENV` configure the process. Production also
-requires `GHOST_DATABASE_URL`, `GHOST_AUTH_PRINCIPALS` (JSON records with `id`, `role`, `token_sha256`;
-gateways add `gateway_node_id`) and `GHOST_CLOUD_SIGNING_KEY_PEM` (private P-256 PEM,
-with literal `\n` escapes supported). Use random bearer tokens and HTTPS. Never
+requires `GHOST_DATABASE_URL`, `GHOST_DASHBOARD_ORIGIN` (the browser-facing HTTPS
+origin, without `/dashboard/`) and `GHOST_CLOUD_SIGNING_KEY_PEM` (private P-256 PEM,
+with literal `\n` escapes supported). Never
 use the public keys/private keys from test fixtures as deployment credentials.
 
-Gateway credentials allow sync; viewers read dashboard data; operators can reach
-approval handlers. `GET /v1/auth/session` returns the authenticated role. Empty
-credentials deny protected requests. Event ownership is checked separately.
+Gateway credentials allow sync; viewer accounts read dashboard data; operator
+accounts can reach approval handlers. `GET /v1/auth/session` returns the
+authenticated role. Missing credentials deny protected requests. Event ownership
+is checked separately. Optional `GHOST_AUTH_PRINCIPALS` preserves legacy API bearer
+access: JSON records with `id`, `role`, `token_sha256`; gateways add `gateway_node_id`.
+Ordinary phones and browser accounts do not need these static tokens.
 
 SOS upload storage also needs `GHOST_DATABASE_URL` and the cloud signing key in
 development. Use a PostgreSQL database owned by this service; startup creates its
@@ -83,14 +86,35 @@ deployment still needs verification. Android gateway uploads and local signed
 receipt storage and acknowledgement return through the Android mesh are implemented.
 The built React dashboard is served at `/dashboard/` (build it with
 `npm --prefix dashboard ci` and `npm --prefix dashboard run build` from the root).
-Its viewer/operator token is entered in the browser and kept only in tab memory.
-Add a distinct `viewer` or `operator` record to `GHOST_AUTH_PRINCIPALS` using the
-SHA-256 digest of a separate random token; a gateway token cannot read reports.
+Sign in with a username and password. With `server/.env` configured, create an
+operator account from an interactive terminal at the repository root:
+
+```sh
+npm --prefix server run account -- --username admin --role operator
+```
+
+The command prompts for a hidden password and confirmation (15–256 characters).
+Usernames use 3–64 letters, numbers, dots, underscores or hyphens, starting with a
+letter; they are case-insensitive. Use `--role viewer` for read-only access.
+Running the command again resets the password/role and revokes all prior sessions.
+Disable an account with `npm --prefix server run account -- --username admin --disable`.
+For compiled deployments, use `node --env-file=server/.env server/dist/account-cli.js`
+with the same arguments. There is no public registration endpoint.
+
+Passwords are salted and hashed with scrypt. Persistent HttpOnly, SameSite=Strict
+cookies restore the browser session after refresh or restart, for at most seven
+days and with a 24-hour idle timeout. Sign out revokes the server session; account
+and session state survives server restarts. Production uses Secure cookies and
+requires `GHOST_DASHBOARD_ORIGIN=https://<your-host>`; plain HTTP cookies are for
+local development. Set the origin to the browser URL, including any nondefault
+port. Browser mutations require same-origin headers and a session-bound CSRF token.
+Login attempts have persistent rate limits. Browser sessions cannot authorize phone
+sync, and gateway tokens cannot read reports.
 
 `GET /v1/dashboard/sos?limit=30&before=<cloud_revision>` returns
 `{items, next_before}` ordered by newest cloud revision. `limit` is 1–100;
 omit `before` for the first page. `GET /v1/dashboard/sos/:requestId` reads one
-report (404 if absent). Both require viewer/operator bearer authentication and
+report (404 if absent). Both require a viewer/operator session or API bearer token and
 return `Cache-Control: no-store`. Items contain request ID, category (the proto
 enum), description, optional people/area/landmark, reported/expiry/received times
 in milliseconds, and cloud revision. Signed packets and credentials are excluded.

@@ -1,5 +1,6 @@
 import { parsePrincipals, SigningIdentity, type Principal } from "./security.js";
 import type { UploadLimits } from "./upload-limits.js";
+import { dashboardOrigin as parseDashboardOrigin } from "./dashboard-auth.js";
 
 export interface ServerConfig {
   environment: "development" | "test" | "production";
@@ -14,6 +15,7 @@ export interface ServerConfig {
   geminiApiKey?: string;
   uploadLimits?: Partial<UploadLimits>;
   aiMaxCallsPerHour?: number;
+  dashboardOrigin?: string;
 }
 
 export class ConfigValidationError extends Error {
@@ -38,6 +40,11 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): Server
   }
   const aiMaxCallsPerHour = positiveLimit("GHOST_AI_MAX_CALLS_PER_HOUR");
   const mode = environment.GHOST_ENV?.trim() || "development";
+  let dashboardOrigin: string | undefined;
+  if (environment.GHOST_DASHBOARD_ORIGIN !== undefined) {
+    try { dashboardOrigin = parseDashboardOrigin(environment.GHOST_DASHBOARD_ORIGIN.trim()); }
+    catch { issues.push("GHOST_DASHBOARD_ORIGIN must be an HTTP(S) origin without credentials or a path"); }
+  }
   const aiProvider = environment.GHOST_AI_PROVIDER?.trim() || "openai";
   if (!["openai", "gemini"].includes(aiProvider)) issues.push("GHOST_AI_PROVIDER must be openai or gemini");
   if (!["development", "test", "production"].includes(mode)) issues.push("GHOST_ENV must be development, test, or production");
@@ -58,12 +65,13 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): Server
     catch { issues.push("GHOST_CLOUD_SIGNING_KEY_PEM must be a P-256 private key"); }
   }
   if (mode === "production") {
-    if (!authPrincipals.length) issues.push("GHOST_AUTH_PRINCIPALS is required in production");
+    if (!dashboardOrigin?.startsWith("https:")) issues.push("GHOST_DASHBOARD_ORIGIN must be HTTPS in production");
     if (!cloudSigningKeyPem) issues.push("GHOST_CLOUD_SIGNING_KEY_PEM is required in production");
     if (!databaseUrl) issues.push("GHOST_DATABASE_URL is required in production");
   }
   if (issues.length) throw new ConfigValidationError(issues);
   return { environment: mode as ServerConfig["environment"], host: environment.GHOST_HOST?.trim() || "127.0.0.1", port,
+    ...(dashboardOrigin ? { dashboardOrigin } : {}),
     ...(Object.keys(uploadLimits).length ? { uploadLimits } : {}), ...(aiMaxCallsPerHour === undefined ? {} : { aiMaxCallsPerHour }),
     authPrincipals, ...(cloudSigningKeyPem ? { cloudSigningKeyPem } : {}), ...(databaseUrl ? { databaseUrl } : {}),
     ...(environment.OPENAI_API_KEY?.trim() ? { openaiApiKey: environment.OPENAI_API_KEY.trim() } : {}),

@@ -12,7 +12,8 @@
     "dev": "tsx watch src/index.ts",
     "start": "node dist/index.js",
     "test": "tsx --test src/*.test.ts src/coordinator/*.test.ts",
-    "smoke": "tsx src/smoke.ts"
+    "smoke": "tsx src/smoke.ts",
+    "account": "node --env-file=.env --import tsx src/account-cli.ts"
   },
   "dependencies": {
     "@fastify/static": "10.1.7",
