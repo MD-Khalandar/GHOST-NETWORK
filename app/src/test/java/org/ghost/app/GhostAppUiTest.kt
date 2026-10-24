@@ -10,6 +10,10 @@ import org.ghost.feature.foundation.FoundationPreviewFixtures
 import org.ghost.feature.foundation.DeviceTrustState
 import org.ghost.feature.foundation.OperatorAccess
 import org.ghost.domain.model.SosDraft
+import org.ghost.domain.model.LocalCloudState
+import org.ghost.domain.model.CloudCoordinationState
+import org.ghost.domain.model.CloudCoordinationStatus
+import org.ghost.gateway.GatewayUiState
 import org.ghost.feature.foundation.FoundationState
 import org.ghost.transport.api.PeerHandle
 import org.ghost.transport.nearby.NearbyState
@@ -35,19 +39,19 @@ class GhostAppUiTest {
         compose.onNodeWithText("Send SOS").performScrollTo().assertHasClickAction()
             .assertHeightIsAtLeast(48.dp).performClick()
         compose.onNodeWithText("New SOS").assertIsDisplayed()
-        compose.onNodeWithText("UI preview: saving is disabled.").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("This is a preview. Requests can't be saved.").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Close").performClick()
 
         compose.onNodeWithText("Requests").performClick().assertIsSelected()
         compose.onNodeWithText("Saved requests").assertIsDisplayed()
         compose.onNodeWithText("Saved on this phone only").performScrollTo().assertIsDisplayed()
 
-        compose.onNodeWithText("Mission").performClick()
-        compose.onNodeWithText("Cloud unavailable").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("Resource allocation confirmed").assertDoesNotExist()
+        compose.onNodeWithText("Help status").performClick()
+        compose.onNodeWithText("Online receipt not confirmed").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Assistance confirmed").assertDoesNotExist()
 
-        compose.onNode(hasText("Network") and hasClickAction()).performClick()
-        compose.onNodeWithText("Connect to mesh").performScrollTo().assertIsDisplayed()
+        compose.onNode(hasText("Connections") and hasClickAction()).performClick()
+        compose.onNodeWithText("Connect to GHOST").performScrollTo().assertIsDisplayed()
 
     }
 
@@ -55,7 +59,10 @@ class GhostAppUiTest {
     fun operatorSessionStatesNeverExposePhoneApprovalControls() {
         val trust = mutableStateOf(DeviceTrustState())
         compose.setContent { GhostTheme { GhostApp(FoundationPreviewFixtures.loaded, {}, trust.value) } }
-        compose.onNode(hasText("Network") and hasClickAction()).performClick()
+        compose.onNode(hasText("Connections") and hasClickAction()).performClick()
+        compose.onNodeWithText("Device signing identity").assertDoesNotExist()
+        compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("Technical details"))
+        compose.onNodeWithText("Technical details").performClick()
         for ((access, label) in listOf(
             OperatorAccess.SIGN_IN_REQUIRED to "Operator sign-in required",
             OperatorAccess.NOT_AUTHORIZED to "Operator access denied",
@@ -66,6 +73,9 @@ class GhostAppUiTest {
             compose.onNodeWithText(label).assertIsDisplayed()
             compose.onNodeWithText("Approve").assertDoesNotExist()
         }
+        compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("Hide technical details"))
+        compose.onNodeWithText("Hide technical details").performClick()
+        compose.onNodeWithText("Device signing identity").assertDoesNotExist()
     }
 
     @Test
@@ -76,10 +86,10 @@ class GhostAppUiTest {
         compose.setContent { GhostTheme { GhostApp(FoundationPreviewFixtures.loaded, {}, local = LocalUiState(draft = draft), actions = actions) } }
         compose.onNodeWithText("Send SOS").performScrollTo().performClick()
         compose.onNodeWithText("Sharing settings").performScrollTo().performClick()
-        compose.onNodeWithText("Share with mesh").performScrollTo().assertIsOn()
-        compose.onNodeWithText("Allow cloud coordination").performScrollTo().assertIsOff().performClick().assertIsOn()
-        compose.onNodeWithText("Share with mesh").performScrollTo().performClick().assertIsOff()
-        compose.onNodeWithText("Allow cloud coordination").performScrollTo().assertIsOn()
+        compose.onNodeWithText("Share with nearby phones").performScrollTo().assertIsOn()
+        compose.onNodeWithText("Allow online help coordination").performScrollTo().assertIsOff().performClick().assertIsOn()
+        compose.onNodeWithText("Share with nearby phones").performScrollTo().performClick().assertIsOff()
+        compose.onNodeWithText("Allow online help coordination").performScrollTo().assertIsOn()
         compose.onNodeWithText("What help do you need?").performScrollTo().performTextInput("Need drinking water")
         assertNull(saved)
         compose.onNodeWithText("Review SOS").assertDoesNotExist()
@@ -120,12 +130,12 @@ class GhostAppUiTest {
         val local = mutableStateOf(LocalUiState(draft = SosDraft()))
         val actions = LocalActions({}, { _, done -> done() }, { _, _ -> publishes++ }, { starts++ }, { stops++ }, {})
         compose.setContent { GhostTheme { GhostApp(FoundationPreviewFixtures.loaded, {}, local = local.value, actions = actions) } }
-        compose.onNodeWithText("Connect to mesh").performScrollTo().performClick()
+        compose.onNodeWithText("Connect to GHOST").performScrollTo().performClick()
         assertEquals(1, starts)
         compose.runOnIdle { local.value = local.value.copy(network = org.ghost.transport.nearby.NearbyState(active = true)) }
-        compose.onNodeWithText("Searching for nearby phones").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Looking for nearby phones…").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Codes match").assertDoesNotExist()
-        compose.onNodeWithText("Disconnect from mesh").performScrollTo().performClick()
+        compose.onNodeWithText("Disconnect from GHOST").performScrollTo().performClick()
         assertEquals(1, stops)
         assertEquals(0, publishes)
     }
@@ -135,24 +145,43 @@ class GhostAppUiTest {
         val state = mutableStateOf(FoundationState())
         val local = mutableStateOf(LocalUiState(network = NearbyState(active = true)))
         compose.setContent { GhostTheme { GhostApp(state.value, {}, local = local.value) } }
-        compose.onNode(hasText("Network") and hasClickAction()).performClick()
+        compose.onNode(hasText("Connections") and hasClickAction()).performClick()
         compose.onNodeWithTag("nearby-mesh-graph").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithContentDescription("Your phone has 0 direct connections", substring = true).assertExists()
+        compose.onNodeWithContentDescription("0 phones connected to you", substring = true).assertExists()
         val a = PeerHandle("nearby", "A"); val b = PeerHandle("nearby", "B")
         compose.runOnIdle {
             state.value = state.value.copy(peers = listOf(a, b))
             local.value = local.value.copy(peerIdentities = mapOf("A" to "a".repeat(64)))
         }
-        compose.onNodeWithContentDescription("2 direct connections: 1 ready to relay, 1 checking identity", substring = true).assertExists()
-        compose.onNodeWithText("2. Checking phone…").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithContentDescription("2 phones connected to you: 1 ready to pass along requests, 1 getting connected", substring = true).assertExists()
+        compose.onNodeWithText("Getting connected…").performScrollTo().assertIsDisplayed()
         compose.runOnIdle { local.value = local.value.copy(peerIdentities = mapOf("A" to "a".repeat(64), "B" to "b".repeat(64))) }
-        compose.onNodeWithContentDescription("2 direct connections: 2 ready to relay, 0 checking identity", substring = true).assertExists()
+        compose.onNodeWithContentDescription("2 phones connected to you: 2 ready to pass along requests, 0 getting connected", substring = true).assertExists()
         compose.runOnIdle { state.value = state.value.copy(peers = listOf(b)) }
-        compose.onNodeWithContentDescription("1 direct connections: 1 ready to relay", substring = true).assertExists()
-        compose.onNodeWithText("1. Phone aaaaaaaa · ready to relay").assertDoesNotExist()
+        compose.onNodeWithContentDescription("1 phone connected to you: 1 ready to pass along requests", substring = true).assertExists()
+        compose.onNodeWithText("Phone aaaaaaaa · ready to share").assertDoesNotExist()
         // Stop hides stale peer/identity snapshots immediately.
         compose.runOnIdle { local.value = local.value.copy(network = NearbyState()) }
-        compose.onNodeWithContentDescription("Your phone has 0 direct connections", substring = true).assertExists()
-        compose.onNodeWithText("1. Phone bbbbbbbb · ready to relay").assertDoesNotExist()
+        compose.onNodeWithContentDescription("0 phones connected to you", substring = true).assertExists()
+        compose.onNodeWithText("Phone bbbbbbbb · ready to share").assertDoesNotExist()
+    }
+
+    @Test
+    fun newUiKeepsVerifiedServerReceiptsAndGatewaySetupAccessible() {
+        val report = FoundationPreviewFixtures.loaded.requests.single().copy(createdHere = true, cloudState = LocalCloudState.ACCEPTED)
+        val state = FoundationPreviewFixtures.loaded.copy(simulated = false, requests = listOf(report),
+            mission = CloudCoordinationState(CloudCoordinationStatus.UPLOADED))
+        val actions = LocalActions({}, { _, done -> done() }, { _, _ -> }, {}, {}, {},
+            saveGateway = { _, _, done -> done() })
+        compose.setContent { GhostTheme { GhostApp(state, {},
+            local = LocalUiState(gateway = GatewayUiState(cloudKeyPinned = true)), actions = actions) } }
+        compose.onNodeWithText("Requests").performClick()
+        compose.onNodeWithText("Received by server · receipt verified. Help is not confirmed.").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Help status").performClick()
+        compose.onNodeWithText("Received by server").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Assistance confirmed").assertDoesNotExist()
+        compose.onNode(hasText("Connections") and hasClickAction()).performClick()
+        compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("Configure gateway"))
+        compose.onNodeWithText("Configure gateway").assertIsDisplayed().assertIsEnabled().assertHasClickAction()
     }
 }

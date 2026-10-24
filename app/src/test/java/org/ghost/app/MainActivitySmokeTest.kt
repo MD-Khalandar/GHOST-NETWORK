@@ -27,7 +27,7 @@ class MainActivitySmokeTest {
         }
         val graph = ViewModelProvider(compose.activity)[AppGraph::class.java]
         compose.onNodeWithText("Requests").performClick()
-        compose.onNodeWithText("No local requests yet").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("No requests yet").performScrollTo().assertIsDisplayed()
         compose.activityRule.scenario.recreate()
         compose.onNodeWithText("Requests").assertIsSelected()
         compose.runOnIdle {

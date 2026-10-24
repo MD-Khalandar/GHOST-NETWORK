@@ -12,8 +12,9 @@ Built: SOS forms/drafts and signed reports in Room, local-only saves, and one-ta
 mesh join with automatic Nearby connections/reconnection. Foreground SOS relay
 has a four-transfer budget, bounded per-phone queues, receipt-driven retries and
 visible relay status.
-Network shows a live graph of this phone's direct neighbors, including connections
-still checking identity. It does not infer the wider mesh or relay routes.
+Network shows a dark, floating graph of direct neighbors with dragging, pinch zoom
+and connection details on tap, including phones still checking identity. It does
+not infer the wider mesh or relay routes.
 Signed neighbor receipts and delivery knowledge survive restarts. Local-only
 reports stay private to the device; original signatures and expiry are preserved.
 Signing, cloud-key pinning, consent and server authentication also work.
@@ -32,6 +33,8 @@ phone-to-cloud behavior and gateway credential persistence need device testing.
 Cloud acknowledgements now return through the mesh with their own durable queue,
 expiry and four-transfer budget. The original phone shows verified server receipt.
 Return routing has host exchange/restart tests; physical cloud-to-mesh testing remains.
+Android uses plain-language actions and delivery updates; connection diagnostics
+sit under optional Technical details.
 
 Next: dashboard and resource matching → approval, owner decisions and outage recovery.
 

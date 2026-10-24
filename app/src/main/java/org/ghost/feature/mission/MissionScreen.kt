@@ -21,14 +21,14 @@ import org.ghost.feature.foundation.label
 fun MissionScreen(state: FoundationState, onRetry: () -> Unit, modifier: Modifier = Modifier,
                   contentPadding: PaddingValues = PaddingValues(0.dp)) {
     var showExplanation by rememberSaveable { mutableStateOf(false) }
-    GhostScreen("Cloud mission", "Your request's coordination status.", modifier, contentPadding, state.simulated) {
+    GhostScreen("Help status", "Follow progress on arranging help.", modifier, contentPadding, state.simulated) {
         when {
             state.loading -> item { LoadingCard() }
             state.failed -> item { ErrorCard(onRetry) }
             else -> item("status") {
-                InfoCard(state.mission.status.label(), if (state.simulated) "Preview status." else "Server receipt and assistance are separate. Matching and approvals are not implemented yet.") {
-                    state.mission.message?.let { Text(it) }
-                    state.mission.version?.let { Text("Proposal version $it") }
+                InfoCard(state.mission.status.label(), if (state.simulated) "Example status." else "An online receipt confirms saving your request. Arranging assistance is not available yet.") {
+                    state.mission.message?.let { Text(it.userMessage()) }
+                    state.mission.version?.let { Text("Help suggestion version $it") }
                 }
             }
         }
@@ -39,14 +39,14 @@ fun MissionScreen(state: FoundationState, onRetry: () -> Unit, modifier: Modifie
                     stateDescription = if (showExplanation) "Expanded" else "Collapsed"
                 },
             ) {
-                Text(if (showExplanation) "Hide coordination details" else "How coordination works")
+                Text(if (showExplanation) "Hide explanation" else "How getting help works")
             }
         }
         if (showExplanation) {
             item("policy") {
-                InfoCard("People approve assistance", "An operator reviews proposals in the web dashboard. Offer owners accept or decline their own offers.") {
-                    Text("Cloud acceptance, operator approval, phone receipt and confirmed assistance are separate steps.")
-                    Text("Without an internet gateway, cloud coordination waits. Your phone does not run a coordinator.")
+                InfoCard("How help will be arranged", "When online help is available, a coordinator will review suggestions. People offering help will choose whether to accept.") {
+                    Text("Saving or sharing a request does not mean help has been confirmed.")
+                    Text("Arranging help online will need a phone with internet access. Nearby phones can still pass along requests without internet.")
                 }
             }
         }

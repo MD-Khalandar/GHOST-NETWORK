@@ -33,7 +33,7 @@ Configured gateway phones can upload reports with cloud consent.
 
 For two phones with Google Play services:
 
-1. Keep Bluetooth/Wi-Fi on and both apps open. Tap **Connect to mesh** on each and allow Android's required permissions. Discovery, connections and reconnection are automatic; no phone selection or pairing approval.
+1. Keep Bluetooth/Wi-Fi on and both apps open. Tap **Connect to GHOST** on each and allow Android's required permissions. Discovery, connections and reconnection are automatic; no phone selection or pairing approval.
 2. Tap **Send SOS**, describe the help needed, then **Send SOS**. Category, area and a +/− people counter are under **Optional details**. There is no review screen.
 3. Check Requests on the other phone. The sender shows receipt only after the receiver saves the report and returns a valid signature.
 
@@ -54,14 +54,14 @@ data upgrades in place. The user reports the mesh works on physical phones.
 The mesh is open to nearby GHOST phones; connections have no manual code check.
 Signing verifies report integrity and key possession, not a person's identity.
 Relay pauses when the app backgrounds and resumes when returning to the app;
-**Disconnect from mesh** stops it until you join again.
-Network's **Your nearby mesh** graph updates as direct neighbors connect and leave.
+**Disconnect from GHOST** stops it until you join again.
+Connections' **Nearby phones** graph updates as direct neighbors connect and leave.
 Solid links are ready to relay; dashed links are still checking identity. It shows
 only this phone's direct connections, not the entire mesh or an SOS delivery path.
 
 Each phone has independent bounded queues. A report waits for its neighbor's
 signed receipt before the next report goes out on that link. Missing receipts
-trigger up to three attempts per connection; **Retry queued sends** resumes them
+trigger up to three attempts per connection; **Try sending again** resumes them
 without forgetting saved receipts. Requests shows relay acknowledgements and
 the remaining transfer budget. Expired reports are never queued for another send.
 The relay also returns cloud-signed acknowledgements toward the original phone,
@@ -76,12 +76,12 @@ Shared wire definitions live in `contracts/ghost.proto`; signature vectors use
 public test-only keys, never deployment credentials.
 
 For a cloud gateway, build with the deployed server's public signing key using
-`-PghostCloudPublicKey=<base64url-SPKI>`. In **Network → Configure gateway**, enter
+`-PghostCloudPublicKey=<base64url-SPKI>`. In **Connections → Configure gateway**, enter
 the server address and a gateway bearer token supplied by the server operator.
 The token is stored encrypted with Android Keystore; it is never baked into the
 APK. Normal mesh phones need no gateway setup.
 
-Join the mesh and enable **Allow cloud coordination** when sending an SOS.
+Join the mesh and enable **Allow online help coordination** when sending an SOS.
 While open, the configured gateway uploads eligible reports, including received
 reports, and retries temporary failures. **Received by server** appears only after
 a matching pinned signature is saved in Room. An offline sender sees it after

@@ -16,9 +16,9 @@ data class LocalUiState(
 )
 
 fun LocalUiState.meshStatus(): String = when {
-    network.starting -> "Connecting to mesh…"
-    !network.active -> "Not connected to mesh"
-    peerIdentities.isEmpty() -> "Searching for nearby phones"
+    network.starting -> "Connecting to GHOST…"
+    !network.active -> "Not connected to GHOST"
+    peerIdentities.isEmpty() -> "Looking for nearby phones…"
     peerIdentities.size == 1 -> "Connected to 1 phone"
     else -> "Connected to ${peerIdentities.size} phones"
 }

@@ -16,6 +16,7 @@ import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import org.ghost.design.GhostIcons
+import org.ghost.design.userMessage
 import org.ghost.feature.foundation.FoundationState
 import org.ghost.feature.foundation.DeviceTrustState
 import org.ghost.feature.home.HomeScreen
@@ -24,6 +25,13 @@ import org.ghost.domain.model.SosDraft
 import org.ghost.feature.mission.MissionScreen
 import org.ghost.feature.network.NetworkScreen
 import org.ghost.feature.requests.RequestsScreen
+
+private val AppRoute.displayTitle: String get() = when (this) {
+    AppRoute.HOME -> "Home"
+    AppRoute.REQUESTS -> "Requests"
+    AppRoute.MISSION -> "Help status"
+    AppRoute.NETWORK -> "Connections"
+}
 
 /** Navigation and the SOS composer. Sample content is restricted to previews. */
 @Composable
@@ -43,7 +51,7 @@ fun GhostApp(state: FoundationState, onRetry: () -> Unit, trust: DeviceTrustStat
                     .padding(horizontal = 24.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                     Text("GHOST", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
-                    Text(if (state.simulated) "Preview" else "Local SOS", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelLarge)
+                    Text(if (state.simulated) "Preview" else "Nearby help", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelLarge)
                 }
             }
         },
@@ -60,7 +68,7 @@ fun GhostApp(state: FoundationState, onRetry: () -> Unit, trust: DeviceTrustStat
                                         shape = MaterialTheme.shapes.medium) {
                                         Box(Modifier.selectable(selected, role = Role.Tab, onClick = { route = destination })
                                             .heightIn(min = 48.dp).padding(8.dp), contentAlignment = Alignment.Center) {
-                                            Text(destination.name.lowercase().replaceFirstChar { it.titlecase() },
+                                            Text(destination.displayTitle,
                                                 style = MaterialTheme.typography.labelLarge)
                                         }
                                     }
@@ -72,12 +80,7 @@ fun GhostApp(state: FoundationState, onRetry: () -> Unit, trust: DeviceTrustStat
             } else {
             NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainerLow) {
                 AppRoute.entries.forEach { destination ->
-                    val label = when (destination) {
-                        AppRoute.HOME -> "Home"
-                        AppRoute.REQUESTS -> "Requests"
-                        AppRoute.MISSION -> "Mission"
-                        AppRoute.NETWORK -> "Network"
-                    }
+                    val label = destination.displayTitle
                     val icon = when (destination) {
                         AppRoute.HOME -> GhostIcons.Home
                         AppRoute.REQUESTS -> GhostIcons.Requests
@@ -92,7 +95,7 @@ fun GhostApp(state: FoundationState, onRetry: () -> Unit, trust: DeviceTrustStat
         },
     ) { insets ->
         savedScreens.SaveableStateProvider(route) {
-            val modifier = Modifier.semantics { paneTitle = route.name.lowercase().replaceFirstChar { it.titlecase() } }
+            val modifier = Modifier.semantics { paneTitle = route.displayTitle }
             when (route) {
                 AppRoute.HOME -> HomeScreen(state, { showSosPreview = true }, { route = AppRoute.REQUESTS },
                     { route = AppRoute.NETWORK }, onRetry, modifier, insets, local, actions)
@@ -104,8 +107,8 @@ fun GhostApp(state: FoundationState, onRetry: () -> Unit, trust: DeviceTrustStat
     }
     if (showSosPreview) {
         val draft = local.draft ?: if (actions == null) previewDraft else null
-        if (draft == null) AlertDialog(onDismissRequest = { showSosPreview = false }, title = { Text("Loading SOS draft") },
-            text = { Text(local.error ?: "Opening local storage…") }, confirmButton = { TextButton({ showSosPreview = false }) { Text("Close") } })
+        if (draft == null) AlertDialog(onDismissRequest = { showSosPreview = false }, title = { Text("Opening your request…") },
+            text = { Text(local.error?.userMessage() ?: "Looking for your unfinished request…") }, confirmButton = { TextButton({ showSosPreview = false }) { Text("Close") } })
         else SosFormDialog(draft, local.saving, local.error, actions != null,
             onChange = { actions?.updateDraft?.invoke(it) },
             onSave = { value -> actions?.publish?.invoke(value) { showSosPreview = false; route = AppRoute.REQUESTS } },

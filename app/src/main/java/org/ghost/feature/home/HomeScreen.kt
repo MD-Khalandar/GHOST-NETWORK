@@ -29,38 +29,38 @@ import org.ghost.feature.foundation.*
 fun HomeScreen(state: FoundationState, onSendSos: () -> Unit, onOpenRequests: () -> Unit, onOpenNetwork: () -> Unit,
                onRetry: () -> Unit, modifier: Modifier = Modifier, contentPadding: PaddingValues = PaddingValues(0.dp),
                local: LocalUiState = LocalUiState(), actions: LocalActions? = null) {
-    GhostScreen("Help starts nearby", "Ask for help. Let nearby phones carry your SOS.", modifier, contentPadding, state.simulated) {
+    GhostScreen("Help starts nearby", "Ask for help, even without internet.", modifier, contentPadding, state.simulated) {
         item("mesh") {
-            InfoCard("Mesh", local.meshStatus()) {
-                Text("Join to automatically connect and relay public SOS reports while the app is open.")
+            InfoCard("Connect with nearby phones", local.meshStatus()) {
+                Text("Connect with nearby phones to pass along requests for help. Keep GHOST open to stay connected.")
                 Button(onClick = { if (local.network.active || local.network.starting) actions?.stopNearby?.invoke() else actions?.startNearby?.invoke() },
                     enabled = actions != null, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-                    Text(if (local.network.active || local.network.starting) "Disconnect from mesh" else "Connect to mesh")
+                    Text(if (local.network.active || local.network.starting) "Disconnect from GHOST" else "Connect to GHOST")
                 }
-                TextButton(onOpenNetwork, modifier = Modifier.heightIn(min = 48.dp)) { Text("Network details") }
+                TextButton(onOpenNetwork, modifier = Modifier.heightIn(min = 48.dp)) { Text("See nearby phones") }
             }
         }
         item("sos") {
             Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
                 Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("Need assistance?", style = MaterialTheme.typography.titleLarge)
-                    Text("Describe what help you need and send your SOS.")
+                    Text("Need help?", style = MaterialTheme.typography.titleLarge)
+                    Text("Describe what you need and send a request for help.")
                     Button(onClick = onSendSos, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error,
                             contentColor = MaterialTheme.colorScheme.onError)) { Text("Send SOS") }
-                    Text("Saved before sending. No peers are required to save.", style = MaterialTheme.typography.bodySmall)
+                    Text("Your request is saved on this phone, even when no other phones are nearby.", style = MaterialTheme.typography.bodySmall)
                 }
             }
         }
-        local.error?.let { item("error") { InfoCard("Action unavailable", it) } }
-        local.notice?.let { item("notice") { InfoCard("Local status", it) } }
+        local.error?.let { item("error") { InfoCard("Something went wrong", it.userMessage()) } }
+        local.notice?.let { item("notice") { InfoCard("Your request", it.userMessage()) } }
         when {
             state.loading -> item { LoadingCard() }
             state.failed -> item { ErrorCard(onRetry) }
             else -> {
                 item("reports") {
-                    InfoCard("Saved reports", "${state.requests.size} on this phone") {
-                        Text("${state.requests.count { it.localDelivery == LocalDelivery.QUEUED }} queued for nearby phones")
+                    InfoCard("Saved requests", "${state.requests.size} on this phone") {
+                        Text("${state.requests.count { it.localDelivery == LocalDelivery.QUEUED }} waiting to be shared with nearby phones")
                         TextButton(onOpenRequests, Modifier.heightIn(min = 48.dp)) { Text("View requests") }
                     }
                 }
@@ -110,16 +110,16 @@ fun SosFormDialog(initial: SosDraft, busy: Boolean, error: String?, canSave: Boo
                         OutlinedTextField(draft.area, { if (it.length <= 120) update(draft.copy(area = it)) }, enabled = !busy,
                             label = { Text("Area or landmark (optional)") }, modifier = Modifier.fillMaxWidth())
                     }
-                    Text(if (draft.publicSharing) "Send shares this message with the mesh. Other phones can read and relay it." else "This SOS will be saved only on your phone.")
-                    Text(if (draft.cloudConsent) "Cloud coordination: allowed" else "Cloud coordination: off", style = MaterialTheme.typography.bodySmall)
+                    Text(if (draft.publicSharing) "Nearby people can read this request. Their phones can pass it along." else "This request will be saved only on your phone.")
+                    Text(if (draft.cloudConsent) "Online help coordination: allowed" else "Online help coordination: off", style = MaterialTheme.typography.bodySmall)
                     TextButton({ sharing = !sharing }, enabled = !busy, modifier = Modifier.heightIn(min = 48.dp)) { Text("Sharing settings") }
                     if (sharing) {
-                        ConsentChoice("Share with mesh", draft.publicSharing, !busy) { update(draft.copy(publicSharing = it)) }
-                        ConsentChoice("Allow cloud coordination", draft.cloudConsent, !busy) { update(draft.copy(cloudConsent = it)) }
-                        Text("These choices are remembered. Cloud uploads need a configured online gateway.", style = MaterialTheme.typography.bodySmall)
+                        ConsentChoice("Share with nearby phones", "Nearby people can read your request and pass it to more phones.", draft.publicSharing, !busy) { update(draft.copy(publicSharing = it)) }
+                        ConsentChoice("Allow online help coordination", "Allow a phone with internet to save your request online. Saving online does not mean help has been arranged.", draft.cloudConsent, !busy) { update(draft.copy(cloudConsent = it)) }
+                        Text("We'll remember these choices for your next request.", style = MaterialTheme.typography.bodySmall)
                     }
-                    (validation ?: error)?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                    if (!canSave) Text("UI preview: saving is disabled.")
+                    (validation ?: error)?.let { Text(it.userMessage(), color = MaterialTheme.colorScheme.error) }
+                    if (!canSave) Text("This is a preview. Requests can't be saved.")
                 }
                 Button(onClick = {
                     validation = when {
@@ -138,9 +138,12 @@ fun SosFormDialog(initial: SosDraft, busy: Boolean, error: String?, canSave: Boo
 }
 
 @Composable
-private fun ConsentChoice(label: String, checked: Boolean, enabled: Boolean, onCheckedChange: (Boolean) -> Unit) {
+private fun ConsentChoice(label: String, explanation: String, checked: Boolean, enabled: Boolean, onCheckedChange: (Boolean) -> Unit) {
     Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).toggleable(checked, enabled = enabled, role = Role.Checkbox, onValueChange = onCheckedChange), verticalAlignment = Alignment.CenterVertically) {
         Checkbox(checked, onCheckedChange = null, enabled = enabled)
-        Text(label, Modifier.weight(1f))
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(label)
+            Text(explanation, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
 }
