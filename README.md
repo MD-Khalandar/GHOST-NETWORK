@@ -94,3 +94,24 @@ deployed phone-to-cloud-to-mesh testing is still needed.
 
 See [server/README.md](server/README.md). Temporary tools/caches belong in ignored
 `.tmp/` or `.local/`; credentials and build outputs stay out of Git.
+
+## SOS dashboard
+
+With Node.js 22.12+ and the server configured:
+
+```sh
+npm --prefix dashboard ci
+npm --prefix dashboard run build
+npm --prefix server run build
+npm --prefix server start
+```
+
+Open `http://127.0.0.1:3000/dashboard/` and enter a **viewer or operator** token
+supplied by the server administrator. It lists uploaded SOS reports; selecting a
+report shows its message, area, people count and timestamps. Refresh checks for
+new arrivals; older reports load in pages. Expiry does not mean help was provided.
+Tokens stay in tab memory; reload/sign-out clears access. Use HTTPS in deployment.
+
+For UI development, run `npm --prefix dashboard run dev` alongside the server;
+open `http://127.0.0.1:5173/dashboard/`. Vite proxies `/v1` to port 3000.
+Checks: `npm --prefix dashboard test` and `npm --prefix dashboard run build`.

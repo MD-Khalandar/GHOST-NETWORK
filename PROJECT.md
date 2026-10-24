@@ -35,8 +35,11 @@ expiry and four-transfer budget. The original phone shows verified server receip
 Return routing has host exchange/restart tests; physical cloud-to-mesh testing remains.
 Android uses plain-language actions and delivery updates; connection diagnostics
 sit under optional Technical details.
+The web SOS desk lists server-received reports with request details, pagination,
+manual refresh and expiry labels. Viewer/operator tokens stay in tab memory;
+gateway tokens cannot read it. Local browser checks pass against signed uploads.
 
-Next: dashboard and resource matching → approval, owner decisions and outage recovery.
+Next: helper/supply records and matching → approval, owner decisions and outage recovery.
 
 Keep public/cloud consent separate, preserve signed bytes, reject forged/duplicate
 events, and keep cloud/provider secrets server-side. Queued, received and confirmed are distinct.

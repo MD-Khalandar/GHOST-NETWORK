@@ -47,5 +47,20 @@ Server build and tests use the commands above. Storage tests use embedded
 PostgreSQL (PGlite), including a file-backed restart; an external PostgreSQL
 deployment still needs verification. Android gateway uploads and local signed
 receipt storage and acknowledgement return through the Android mesh are implemented.
-Dashboard and coordination remain next work; download/dashboard handlers still
-return 501. See [PROJECT.md](../PROJECT.md).
+The built React dashboard is served at `/dashboard/` (build it with
+`npm --prefix dashboard ci` and `npm --prefix dashboard run build` from the root).
+Its viewer/operator token is entered in the browser and kept only in tab memory.
+Add a distinct `viewer` or `operator` record to `GHOST_AUTH_PRINCIPALS` using the
+SHA-256 digest of a separate random token; a gateway token cannot read reports.
+
+`GET /v1/dashboard/sos?limit=30&before=<cloud_revision>` returns
+`{items, next_before}` ordered by newest cloud revision. `limit` is 1–100;
+omit `before` for the first page. `GET /v1/dashboard/sos/:requestId` reads one
+report (404 if absent). Both require viewer/operator bearer authentication and
+return `Cache-Control: no-store`. Items contain request ID, category (the proto
+enum), description, optional people/area/landmark, reported/expiry/received times
+in milliseconds, and cloud revision. Signed packets and credentials are excluded.
+Expired reports remain visible; server receipt never confirms assistance.
+
+Helpers, offers, matching/approval and download handlers still return 501.
+See [PROJECT.md](../PROJECT.md).

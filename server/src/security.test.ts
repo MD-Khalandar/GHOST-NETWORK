@@ -19,7 +19,8 @@ test("gateway/viewer/operator roles are isolated on every protected route", asyn
       assert.equal(session.statusCode, 200); assert.equal(session.json().role, role);
       assert.doesNotMatch(session.body, /token_sha256|private|BEGIN|gggg|vvvv|oooo/);
       for (const url of ["/v1/dashboard/sos", "/v1/dashboard/sos/any", "/v1/dashboard/helpers", "/v1/dashboard/offers", "/v1/dashboard/runs"]) {
-        assert.equal((await app.inject({ method: "GET", url, headers })).statusCode, role === "gateway" ? 403 : 501);
+        const allowedStatus = url === "/v1/dashboard/sos" ? 503 : url === "/v1/dashboard/sos/any" ? 400 : 501;
+        assert.equal((await app.inject({ method: "GET", url, headers })).statusCode, role === "gateway" ? 403 : allowedStatus);
         assert.equal((await app.inject({ method: "GET", url })).statusCode, 401);
       }
       for (const action of ["approve", "reject"]) {

@@ -11,9 +11,45 @@ export interface UploadResponse {
   packets: WirePacket[];
 }
 
+// Only the operator-facing projection crosses this API, never signed packets/keys.
+export interface DashboardSos {
+  request_id: string;
+  category: number;
+  description: string;
+  people_count: number | null;
+  coarse_area: string | null;
+  landmark: string | null;
+  created_at_ms: number;
+  expires_at_ms: number;
+  received_at_ms: number;
+  cloud_revision: number;
+}
+const dashboardColumns = "request_id, category, description, people_count, coarse_area, landmark, created_at_ms, expires_at_ms, received_at_ms, cloud_revision";
+const dashboardReport = (row: Record<string, any>): DashboardSos => ({
+  request_id: row.request_id, category: Number(row.category), description: row.description,
+  people_count: row.people_count === null ? null : Number(row.people_count),
+  coarse_area: row.coarse_area, landmark: row.landmark,
+  created_at_ms: Number(row.created_at_ms), expires_at_ms: Number(row.expires_at_ms),
+  received_at_ms: Number(row.received_at_ms), cloud_revision: Number(row.cloud_revision),
+});
+
 export class SosStore {
   constructor(private readonly database: Database, private readonly signer: SigningIdentity,
               private readonly now: () => number = Date.now) {}
+
+  async list(limit: number, before?: number): Promise<{ items: DashboardSos[]; next_before: number | null }> {
+    // The existing unique cloud-revision index supports bounded keyset pagination.
+    const result = before === undefined
+      ? await this.database.query(`SELECT ${dashboardColumns} FROM sos_reports ORDER BY cloud_revision DESC LIMIT $1`, [limit + 1])
+      : await this.database.query(`SELECT ${dashboardColumns} FROM sos_reports WHERE cloud_revision < $1 ORDER BY cloud_revision DESC LIMIT $2`, [before, limit + 1]);
+    const items = result.rows.slice(0, limit).map(dashboardReport);
+    return { items, next_before: result.rows.length > limit ? items.at(-1)!.cloud_revision : null };
+  }
+
+  async find(requestId: string): Promise<DashboardSos | null> {
+    const result = await this.database.query(`SELECT ${dashboardColumns} FROM sos_reports WHERE request_id = $1`, [requestId]);
+    return result.rows.length ? dashboardReport(result.rows[0]) : null;
+  }
 
   async upload(principalId: string, key: string, packets: VerifiedPacket[]): Promise<UploadResponse> {
     // Mutable relay metadata and alternate valid ECDSA signatures do not change
