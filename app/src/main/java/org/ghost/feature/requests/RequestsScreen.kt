@@ -1,16 +1,19 @@
 package org.ghost.feature.requests
 
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import org.ghost.design.*
 import org.ghost.feature.foundation.*
 
 @Composable
-fun RequestsScreen(state: FoundationState, onRetry: () -> Unit, modifier: Modifier = Modifier) {
-    GhostScreen("Requests & offers", "Reports known to this phone. Availability is self-reported.", modifier) {
+fun RequestsScreen(state: FoundationState, onRetry: () -> Unit, modifier: Modifier = Modifier,
+                   contentPadding: PaddingValues = PaddingValues(0.dp)) {
+    GhostScreen("Requests & offers", "Reports known to this phone. Availability is self-reported.", modifier, contentPadding) {
         when {
             state.loading -> item { LoadingCard() }
             state.failed -> item { ErrorCard(onRetry) }

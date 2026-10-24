@@ -1,6 +1,8 @@
 package org.ghost.feature.home
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -11,8 +13,8 @@ import org.ghost.feature.foundation.label
 
 @Composable
 fun HomeScreen(state: FoundationState, onSendSos: () -> Unit, onOpenRequests: () -> Unit, onOpenNetwork: () -> Unit,
-               onRetry: () -> Unit, modifier: Modifier = Modifier) {
-    GhostScreen("Help starts nearby", "Share a need. Stay informed. Keep people connected.", modifier) {
+               onRetry: () -> Unit, modifier: Modifier = Modifier, contentPadding: PaddingValues = PaddingValues(0.dp)) {
+    GhostScreen("Help starts nearby", "Share a need. Stay informed. Keep people connected.", modifier, contentPadding) {
         item("sos") {
             Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
                 Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -49,6 +51,7 @@ fun HomeScreen(state: FoundationState, onSendSos: () -> Unit, onOpenRequests: ()
 @Composable
 fun SosPreviewDialog(onDismiss: () -> Unit) {
     AlertDialog(onDismissRequest = onDismiss, title = { Text("SOS preview") },
-        text = { Text("Sending is unavailable in this preview. Nothing has been sent.\n\nWhen sending is available, you’ll review your report and choose public sharing and cloud consent separately.") },
+        text = { Text("Sending is unavailable in this preview. Nothing has been sent.\n\nWhen sending is available, you’ll review your report and choose public sharing and cloud consent separately.",
+            modifier = Modifier.verticalScroll(rememberScrollState())) },
         confirmButton = { TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp)) { Text("Close preview") } })
 }

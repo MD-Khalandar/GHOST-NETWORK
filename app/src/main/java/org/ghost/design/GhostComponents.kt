@@ -7,16 +7,24 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 
 @Composable
-fun GhostScreen(title: String, subtitle: String, modifier: Modifier = Modifier, content: LazyListScope.() -> Unit) {
+fun GhostScreen(title: String, subtitle: String, modifier: Modifier = Modifier,
+                contentPadding: PaddingValues = PaddingValues(0.dp), content: LazyListScope.() -> Unit) {
+    val direction = LocalLayoutDirection.current
     Box(modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         LazyColumn(
-            modifier = Modifier.widthIn(max = 720.dp).fillMaxSize(),
-            contentPadding = PaddingValues(24.dp),
+            modifier = Modifier.widthIn(max = 720.dp).fillMaxSize().consumeWindowInsets(contentPadding),
+            contentPadding = PaddingValues(
+                start = contentPadding.calculateStartPadding(direction) + 24.dp,
+                top = contentPadding.calculateTopPadding() + 24.dp,
+                end = contentPadding.calculateEndPadding(direction) + 24.dp,
+                bottom = contentPadding.calculateBottomPadding() + 24.dp,
+            ),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             item("heading") {

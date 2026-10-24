@@ -1,15 +1,18 @@
 package org.ghost.feature.mission
 
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import org.ghost.design.*
 import org.ghost.feature.foundation.FoundationState
 import org.ghost.feature.foundation.label
 
 @Composable
-fun MissionScreen(state: FoundationState, onRetry: () -> Unit, modifier: Modifier = Modifier) {
-    GhostScreen("Cloud mission", "Coordination status, with people in control.", modifier) {
+fun MissionScreen(state: FoundationState, onRetry: () -> Unit, modifier: Modifier = Modifier,
+                  contentPadding: PaddingValues = PaddingValues(0.dp)) {
+    GhostScreen("Cloud mission", "Coordination status, with people in control.", modifier, contentPadding) {
         when {
             state.loading -> item { LoadingCard() }
             state.failed -> item { ErrorCard(onRetry) }

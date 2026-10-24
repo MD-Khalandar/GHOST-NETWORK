@@ -1,15 +1,18 @@
 package org.ghost.feature.network
 
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.lazy.items
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import org.ghost.design.*
 import org.ghost.feature.foundation.FoundationState
 import org.ghost.feature.foundation.label
 
 @Composable
-fun NetworkScreen(state: FoundationState, onRetry: () -> Unit, modifier: Modifier = Modifier) {
-    GhostScreen("Network", "Local links and cloud reachability are shown separately.", modifier) {
+fun NetworkScreen(state: FoundationState, onRetry: () -> Unit, modifier: Modifier = Modifier,
+                  contentPadding: PaddingValues = PaddingValues(0.dp)) {
+    GhostScreen("Network", "Local links and cloud reachability are shown separately.", modifier, contentPadding) {
         when {
             state.loading -> item { LoadingCard() }
             state.failed -> item { ErrorCard(onRetry) }

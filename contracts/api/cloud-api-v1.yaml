@@ -11,6 +11,7 @@ servers:
     description: Deployment placeholder; configured per environment.
 security:
   - bearerAuth: []
+tags:
   - name: health
   - name: dashboard
   - name: sync
