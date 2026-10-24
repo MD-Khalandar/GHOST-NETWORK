@@ -40,8 +40,10 @@ For two phones with Google Play services:
 New SOS requests always enable nearby sharing and online help coordination; there
 are no sharing checkboxes. The form explains that nearby people can read/relay the
 request and a gateway can upload it. **Share GPS location if available** remains
-optional and remembered. With permission and a cached fix no older than five
-minutes, the SOS includes coordinates; otherwise it sends without location.
+optional and remembered. With permission, sending tries a current GPS/network fix
+for up to five seconds, then falls back to a saved fix no older than five minutes.
+If neither is available, the SOS sends without location. Turning GPS sharing off
+skips collection. Pending location requests stop on completion, timeout or cancellation.
 Older unfinished drafts use the same sharing policy when sent. Existing signed
 reports keep their original consent. Joining alone never creates a new SOS;
 previously queued public reports resume automatically.

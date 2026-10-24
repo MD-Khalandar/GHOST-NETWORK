@@ -110,7 +110,7 @@ class AppGraph(application: Application) : AndroidViewModel(application) {
                 val payload = SosCreatePayload(RequestId(draft.requestId), draft.category, draft.description.trim(),
                     draft.people.takeIf { it.isNotBlank() }?.toIntOrNull(), draft.area.trim().takeIf { it.isNotEmpty() },
                     consent = Consent(true, true),
-                    location = if (draft.locationSharing) location.read() else null)
+                    location = if (draft.locationSharing) location.current() else null)
                 require(draft.people.isBlank() || payload.peopleCount != null) { "Enter a valid people count." }
                 repository.publish(payload, draft.locationSharing).getOrThrow()
                 operation.value = LocalUiState(notice = "SOS saved. Queued for nearby sharing and online coordination.")

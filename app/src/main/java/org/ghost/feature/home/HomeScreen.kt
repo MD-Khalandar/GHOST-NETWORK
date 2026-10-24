@@ -118,7 +118,7 @@ fun SosFormDialog(initial: SosDraft, busy: Boolean, error: String?, canSave: Boo
                     }
                     Text("Your SOS is shared with nearby phones and online help coordination. Nearby people can read and relay it; an online gateway uploads it when available.")
                     Text("Sharing does not confirm that help has been arranged.", style = MaterialTheme.typography.bodySmall)
-                    ConsentChoice("Share GPS location if available", "Include a cached location up to five minutes old. If unavailable, the SOS is sent without it.", draft.locationSharing, !busy) {
+                    ConsentChoice("Share GPS location if available", "Try your current location for up to five seconds when sending. If unavailable, use a saved fix up to five minutes old or send without location.", draft.locationSharing, !busy) {
                         update(draft.copy(locationSharing = it))
                         if (it) onRequestLocation?.invoke()
                     }

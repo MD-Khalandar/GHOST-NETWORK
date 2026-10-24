@@ -29,10 +29,14 @@ always enable nearby sharing and online coordination, without sharing checkboxes
 Older unsigned SOS drafts adopt these settings; existing signed records retain their
 original audience. Supply edits keep the signed audience; a new offer broadens it.
 GPS sharing is on by default but optional and remembered
-after sending; a cached location is included only with permission and a valid fix
-no older than five minutes, measured with Android's monotonic clock. Mesh joining
+after sending. Sending requests a current GPS/network fix for up to five seconds,
+then falls back to a permitted valid cached fix no older than five minutes, measured
+with Android's monotonic clock. Missing permission/location never prevents sending;
+completion, timeout or cancellation stops location requests. Mesh joining
 alone never creates an SOS. Connections
 are open without manual code verification; signatures do not prove human identity.
+Location tests cover fresh acquisition on Android 7/15, timeout fallback, cancellation
+and missing permission/providers; handset GPS acquisition still needs field testing.
 The user reports the mesh works on physical phones; handset key persistence has
 not been separately verified here.
 Server SOS uploads now persist in PostgreSQL with consent/signature checks,
@@ -137,7 +141,7 @@ Android may hide the drawer notification. Process death/force-stop/reboot needs 
 new Connect tap. Service/activity/notification lifecycle tests pass locally; handset
 battery/lock-screen behavior still needs testing.
 
-Next: field-test assistance/background connections and improve fresh GPS. Server
+Next: field-test assistance/background connections and GPS acquisition. Server
 commitment and requester-reported resolution do not independently prove delivery.
 
 Validate signed sharing consent, preserve signed bytes, reject forged/duplicate
