@@ -12,6 +12,8 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import java.io.File
 import org.ghost.design.GhostTheme
+import org.ghost.domain.model.CloudCoordinationState
+import org.ghost.domain.model.CloudCoordinationStatus
 import org.ghost.feature.foundation.FoundationPreviewFixtures
 import org.ghost.feature.foundation.FoundationState
 import org.junit.Assert.assertEquals
@@ -50,6 +52,27 @@ class GhostAppUiTest {
         compose.onNode(hasText("Network") and hasClickAction()).performClick()
         compose.onNodeWithText("Radio simulation").performScrollTo().assertIsDisplayed()
         screenshot("network-light")
+    }
+
+    @Test
+    fun missionKeepsProposalVisibleAndRestoresOptionalExplanationAcrossNavigation() {
+        val state = FoundationPreviewFixtures.loaded.copy(
+            mission = CloudCoordinationState(CloudCoordinationStatus.AWAITING_OPERATOR, version = 2),
+        )
+        compose.setContent { GhostTheme { GhostApp(state, {}) } }
+        compose.onNodeWithText("Mission").performClick()
+        compose.onNodeWithText("Waiting for operator approval").assertIsDisplayed()
+        compose.onNodeWithText("Proposal version 2").assertIsDisplayed()
+        compose.onNodeWithText("People approve assistance").assertDoesNotExist()
+        compose.onNodeWithText("How coordination works").performScrollTo()
+            .assertHeightIsAtLeast(48.dp).performClick()
+        compose.onNodeWithText("People approve assistance").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Home").performClick()
+        compose.onNodeWithText("Mission").performClick()
+        compose.onNodeWithText("Hide coordination details").performScrollTo().performClick()
+        compose.onNodeWithText("People approve assistance").assertDoesNotExist()
+        compose.onNodeWithText("Proposal version 2").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Resource allocation confirmed").assertDoesNotExist()
     }
 
     @Test

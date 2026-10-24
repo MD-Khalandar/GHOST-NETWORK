@@ -1,6 +1,7 @@
 # Machine-local tools and IDE settings
 .DS_Store
 .local/
+.tmp/
 .gradle/
 .kotlin/
 .idea/

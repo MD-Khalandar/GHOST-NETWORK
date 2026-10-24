@@ -12,7 +12,7 @@ Four destinations: **Home**, **Requests**, **Mission**, **Network**. SOS compose
 | SOS form | Medical/trapped/water/food/shelter/other; description, optional people count and coarse location. Preview exact content/audience, public sharing and separate cloud-coordination consent |
 | Requests / details | Locally known reports, source/age, pending cloud sync, cloud acknowledgements, proposal and actual recipient state |
 | Offers | Owner publish/update/withdraw, cloud consent, accept/decline exact proposal version; acceptance stays pending until cloud confirmation |
-| Mission | Read-only cloud run/tool summary, proposal/version, waiting-for-operator state and approved outcome. Operator approval happens in the web dashboard |
+| Mission | Compact read-only coordination status, proposal/version and approved outcome. Keep explanations behind an explicit disclosure; detailed run/tool history and operator approval belong in the web dashboard |
 | Network | Permission/radio state, observed peers/relay path, queue/expiry, gateway sharing toggle, last cloud sync and retry |
 
 A handset's local role toggle cannot grant approval authority. For the demo the operator uses the web dashboard on a computer or C's browser. Phone owners accept/decline their own offers in the app.
@@ -29,7 +29,7 @@ An authenticated browser UI in `dashboard/`, using the server API and shared clo
 | Agent activity | Actual job/model/tool history, draft/version, uncertainty and waiting-for-approval state |
 | Operator actions | Approve/reject exact proposal version through authenticated role-checked API; stale data causes revalidation rather than automatic approval |
 
-Start with polling and clear loading/empty/error/stale states. A report queued on an offline phone is not an incoming cloud record. Dashboard controls cannot silently edit owner supplies, confirm receipt or close someone else's SOS. Keep keyboard navigation, accessible labels, readable contrast and narrow-screen layouts usable. Do not require the dashboard to create or send a phone's SOS.
+Start with one incoming requests board and a request detail view containing offers, approval and actual agent history. Use polling and clear loading/empty/error/stale states. A report queued on an offline phone is not an incoming cloud record. Dashboard controls cannot silently edit owner supplies, confirm receipt or close someone else's SOS. Keep keyboard navigation, accessible labels, readable contrast and narrow-screen layouts usable. Do not require the dashboard to create or send a phone's SOS.
 
 ## States and consent
 
@@ -39,7 +39,7 @@ Start with polling and clear loading/empty/error/stale states. A report queued o
 - Until E2E encryption is implemented/tested, disclose relay visibility; do not claim signatures make content private.
 - Show current reported source/age and uncertainty; a central coordinator still lacks unsynchronized reports.
 - Preserve drafts on error/navigation, prevent duplicate sends, and expose empty/loading/stale/failed/permission-denied/service-unavailable states.
-- Mission trace shows actual model-selected tool, validated result, draft and human approval. Mark fixtures simulated; do not display cloud activity from a fake as live.
+- Dashboard trace shows actual model-selected tool, validated result, draft and human approval. Phone Mission summarizes status and proposal version from the same records. Mark fixtures simulated; do not display cloud activity from a fake as live.
 - If approval or acceptance becomes stale while disconnected, require revalidation rather than showing success.
 
 ## Visual and implementation baseline

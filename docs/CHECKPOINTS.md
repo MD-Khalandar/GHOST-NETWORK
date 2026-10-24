@@ -2,7 +2,13 @@
 
 Build SOS sending first: offline phones → mesh → online gateway → cloud database/dashboard → one cloud coordinator → approved response back through the mesh. The database stores requests, helpers and supply/help offers. Ordinary chat, generic internet services, local LLM helpers and LoRa are deferred, not removed from the wider product.
 
-**Current position:** CP01 contracts and foundations complete within its host/simulation scope. A/B/C/D are integrated: typed contracts, deterministic Android fakes, server scaffold and the four-screen Android preview. See [combined checks and limitations](evidence/cp01/integration.md). Physical/device/cloud acceptance gates remain open; CP02 has not started. Existing Android toolchain versions are preserved.
+**Current position:** CP01 contracts and foundations complete within its host/simulation scope. A/B/C/D are integrated: typed contracts, deterministic Android fakes, server scaffold and the four-screen Android preview. See [combined checks and limitations](evidence/cp01/integration.md). CP02 is in progress per the user's 24 October 2026 update; its implementation is not integrated into this checkout. Physical/device/cloud acceptance gates remain open. Existing Android toolchain versions are preserved.
+
+Checkpoints are acceptance milestones, not the size of an implementation step.
+For the hackathon, use the [simple implementation shape](../ARCHITECTURE.md#hackathon-implementation),
+make small changes and run relevant checks once per affected area. The role
+prompts below apply when coordinating parallel checkpoint work; they do not
+require four separate implementation layers or services.
 
 Each checkpoint has **four copyable prompts** in [BUILD_PHASES.md](BUILD_PHASES.md): A establishes contracts and owns final integration; B handles Android data/network; C handles cloud/database; D handles Android UI and web dashboard. Run A's preparation first. B/C/D then use the same published contract baseline and may work in parallel. A verifies the merged result before the checkpoint closes.
 
@@ -36,7 +42,7 @@ Each checkpoint has **four copyable prompts** in [BUILD_PHASES.md](BUILD_PHASES.
 Record real evidence links and verified user-pushed commits; do not infer acceptance from a commit. Statuses: not started, in progress, implemented/evidence pending, blocked, complete.
 
 - 01 — Complete (host/simulation foundations): [integration evidence](evidence/cp01/integration.md), [Android fakes](evidence/cp01/android.md), [UI](evidence/cp01/ui.md). No physical or real-cloud gates claimed.
-- 02 — Not started.
+- 02 — In progress (user-reported; trust implementation/evidence not integrated here).
 - 03 — Not started.
 - 04 — Not started.
 - 05 — Not started.

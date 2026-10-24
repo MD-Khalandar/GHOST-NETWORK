@@ -1,8 +1,7 @@
 import Fastify, { type FastifyInstance } from "fastify";
-import { CONTRACT_VERSION, type ServerConfig } from "./config.js";
-import type { ModelProvider } from "./model-provider.js";
+import { CONTRACT_VERSION } from "./config.js";
 
-export function buildApp(config: ServerConfig, modelProvider: ModelProvider): FastifyInstance {
+export function buildApp(): FastifyInstance {
   const app = Fastify({ logger: false });
 
   app.get("/v1/health", async (_request, reply) => {
@@ -12,11 +11,6 @@ export function buildApp(config: ServerConfig, modelProvider: ModelProvider): Fa
       database: "not_checked",
       model_provider: "configured",
     });
-  });
-
-  app.addHook("onClose", async () => {
-    void config;
-    void modelProvider;
   });
 
   return app;

@@ -4,6 +4,40 @@ GHOST is an Android mesh communication app for outages. The wider product includ
 
 Current repository state: CP01 foundations are integrated: typed contracts, deterministic Android fakes, four Android preview screens and a cloud-service health/config scaffold. SOS sending, signatures, Room, radios, database coordination and the dashboard remain planned components. See [CP01 evidence](docs/evidence/cp01/integration.md). Preserve the existing Android toolchain.
 
+## Hackathon implementation
+
+Keep the full SOS flow, including owner decline/replan and outage recovery. Build it
+with one Android app, one server process and one PostgreSQL database. The API and
+single coordinator worker live in the same service; durable jobs and worker
+ownership stay in PostgreSQL. The dashboard is a static React/Vite client of that
+API. These are implementation constraints, not claims that these components exist.
+
+- Use the existing Kotlin repository/transport boundaries and simple factory
+  injection. Keep new implementations concrete until another implementation needs
+  a shared interface. Logical package names below do not require separate modules.
+- Use Nearby only for the phone mesh. Start with bounded store-and-forward,
+  deduplication and expiry; defer topology discovery and route optimization.
+- Use database transactions, unique event/job keys and bounded batches for
+  correctness. Poll for jobs and dashboard updates; add queues, caches, streaming
+  infrastructure or more services only after measured load requires them.
+- Keep model attempts short and bounded, using the existing read/draft tools and
+  approval policy. Do not add an agent framework or another coordinator.
+- Build one dashboard requests board with request details, offers, approval and
+  actual run history. Phone Mission is a compact status summary with optional
+  explanations; Network shows observed connectivity rather than a topology map.
+- Preserve signed origin bytes, consent, durable queues, owner/operator authority
+  and separate cloud/receipt/allocation states. Simplicity must not turn a queued
+  action into a successful delivery or allocation claim.
+
+Make small implementation changes, check the changed behavior, then move on.
+Run the documented Android build/unit checks for Android changes and server
+tests/build for server changes; do not repeat them without another change or
+failure. Device and real-cloud observations remain separate from host checks.
+Use [CHECKPOINTS.md](docs/CHECKPOINTS.md) for milestone status and
+[TEST_MATRIX.md](docs/TEST_MATRIX.md) for evidence; do not create another status
+ledger. The user reports CP02 in progress; its trust contract remains the baseline
+for subsequent SOS work.
+
 ## SOS architecture
 
 ```mermaid

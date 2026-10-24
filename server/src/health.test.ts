@@ -1,18 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { buildApp } from "./app.js";
-import { loadConfig } from "./config.js";
 import { cp01FixtureInput } from "./fixtures.js";
 import { FakeModelProvider } from "./model-provider.js";
 
 test("GET /v1/health reports process/config health without secrets", async () => {
-  const config = loadConfig({
-    GHOST_ENV: "test",
-    GHOST_DATABASE_URL: "postgresql://localhost:5432/ghost_test",
-    GHOST_MODEL_PROVIDER: "fake",
-    GHOST_MODEL: "cp01-test",
-  });
-  const app = buildApp(config, new FakeModelProvider(config.model));
+  const app = buildApp();
 
   try {
     const response = await app.inject({ method: "GET", url: "/v1/health" });

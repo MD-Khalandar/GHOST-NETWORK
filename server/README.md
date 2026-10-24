@@ -30,6 +30,12 @@ GHOST_MODEL=cp01-fake \
 npm --prefix server run smoke
 ```
 
+`npm --prefix server test` also checks shared API security/tag structure, unique
+operation IDs and internal references. It replaces the former separate Ruby
+contract-check command. Both server and Android tests read
+`contracts/fixtures/cp01-fixtures.json` directly; there is no server fixture copy
+to synchronize. Run tests from a checkout containing `contracts/`.
+
 To run the development server locally with the deterministic provider:
 
 ```sh
@@ -76,6 +82,9 @@ the variable names and safe validation messages. It does not log values.
 ## CP01 boundaries
 
 - `GET /v1/health` is the only HTTP route in this scaffold.
+- Startup validates configuration and creates the HTTP app. It does not create
+  an unused model adapter; provider construction belongs at the coordinator's
+  execution boundary when that is implemented.
 - `FakeModelProvider` returns a stable bounded `finish` decision and performs
   no coordination, tool execution, persistence, or network request.
 - `OpenAiModelProvider` is a configuration-only seam and intentionally throws
@@ -83,3 +92,7 @@ the variable names and safe validation messages. It does not log values.
 - PostgreSQL migrations, repositories, authenticated sync/dashboard APIs,
   durable jobs, real model calls, Docker Compose, HTTPS, and deployment are
   later work. None of those capabilities are claimed here.
+
+The [hackathon architecture](../ARCHITECTURE.md#hackathon-implementation) keeps
+the future API and single database-backed worker in this service, with one
+PostgreSQL database. There is no separate queue broker or agent service to deploy.
