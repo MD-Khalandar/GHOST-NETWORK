@@ -28,7 +28,7 @@ fun NetworkScreen(state: FoundationState, onRetry: () -> Unit, modifier: Modifie
                   contentPadding: PaddingValues = PaddingValues(0.dp), trust: DeviceTrustState = DeviceTrustState(),
                   onRetryIdentity: (() -> Unit)? = null, local: LocalUiState = LocalUiState(), actions: LocalActions? = null) {
     val context = LocalContext.current
-    GhostScreen("Network", "Direct phone links. Keep Bluetooth and Wi-Fi on.", modifier, contentPadding, state.simulated) {
+    GhostScreen("Network", "Nearby SOS relay. Keep Bluetooth and Wi-Fi on.", modifier, contentPadding, state.simulated) {
         when {
             state.loading -> item { LoadingCard() }
             state.failed -> item { ErrorCard(onRetry) }
@@ -36,6 +36,7 @@ fun NetworkScreen(state: FoundationState, onRetry: () -> Unit, modifier: Modifie
                 item("radio") {
                     InfoCard("Nearby phones", local.network.message) {
                         Text("Nearby runs while this app is open. Confirm the pairing code on both phones.")
+                        Text("Connected phones can forward public SOS reports to other phones, up to four transfers.")
                         Button(onClick = { if (local.network.active || local.network.starting) actions?.stopNearby?.invoke() else actions?.startNearby?.invoke() }, enabled = actions != null,
                             modifier = Modifier.heightIn(min = 48.dp)) { Text(if (local.network.active || local.network.starting) "Stop nearby" else "Start nearby") }
                         TextButton(onClick = { context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}"))) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Open app settings") }
@@ -60,7 +61,7 @@ fun NetworkScreen(state: FoundationState, onRetry: () -> Unit, modifier: Modifie
                     }
                 }
                 item("retry") { TextButton(onClick = { actions?.retrySends?.invoke() }, enabled = actions != null, modifier = Modifier.heightIn(min = 48.dp)) { Text("Retry queued sends") } }
-                item("sharing") { InfoCard("Gateway sharing is off", "Cloud uploads and multi-hop relay are not implemented yet.") }
+                item("sharing") { InfoCard("Gateway sharing is off", "Cloud uploads are not implemented yet. Receipts confirm saving by the next phone, not server delivery.") }
                 item("identity") {
                     InfoCard("Device signing identity", when (trust.identity) {
                         IdentityStatus.CHECKING -> "Checking this phone's signing key."

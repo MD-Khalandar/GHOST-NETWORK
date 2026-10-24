@@ -93,32 +93,60 @@ class LocalSosRepository(
           catch (error: Exception) { Result.failure(error) }
     }
 
-    suspend fun outgoing(): List<ReportRow> = withContext(Dispatchers.IO) { dao.outgoing(now()) }
+    /** With a neighbor, prepare one transfer without changing the stored signed envelope. */
+    suspend fun outgoing(peerNode: String? = null, excludedPacketIds: Set<String> = emptySet()): List<ReportRow> = withContext(Dispatchers.IO) {
+        val rows = dao.outgoing(now()).filterNot { it.packetId in excludedPacketIds }
+        if (peerNode == null) return@withContext rows
+        val localNode = identity().nodeId
+        rows.asSequence().mapNotNull { row ->
+            val packet = WireCodec.decode(row.wire)
+            // Also count the first transfer for reports saved by the old direct-only app.
+            val relay = if (!row.owned && packet.relay.hopCount == 0) RelayMetadata(3, 1, NodeId(row.sender)) else packet.relay
+            if (peerNode == localNode.value || row.sender == peerNode || row.receivedBy == peerNode ||
+                relay.previousNodeId?.value == peerNode || relay.remainingHops == 0) null
+            else row.copy(wire = WireCodec.encode(packet.copy(relay = RelayMetadata(
+                relay.remainingHops - 1, relay.hopCount + 1, localNode))))
+        }.take(100).toList()
+    }
     suspend fun markSent(packetId: String) = withContext(Dispatchers.IO) { dao.markSent(packetId, now()) }
 
     /** Returns a signed persistence receipt only after the report and receipt have committed. */
     suspend fun receiveSos(packet: WirePacket, peerNode: String): ByteArray = withContext(Dispatchers.IO) {
         val result = PacketValidator().verify(packet, now())
-        require(result.envelope.kindValue == 1 && SigningIdentity.hex(result.envelope.senderNodeId.toByteArray()) == peerNode) { "Only direct SOS exchange is supported." }
+        require(result.envelope.kindValue == 1)
+        val origin = SigningIdentity.hex(result.envelope.senderNodeId.toByteArray())
+        val relay = packet.relay
+        // The neighbor proves the last hop; the original author proves the content.
+        require(if (relay.hopCount == 0) origin == peerNode else relay.previousNodeId?.value == peerNode) { "Relay does not match the connected phone." }
+        // Older direct-only senders did not count their first radio transfer.
+        val receivedPacket = if (relay.hopCount == 0) packet.copy(relay = RelayMetadata(3, 1, NodeId(peerNode))) else packet
         val p = result.payload as SosCreateV1
         val key = identity()
-        require(peerNode != key.nodeId.value) { "Cannot receive this phone's own identity." }
+        require(peerNode != key.nodeId.value) { "Cannot connect to this phone's own identity." }
         val receipt = SignedPackets.create(key, 12, DeliveryReceiptV1.newBuilder().setPacketId(result.envelope.packetId)
             .setRecipientNodeId(ByteString.copyFrom(WireCodec.bytes(key.nodeId.value))).setReceiptTypeValue(1).setObservedAtMs(now()).build().toByteString(),
             now(), destination = peerNode)
         db.withTransaction {
             val existing = dao.event(result.envelope.eventId) ?: dao.packet(result.envelope.packetId) ?: dao.request(p.requestId)
             if (existing != null) {
-                require(!existing.owned && WireCodec.decode(existing.wire).immutableEnvelopeBytesBase64 == packet.immutableEnvelopeBytesBase64) { "Conflicting report identifier." }
-                existing.receipt ?: error("Receipt unavailable.")
+                require(existing.publicSharing && WireCodec.decode(existing.wire).immutableEnvelopeBytesBase64 == packet.immutableEnvelopeBytesBase64) { "Conflicting report identifier." }
+                // A duplicate can arrive from a different neighbor or loop back to its author.
+                // Only reuse a cached receipt when this phone signed it for this neighbor.
+                val cached = existing.receipt?.let { bytes ->
+                    val e = org.ghost.contracts.v1.ImmutableEnvelopeV1.parseFrom(WireCodec.unbase64(WireCodec.decode(bytes).immutableEnvelopeBytesBase64, PacketValidator.MAX_ENVELOPE))
+                    bytes.takeIf { e.expiresAtMs > now() && e.senderNodeId.toByteArray().contentEquals(WireCodec.bytes(key.nodeId.value)) &&
+                        e.destination.kindValue == 2 && e.destination.nodeId.toByteArray().contentEquals(WireCodec.bytes(peerNode)) }
+                }
+                cached ?: WireCodec.encode(receipt)
             } else {
+                require(origin != key.nodeId.value) { "Unknown report signed by this phone." }
                 dao.pruneReceived(now())
                 require(dao.count() < 1000) { "Local report storage is full." }
                 val bytes = WireCodec.encode(receipt)
-                check(dao.insert(ReportRow(result.envelope.eventId, result.envelope.packetId, p.requestId, peerNode,
+                check(dao.insert(ReportRow(result.envelope.eventId, result.envelope.packetId, p.requestId, origin,
                     SosCategory.entries[p.categoryValue - 1].name, p.description, if (p.hasPeopleCount()) p.peopleCount else null,
                     if (p.hasCoarseArea()) p.coarseArea else null, result.envelope.createdAtMs, now(), result.envelope.expiresAtMs,
-                    false, true, p.consent.cloudProcessingAllowed, WireCodec.encode(packet), receipt = bytes)) != -1L)
+                    false, true, p.consent.cloudProcessingAllowed, WireCodec.encode(receivedPacket), receipt = bytes)) != -1L)
                 bytes
             }
         }
@@ -130,11 +158,13 @@ class LocalSosRepository(
         val p = DeliveryReceiptV1.parseFrom(envelope.payloadBytes)
         val original = dao.packet(p.packetId)
         val key = identity()
-        require(original?.owned == true && p.packetId in sentPacketIds) { "Receipt does not match a packet sent to this peer." }
+        require(original?.publicSharing == true && p.packetId in sentPacketIds && p.receiptTypeValue == 1) { "Receipt does not match a packet sent to this peer." }
         val valid = PacketValidator(lookup = AuthorityLookup { kind, id, _ ->
             if (kind == AuthorityKind.RECEIPT && id == p.packetId) Authority(peerNode) else null
         }).verify(packet, now())
         require(valid.envelope.destination.kindValue == 2 && valid.envelope.destination.nodeId.toByteArray().contentEquals(WireCodec.bytes(key.nodeId.value))) { "Receipt addressed to another phone." }
-        dao.markReceived(p.packetId, peerNode, WireCodec.encode(packet))
+        // Origin reports keep their delivery status. Relay acknowledgements stop this
+        // session's retries; durable delivery history for every neighbor is a later step.
+        if (original.owned) dao.markReceived(p.packetId, peerNode, WireCodec.encode(packet))
     }
 }

@@ -12,7 +12,7 @@ import org.ghost.security.SigningIdentity
 import org.ghost.transport.api.*
 import org.ghost.transport.nearby.NearbyAdapter
 
-/** Direct exchange only: received reports are not forwarded to other peers yet. */
+/** Paired neighbor exchange, including store-and-forward of public SOS reports. */
 class DirectExchange(private val scope: CoroutineScope, private val transport: NearbyAdapter,
     private val repository: LocalSosRepository, private val identity: () -> SigningIdentity) {
     private data class Session(val challenge: ByteArray, val startedAt: Long = System.currentTimeMillis(),
@@ -106,9 +106,11 @@ class DirectExchange(private val scope: CoroutineScope, private val transport: N
         when (envelope.kindValue) {
             1 -> {
                 val receipt = repository.receiveSos(packet, node)
+                session.confirmed.add(envelope.packetId) // This neighbor already holds the report.
                 val outgoing = WireCodec.decode(receipt)
                 scope.launch { transport.send(peer, outgoing) }
-                mutableMessage.value = "SOS saved from a nearby phone."
+                mutableMessage.value = "SOS saved from a nearby phone. Public reports can be relayed."
+                flush()
             }
             12 -> {
                 repository.receiveReceipt(packet, node, session.sent.toSet())
@@ -124,7 +126,8 @@ class DirectExchange(private val scope: CoroutineScope, private val transport: N
             if (sending[peer.endpointId]?.isActive == true) return@forEach
             sending[peer.endpointId] = scope.launch {
                 try {
-                    for (row in repository.outgoing()) {
+                    val excluded = session.confirmed + session.attempts.filterValues { it >= 3 }.keys
+                    for (row in repository.outgoing(session.nodeId!!, excluded)) {
                         if (sessions[peer.endpointId] !== session || peer !in transport.peers.value) break
                         if (row.packetId in session.confirmed || row.receivedBy == session.nodeId ||
                             (session.attempts[row.packetId] ?: 0) >= 3 || System.currentTimeMillis() - (session.lastAttempt[row.packetId] ?: 0) < 10000) continue

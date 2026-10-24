@@ -53,7 +53,7 @@ fun HomeScreen(state: FoundationState, onSendSos: () -> Unit, onOpenRequests: ()
                 }
                 item("connection") {
                     InfoCard(if (state.peers.isEmpty()) "No connected phones" else "${state.peers.size} connected phones", state.cloud.label()) {
-                        Text("Keep both apps open for direct exchange. Cloud sync is not implemented yet.")
+                        Text("Keep the app open to exchange and relay public SOS reports. Cloud sync is not implemented yet.")
                         TextButton(onOpenNetwork, Modifier.heightIn(min = 48.dp)) { Text("View network") }
                     }
                 }
@@ -83,7 +83,7 @@ fun SosFormDialog(initial: SosDraft, busy: Boolean, error: String?, canSave: Boo
                         Text(draft.description.trim())
                         if (draft.people.isNotBlank()) Text("People: ${draft.people}")
                         Text(draft.area.trim().ifBlank { "No area provided" })
-                        Text(if (draft.publicSharing) "Audience: paired nearby phones. Other phones can read this report." else "Audience: this phone only.")
+                        Text(if (draft.publicSharing) "Audience: nearby phones, including through relays. Other phones can read and forward this report." else "Audience: this phone only.")
                         Text(if (draft.cloudConsent) "Cloud permission: on. No upload happens until cloud sync is implemented." else "Cloud permission: off.")
                         Text("Saving or sending does not mean help has been arranged.")
                     } else {
@@ -100,7 +100,7 @@ fun SosFormDialog(initial: SosDraft, busy: Boolean, error: String?, canSave: Boo
                         OutlinedTextField(draft.area, { if (it.length <= 120) update(draft.copy(area = it)) }, enabled = !busy,
                             label = { Text("Area or landmark (optional)") }, modifier = Modifier.fillMaxWidth())
                         ConsentChoice("Share publicly with nearby phones", draft.publicSharing, !busy) { update(draft.copy(publicSharing = it)) }
-                        Text("Signing protects the report from changes; it does not hide its content.")
+                        Text("Other phones can read and forward public reports. Signing protects the report from changes; it does not hide its content.")
                         ConsentChoice("Allow cloud coordination", draft.cloudConsent, !busy) { update(draft.copy(cloudConsent = it)) }
                         Text("Cloud consent is separate. No cloud upload is implemented yet.")
                     }

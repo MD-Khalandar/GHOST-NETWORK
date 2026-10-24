@@ -28,8 +28,8 @@ source scripts/env.sh
 
 APK: `app/build/outputs/apk/debug/app-debug.apk`. With a phone connected, use
 `installDebug` and launch GHOST. SOS drafts, reports and queued packets are saved
-locally. Nearby runs while the app is open; cloud uploads and multi-hop relay
-are not implemented yet.
+locally. Nearby runs while the app is open and can relay public SOS reports;
+cloud uploads are not implemented yet.
 
 For two phones with Google Play services:
 
@@ -40,6 +40,12 @@ For two phones with Google Play services:
 
 With sharing off, **Save SOS** keeps the report on this phone. With no connected
 peer, public reports stay queued across restarts; reconnect to send them.
+
+To try a relay, send A's SOS to B, disconnect A, then connect B to C. C should
+receive A's unchanged report. Forwarding stops after four transfers or expiry.
+Receipts confirm saving by the immediate neighbor. Relay delivery history across
+all neighbors is not persisted yet, so reconnecting can repeat a transfer;
+duplicates are saved only once. Physical three-phone testing is still pending.
 
 The server public signing key can be pinned with
 `-PghostCloudPublicKey=<base64url-SPKI>`. Empty configuration rejects cloud results.
