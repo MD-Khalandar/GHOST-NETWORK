@@ -30,7 +30,7 @@ class LocalSosRepository(
     private val json = Json
     fun observeDraft(): Flow<SosDraft?> = dao.observeDraft().map { it?.let { row -> json.decodeFromString<SosDraft>(row.value) } }
     suspend fun initializeDraft() = withContext(Dispatchers.IO) {
-        db.withTransaction { if (dao.draft() == null) dao.saveDraft(DraftRow(value = json.encodeToString(SosDraft()))) }
+        db.withTransaction { if (dao.draft() == null) dao.saveDraft(DraftRow(value = json.encodeToString(SosDraft(publicSharing = true)))) }
     }
     suspend fun saveDraft(draft: SosDraft) = withContext(Dispatchers.IO) {
         db.withTransaction {
@@ -91,7 +91,8 @@ class LocalSosRepository(
                             verified.expiresAtMs, true, payload.consent.publicMeshAllowed, payload.consent.cloudProcessingAllowed, WireCodec.encode(packet))
                         check(dao.insert(row) != -1L) { "Request could not be saved." }
                         val draft = dao.draft()?.let { json.decodeFromString<SosDraft>(it.value) }
-                        if (draft?.requestId == payload.requestId.value) dao.saveDraft(DraftRow(value = json.encodeToString(SosDraft())))
+                        if (draft?.requestId == payload.requestId.value) dao.saveDraft(DraftRow(value = json.encodeToString(
+                            SosDraft(publicSharing = payload.consent.publicMeshAllowed, cloudConsent = payload.consent.cloudProcessingAllowed))))
                         LocalPublishResult(verified.eventId, payload.consent.publicMeshAllowed)
                     }
                 }.let { Result.success(it) }

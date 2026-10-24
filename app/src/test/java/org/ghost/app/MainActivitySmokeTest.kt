@@ -39,8 +39,8 @@ class MainActivitySmokeTest {
         }
         compose.onNodeWithText("Home").performClick()
         compose.onNodeWithText("Send SOS").performScrollTo().performClick()
-        compose.onNodeWithText("Create SOS").assertIsDisplayed()
-        compose.onNodeWithText("Close & save draft").performClick()
+        compose.onNodeWithText("New SOS").assertIsDisplayed()
+        compose.onNodeWithText("Close").performClick()
         compose.runOnIdle {
             assertEquals(0, ViewModelProvider(compose.activity)[FoundationViewModel::class.java].state.value.requests.size)
         }

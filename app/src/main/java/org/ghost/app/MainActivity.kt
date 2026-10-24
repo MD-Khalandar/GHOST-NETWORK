@@ -46,8 +46,12 @@ class MainActivity : ComponentActivity() {
             }) }
         }
     }
+    override fun onStart() {
+        super.onStart()
+        if (::graph.isInitialized) graph.resumeNearby()
+    }
     override fun onStop() {
-        if (::graph.isInitialized && !isChangingConfigurations) graph.stopNearby()
+        if (::graph.isInitialized && !isChangingConfigurations) graph.pauseNearby()
         super.onStop()
     }
 }

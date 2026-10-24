@@ -25,7 +25,7 @@ import org.ghost.feature.mission.MissionScreen
 import org.ghost.feature.network.NetworkScreen
 import org.ghost.feature.requests.RequestsScreen
 
-/** Navigation only; sample request/network content remains explicitly simulated. */
+/** Navigation and the SOS composer. Sample content is restricted to previews. */
 @Composable
 fun GhostApp(state: FoundationState, onRetry: () -> Unit, trust: DeviceTrustState = DeviceTrustState(), onRetryIdentity: (() -> Unit)? = null,
              local: LocalUiState = LocalUiState(), actions: LocalActions? = null) {
@@ -95,7 +95,7 @@ fun GhostApp(state: FoundationState, onRetry: () -> Unit, trust: DeviceTrustStat
             val modifier = Modifier.semantics { paneTitle = route.name.lowercase().replaceFirstChar { it.titlecase() } }
             when (route) {
                 AppRoute.HOME -> HomeScreen(state, { showSosPreview = true }, { route = AppRoute.REQUESTS },
-                    { route = AppRoute.NETWORK }, onRetry, modifier, insets, local)
+                    { route = AppRoute.NETWORK }, onRetry, modifier, insets, local, actions)
                 AppRoute.REQUESTS -> RequestsScreen(state, onRetry, modifier, insets)
                 AppRoute.MISSION -> MissionScreen(state, onRetry, modifier, insets)
                 AppRoute.NETWORK -> NetworkScreen(state, onRetry, modifier, insets, trust, onRetryIdentity, local, actions)
@@ -110,12 +110,5 @@ fun GhostApp(state: FoundationState, onRetry: () -> Unit, trust: DeviceTrustStat
             onChange = { actions?.updateDraft?.invoke(it) },
             onSave = { value -> actions?.publish?.invoke(value) { showSosPreview = false; route = AppRoute.REQUESTS } },
             onClose = { value -> if (actions == null) showSosPreview = false else actions.saveDraft(value) { showSosPreview = false } })
-    }
-    local.network.pairing.firstOrNull()?.let { pairing ->
-        AlertDialog(onDismissRequest = { actions?.confirm?.invoke(pairing.endpointId, false) },
-            title = { Text("Confirm nearby phone") },
-            text = { Text("${pairing.name}\n\nCompare this code on both phones:\n${pairing.code}\n\nAccept only if both codes match.") },
-            confirmButton = { TextButton({ actions?.confirm?.invoke(pairing.endpointId, true) }) { Text("Codes match") } },
-            dismissButton = { TextButton({ actions?.confirm?.invoke(pairing.endpointId, false) }) { Text("Decline") } })
     }
 }

@@ -18,7 +18,7 @@ class AppGraph(application: Application) : AndroidViewModel(application) {
     private val db = Room.databaseBuilder(application, GhostDatabase::class.java, "ghost.db")
         .addMigrations(GhostDatabase.MIGRATION_1_2).build()
     private val identity by lazy { AndroidSigningIdentity().loadOrCreate() }
-    val nearby = NearbyAdapter(application)
+    val nearby = NearbyAdapter(application, viewModelScope)
     val repository = LocalSosRepository(db, { identity })
     private val exchange = DirectExchange(viewModelScope, nearby, repository, { identity })
     val dependencies = GhostAppDependencies(nearby, UnavailableGateway, repository, UnavailableOffers, UnavailableCoordination)
@@ -61,14 +61,18 @@ class AppGraph(application: Application) : AndroidViewModel(application) {
                     consent = Consent(draft.publicSharing, draft.cloudConsent))
                 require(draft.people.isBlank() || payload.peopleCount != null) { "Enter a valid people count." }
                 repository.publish(payload).getOrThrow()
-                operation.value = LocalUiState(notice = if (draft.publicSharing) "SOS saved. Queued for paired nearby phones." else "SOS saved on this phone only.")
+                operation.value = LocalUiState(notice = if (draft.publicSharing) "SOS saved. Queued for the mesh." else "SOS saved on this phone only.")
                 saved(); exchange.flush()
             } catch (cancelled: CancellationException) { throw cancelled }
               catch (error: Exception) { operation.value = LocalUiState(error = if (error is IllegalArgumentException) error.message else "SOS could not be saved. Check storage and the signing key, then retry.") }
         }
     }
-    fun startNearby() {
-        viewModelScope.launch {
+    private var meshEnabled = false
+    private var meshStart: Job? = null
+    fun startNearby() { meshEnabled = true; resumeNearby() }
+    fun resumeNearby() {
+        if (!meshEnabled || meshStart?.isActive == true || nearby.state.value.active) return
+        meshStart = viewModelScope.launch {
             try {
                 val name = withContext(Dispatchers.IO) { "GHOST ${identity.nodeId.value.take(8)}" }
                 nearby.start(name)
@@ -76,11 +80,10 @@ class AppGraph(application: Application) : AndroidViewModel(application) {
               catch (_: Exception) { operation.value = LocalUiState(error = "Nearby could not start. Check the signing key, permissions and Google Play services.") }
         }
     }
-    fun stopNearby() { viewModelScope.launch { nearby.stop() } }
-    fun actions(start: () -> Unit) = LocalActions({ draft -> if (!operation.value.saving) draftWrites.trySend(DraftWrite(draft)) }, ::saveDraft, ::publish, start, ::stopNearby,
-        { endpoint -> viewModelScope.launch { nearby.connect(endpoint) } },
-        { endpoint, accept -> viewModelScope.launch { nearby.confirm(endpoint, accept) } },
-        nearby::disconnect, exchange::retry)
+    fun pauseNearby() { meshStart?.cancel(); meshStart = null; nearby.close() }
+    fun stopNearby() { meshEnabled = false; pauseNearby() }
+    fun actions(start: () -> Unit) = LocalActions({ draft -> if (!operation.value.saving) draftWrites.trySend(DraftWrite(draft)) },
+        ::saveDraft, ::publish, start, ::stopNearby, exchange::retry)
 
     override fun onCleared() {
         // SDK stop calls are immediate; the app also stops links when its activity backgrounds.

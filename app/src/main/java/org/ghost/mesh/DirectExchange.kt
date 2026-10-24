@@ -14,7 +14,8 @@ import org.ghost.protocol.*
 import org.ghost.security.SigningIdentity
 import org.ghost.transport.api.*
 
-/** Bounded store-and-forward over authenticated, explicitly paired neighbor links.
+/** Bounded store-and-forward over neighbor links after the user joins the mesh.
+ * Key possession authenticates a node ID, not a person's real-world identity.
  * Session state belongs to the caller's single-threaded scope (the app's main scope).
  */
 class DirectExchange(private val scope: CoroutineScope, private val transport: GhostTransport,

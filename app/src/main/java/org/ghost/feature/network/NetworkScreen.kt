@@ -18,6 +18,7 @@ import org.ghost.feature.foundation.CloudTrustStatus
 import org.ghost.feature.foundation.OperatorAccess
 import org.ghost.app.LocalActions
 import org.ghost.app.LocalUiState
+import org.ghost.app.meshStatus
 import androidx.compose.ui.platform.LocalContext
 import android.content.Intent
 import android.net.Uri
@@ -34,31 +35,23 @@ fun NetworkScreen(state: FoundationState, onRetry: () -> Unit, modifier: Modifie
             state.failed -> item { ErrorCard(onRetry) }
             else -> {
                 item("radio") {
-                    InfoCard("Nearby phones", local.network.message) {
-                        Text("Nearby runs while this app is open. Confirm the pairing code on both phones.")
-                        Text("Connected phones can forward public SOS reports to other phones, up to four transfers.")
+                    InfoCard("Mesh", local.meshStatus()) {
+                        Text(local.network.message)
+                        Text("Phones connect automatically while this app is open and relay public SOS reports.")
                         Button(onClick = { if (local.network.active || local.network.starting) actions?.stopNearby?.invoke() else actions?.startNearby?.invoke() }, enabled = actions != null,
-                            modifier = Modifier.heightIn(min = 48.dp)) { Text(if (local.network.active || local.network.starting) "Stop nearby" else "Start nearby") }
+                            modifier = Modifier.heightIn(min = 48.dp)) { Text(if (local.network.active || local.network.starting) "Disconnect from mesh" else "Connect to mesh") }
                         TextButton(onClick = { context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}"))) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Open app settings") }
                     }
                 }
                 local.error?.let { message -> item("local-error") { InfoCard("Local action unavailable", message) } }
                 (local.exchangeStatus ?: local.notice)?.let { message -> item("exchange") { InfoCard("Exchange status", message) } }
-                items(local.network.discovered.filterNot { found -> state.peers.any { it.endpointId == found.endpointId } }, key = { "discovered-${it.endpointId}" }) { phone ->
-                    InfoCard(phone.name.ifBlank { "Nearby phone" }, "Discovered locally · not connected") {
-                        TextButton(onClick = { actions?.connect?.invoke(phone.endpointId) }, enabled = actions != null,
-                            modifier = Modifier.heightIn(min = 48.dp)) { Text("Connect") }
-                    }
-                }
                 item("cloud") { InfoCard(state.cloud.label(), "Reachability alone does not confirm an uploaded report or assistance.") }
                 item("peers") {
                     InfoCard(if (state.peers.isEmpty()) "No connected phones" else "Connected phones",
                         "These are direct-link observations. They do not prove a relay path or recipient delivery.")
                 }
                 items(state.peers, key = { "${it.transportId}:${it.endpointId}" }) { peer ->
-                    InfoCard(local.peerIdentities[peer.endpointId]?.let { "Phone ${it.take(8)}" } ?: "Verifying phone identity…", "Direct link · ${peer.endpointId}") {
-                        TextButton(onClick = { actions?.disconnect?.invoke(peer.endpointId) }, enabled = actions != null, modifier = Modifier.heightIn(min = 48.dp)) { Text("Disconnect") }
-                    }
+                    InfoCard(local.peerIdentities[peer.endpointId]?.let { "Phone ${it.take(8)}" } ?: "Connecting to phone…", "Mesh neighbor")
                 }
                 item("retry") { TextButton(onClick = { actions?.retrySends?.invoke() }, enabled = actions != null, modifier = Modifier.heightIn(min = 48.dp)) { Text("Retry queued sends") } }
                 item("sharing") { InfoCard("Gateway sharing is off", "Cloud uploads are not implemented yet. Receipts confirm saving by the next phone, not server delivery.") }

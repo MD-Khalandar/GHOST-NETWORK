@@ -31,7 +31,7 @@ class GhostAppUiTest {
         compose.onNodeWithText("Home").assertIsSelected()
         compose.onNodeWithText("Send SOS").performScrollTo().assertHasClickAction()
             .assertHeightIsAtLeast(48.dp).performClick()
-        compose.onNodeWithText("Create SOS").assertIsDisplayed()
+        compose.onNodeWithText("New SOS").assertIsDisplayed()
         compose.onNodeWithText("UI preview: saving is disabled.").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Close").performClick()
 
@@ -44,7 +44,7 @@ class GhostAppUiTest {
         compose.onNodeWithText("Resource allocation confirmed").assertDoesNotExist()
 
         compose.onNode(hasText("Network") and hasClickAction()).performClick()
-        compose.onNodeWithText("Nearby phones").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Connect to mesh").performScrollTo().assertIsDisplayed()
 
     }
 
@@ -66,22 +66,64 @@ class GhostAppUiTest {
     }
 
     @Test
-    fun publicSharingAndCloudConsentDefaultOffAndRemainIndependent() {
+    fun sharingChoicesRemainIndependentWithoutAnExtraReviewScreen() {
         var saved: SosDraft? = null
-        val draft = SosDraft()
-        val actions = LocalActions({}, { _, done -> done() }, { draft, done -> saved = draft; done() }, {}, {}, {}, { _, _ -> }, {}, {})
+        val draft = SosDraft(publicSharing = true)
+        val actions = LocalActions({}, { _, done -> done() }, { value, done -> saved = value; done() }, {}, {}, {})
         compose.setContent { GhostTheme { GhostApp(FoundationPreviewFixtures.loaded, {}, local = LocalUiState(draft = draft), actions = actions) } }
         compose.onNodeWithText("Send SOS").performScrollTo().performClick()
-        compose.onNodeWithText("Share publicly with nearby phones").performScrollTo().assertIsOff().performClick().assertIsOn()
+        compose.onNodeWithText("Sharing settings").performScrollTo().performClick()
+        compose.onNodeWithText("Share with mesh").performScrollTo().assertIsOn()
         compose.onNodeWithText("Allow cloud coordination").performScrollTo().assertIsOff().performClick().assertIsOn()
-        compose.onNodeWithText("Share publicly with nearby phones").performScrollTo().performClick().assertIsOff()
+        compose.onNodeWithText("Share with mesh").performScrollTo().performClick().assertIsOff()
         compose.onNodeWithText("Allow cloud coordination").performScrollTo().assertIsOn()
         compose.onNodeWithText("What help do you need?").performScrollTo().performTextInput("Need drinking water")
-        compose.onNodeWithText("Review SOS").performClick()
         assertNull(saved)
-        compose.onNodeWithText("Save SOS").performClick()
+        compose.onNodeWithText("Review SOS").assertDoesNotExist()
+        compose.onNodeWithText("Save on this phone").performClick()
         assertEquals("Need drinking water", saved!!.description)
         assertFalse(saved!!.publicSharing)
         assertTrue(saved!!.cloudConsent)
+    }
+
+    @Test
+    fun messageAloneSendsOnceAndPeopleUsesOptionalStepper() {
+        var saved: SosDraft? = null
+        var sends = 0
+        val actions = LocalActions({}, { _, done -> done() }, { value, done -> saved = value; sends++; done() }, {}, {}, {})
+        compose.setContent { GhostTheme { GhostApp(FoundationPreviewFixtures.loaded, {}, local = LocalUiState(draft = SosDraft(publicSharing = true)), actions = actions) } }
+        compose.onNodeWithText("Send SOS").performScrollTo().performClick()
+        compose.onNodeWithText("People needing help").assertDoesNotExist()
+        compose.onAllNodes(hasSetTextAction()).assertCountEquals(1)
+        compose.onNodeWithTag("sos-send").performClick()
+        assertEquals(0, sends)
+        compose.onNodeWithText("What help do you need?").performScrollTo().performTextInput("Need water")
+        compose.onNodeWithText("Optional details").performScrollTo().performClick()
+        compose.onAllNodes(hasSetTextAction()).assertCountEquals(2) // Message and optional area; no number keyboard.
+        compose.onNodeWithContentDescription("More people").performScrollTo().performClick()
+        compose.onNodeWithContentDescription("Fewer people").performClick()
+        compose.onNodeWithText("Hide optional details").performScrollTo().performClick()
+        compose.onNodeWithTag("sos-send").performClick()
+        assertEquals(1, sends)
+        assertEquals("Need water", saved!!.description)
+        assertEquals("1", saved!!.people)
+        assertTrue(saved!!.publicSharing)
+        assertFalse(saved!!.cloudConsent)
+    }
+
+    @Test
+    fun joiningTheMeshHasOneActionAndNeverPublishesAnSos() {
+        var starts = 0; var stops = 0; var publishes = 0
+        val local = mutableStateOf(LocalUiState(draft = SosDraft()))
+        val actions = LocalActions({}, { _, done -> done() }, { _, _ -> publishes++ }, { starts++ }, { stops++ }, {})
+        compose.setContent { GhostTheme { GhostApp(FoundationPreviewFixtures.loaded, {}, local = local.value, actions = actions) } }
+        compose.onNodeWithText("Connect to mesh").performScrollTo().performClick()
+        assertEquals(1, starts)
+        compose.runOnIdle { local.value = local.value.copy(network = org.ghost.transport.nearby.NearbyState(active = true)) }
+        compose.onNodeWithText("Searching for nearby phones").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Codes match").assertDoesNotExist()
+        compose.onNodeWithText("Disconnect from mesh").performScrollTo().performClick()
+        assertEquals(1, stops)
+        assertEquals(0, publishes)
     }
 }

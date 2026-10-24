@@ -13,14 +13,19 @@ data class LocalUiState(
     val peerIdentities: Map<String, String> = emptyMap(),
 )
 
+fun LocalUiState.meshStatus(): String = when {
+    network.starting -> "Connecting to mesh…"
+    !network.active -> "Not connected to mesh"
+    peerIdentities.isEmpty() -> "Searching for nearby phones"
+    peerIdentities.size == 1 -> "Connected to 1 phone"
+    else -> "Connected to ${peerIdentities.size} phones"
+}
+
 data class LocalActions(
     val updateDraft: (SosDraft) -> Unit,
     val saveDraft: (SosDraft, () -> Unit) -> Unit,
     val publish: (SosDraft, () -> Unit) -> Unit,
     val startNearby: () -> Unit,
     val stopNearby: () -> Unit,
-    val connect: (String) -> Unit,
-    val confirm: (String, Boolean) -> Unit,
-    val disconnect: (String) -> Unit,
     val retrySends: () -> Unit,
 )

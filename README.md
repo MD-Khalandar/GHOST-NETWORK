@@ -33,20 +33,28 @@ cloud uploads are not implemented yet.
 
 For two phones with Google Play services:
 
-1. Keep Bluetooth/Wi-Fi on and both apps open. In Network, tap **Start nearby** and allow the requested permissions.
-2. Tap **Connect** on one phone, compare the code, and confirm it on both.
-3. On Home, create an SOS, enable public sharing, review, then **Save & send SOS**.
-4. Check Requests on the other phone. The sender shows receipt only after the receiver saves the report and returns a valid signature.
+1. Keep Bluetooth/Wi-Fi on and both apps open. Tap **Connect to mesh** on each and allow Android's required permissions. Discovery, connections and reconnection are automatic; no phone selection or pairing approval.
+2. Tap **Send SOS**, describe the help needed, then **Send SOS**. Category, area and a +/− people counter are under **Optional details**. There is no review screen.
+3. Check Requests on the other phone. The sender shows receipt only after the receiver saves the report and returns a valid signature.
 
-With sharing off, **Save SOS** keeps the report on this phone. With no connected
-peer, public reports stay queued across restarts; reconnect to send them.
+The form shows the sharing audience before sending. **Sharing settings** keeps
+mesh sharing and cloud consent separate and remembers them for the next SOS.
+New installations start with mesh sharing on and cloud consent off; existing
+drafts keep their choices. With mesh sharing off, **Save on this phone** saves
+locally. Public reports stay queued without peers. Joining alone never sends a
+new SOS, though previously queued public reports resume automatically.
 
-To try a relay, send A's SOS to B, disconnect A, then connect B to C. C should
+To try a relay, send A's SOS to B, leave the mesh on A, then let B meet C. C should
 receive A's unchanged report. Forwarding stops after four transfers or expiry.
 Receipts confirm saving by the immediate neighbor. Each phone remembers which
 neighbors already hold a report across restarts and reconnects; unacknowledged
 sends remain eligible for retry. Duplicates are saved only once. Existing local
 data upgrades in place. Physical three-phone testing is still pending.
+
+The mesh is open to nearby GHOST phones; connections have no manual code check.
+Signing verifies report integrity and key possession, not a person's identity.
+Relay pauses when the app backgrounds and resumes when returning to the app;
+**Disconnect from mesh** stops it until you join again.
 
 Each phone has independent bounded queues. A report waits for its neighbor's
 signed receipt before the next report goes out on that link. Missing receipts
