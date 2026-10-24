@@ -6,6 +6,11 @@
 
 **Local development setup:** this working folder now includes a minimal Android build scaffold and project-local toolchain scripts. See [Environment setup](docs/ENVIRONMENT_SETUP.md) for installation, build commands, and remaining handset checks. The scaffold does not implement the emergency coordination features.
 
+**Windows, macOS, and Linux setup:** use the platform-specific commands in
+[README.md](README.md). The automatic Windows installer supports x64 PCs; the
+automatic Mac installer supports Apple Silicon. Other hosts use JDK 21 and
+Android Studio's SDK Manager with the same Gradle project.
+
 ## What you are building
 
 One Kotlin/Jetpack Compose Android app that can run in three **roles**: standard peer (SOS/volunteer/relay), local AI coordinator (runs a downloaded on-device LLM), optional bridge (Meshtastic or internet). The principal demonstration has all three phones offline: Phone A makes an SOS, B relays it, C's *actual local model* selects validated coordination tools, B declines an offer, C replans using another known offer, and A receives the human-approved response via B.

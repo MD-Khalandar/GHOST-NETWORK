@@ -8,8 +8,26 @@ else
     return 1
 fi
 export GHOST_ROOT
-export JAVA_HOME="${GHOST_JAVA_HOME:-$GHOST_ROOT/.local/toolchains/jdk-21/Contents/Home}"
-export ANDROID_HOME="${ANDROID_HOME:-$GHOST_ROOT/.local/android-sdk}"
+if [ -n "${GHOST_JAVA_HOME:-}" ]; then
+    export JAVA_HOME="$GHOST_JAVA_HOME"
+elif [ -x "$GHOST_ROOT/.local/toolchains/jdk-21/Contents/Home/bin/java" ]; then
+    export JAVA_HOME="$GHOST_ROOT/.local/toolchains/jdk-21/Contents/Home"
+elif [ -z "${JAVA_HOME:-}" ] && [ "$(uname -s)" = Darwin ]; then
+    export JAVA_HOME="$(/usr/libexec/java_home -v 21 2>/dev/null || true)"
+fi
+# Retain the default path used by the Apple Silicon bootstrap before installation.
+export JAVA_HOME="${JAVA_HOME:-$GHOST_ROOT/.local/toolchains/jdk-21/Contents/Home}"
+if [ -z "${ANDROID_HOME:-}" ]; then
+    if [ -d "$GHOST_ROOT/.local/android-sdk" ]; then
+        export ANDROID_HOME="$GHOST_ROOT/.local/android-sdk"
+    elif [ "$(uname -s)" = Darwin ] && [ -d "$HOME/Library/Android/sdk" ]; then
+        export ANDROID_HOME="$HOME/Library/Android/sdk"
+    elif [ -d "$HOME/Android/Sdk" ]; then
+        export ANDROID_HOME="$HOME/Android/Sdk"
+    else
+        export ANDROID_HOME="$GHOST_ROOT/.local/android-sdk"
+    fi
+fi
 export ANDROID_SDK_ROOT="$ANDROID_HOME"
 export GRADLE_USER_HOME="${GRADLE_USER_HOME:-$GHOST_ROOT/.local/gradle-user-home}"
 export ANDROID_USER_HOME="${ANDROID_USER_HOME:-$GHOST_ROOT/.local/android-user-home}"

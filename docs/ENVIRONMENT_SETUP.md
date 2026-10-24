@@ -1,5 +1,12 @@
 # Local development environment
 
+For current Windows, macOS, and Linux onboarding commands, start with
+[README.md](../README.md). The Apple Silicon bootstrap and observations below
+describe the original verified host. `scripts/setup-windows.ps1` adds a
+project-local x64 Windows installer; it has not been executed on Windows here.
+Linux and Intel Mac use installed JDK 21/Android Studio toolchains. No Windows,
+Linux, or hardware acceptance gate is implied by the Mac verification record.
+
 GHOST is one Kotlin/Jetpack Compose Android APK with selectable peer, coordinator,
 and optional bridge roles. Room will be the offline source of truth. Nearby
 Connections provides direct links; the future MeshEngine must implement storage,

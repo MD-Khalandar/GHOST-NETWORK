@@ -2,6 +2,15 @@
 
 GHOST is an Android/Kotlin/Jetpack Compose **hackathon proof of capability** for offline-first human-approved emergency coordination. Use `ARCHITECTURE.md` for architecture work, `docs/PROTOCOL.md` for any packet/routing changes, `docs/AGENT_CONTRACT.md` for AI behavior, and `docs/UX_SPEC.md` for UI changes.
 
+## User-controlled checkpoints
+
+- Follow the 15 sequential checkpoints in `docs/CHECKPOINTS.md`; use its progress and evidence section to identify the current checkpoint. The existing development bootstrap is the baseline.
+- Work on only the current checkpoint. Do not start a later checkpoint or combine checkpoints without the user's explicit instruction.
+- At each handoff, report the changes, checks actually run, observed results, remaining hardware evidence, and checkpoint status, then stop.
+- The user owns staging, committing, and pushing. Do not run `git add`, `git commit`, or `git push` for checkpoint work.
+- Resume the next checkpoint only after the user confirms they made their own commit and pushed it, or asks to continue and a fresh read-only upstream check verifies the checkpoint commit was pushed. A local commit or stale remote-tracking reference alone is insufficient.
+- Do not treat a commit/push as acceptance-test evidence. Keep missing device gates open and explain any blocker before advancing; follow the user's explicit direction if they change scope or ordering.
+
 ## Boundaries
 
 - One Android app initially; packages with narrow interfaces, not premature multi-module Gradle complexity.

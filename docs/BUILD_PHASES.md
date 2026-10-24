@@ -1,5 +1,7 @@
 # Codex build phases and ownership
 
+For this checkout, follow the user's [15 sequential checkpoints](CHECKPOINTS.md): finish one checkpoint, stop for the user's own commit and push, then resume after confirmation. The sprint timings and workstream notes below are planning context; they do not authorize starting another checkpoint or parallel agent work.
+
 ## Four member-owned workstreams
 
 - **Networking owner:** `transport/api`, `transport/nearby`, `mesh`. Deliver real A–B link, then A–B–C relay and reconnect handling. Use `$ghost-mesh-reliability`.

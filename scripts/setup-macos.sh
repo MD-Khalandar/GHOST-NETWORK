@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Install an isolated Apple Silicon toolchain. Add --with-emulator and/or --with-studio.
 set -euo pipefail
+# This installer provisions its own JDK even when another JAVA_HOME is set.
+export JAVA_HOME="${GHOST_JAVA_HOME:-$(cd "$(dirname "$0")/.." && pwd)/.local/toolchains/jdk-21/Contents/Home}"
 source "$(dirname "$0")/env.sh"
 cd "$GHOST_ROOT"
 if [[ "$(uname -s)" != Darwin || "$(uname -m)" != arm64 ]]; then
