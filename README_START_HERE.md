@@ -4,7 +4,7 @@ GHOST's wider vision is mesh communication, saved-contact messaging, SOS/help an
 
 Local LLM helpers, ordinary chat, generic information services and LoRa are deferred. When no gateway has internet, SOS still stores/relays locally but cloud coordination waits.
 
-**Current state:** Android Kotlin/Compose scaffold and setup scripts; no product checkpoint implemented. Preserve the setup. Cloud service, shared SOS/helper/supply database and web dashboard are planned, not provisioned. Build SOS sending first; the incoming dashboard follows cloud ingestion.
+**Current state:** CP01 foundations are complete: Android Home/Requests/Mission/Network previews, deterministic local fixtures and a runnable server health/config scaffold. The app labels its data simulated; Send SOS opens a preview and does not transmit. Shared database, real cloud coordination and dashboard implementation are later checkpoints. See [integration checks and run instructions](docs/evidence/cp01/integration.md).
 
 ## Read / work
 
@@ -13,6 +13,7 @@ Local LLM helpers, ordinary chat, generic information services and LoRa are defe
 3. [10 checkpoints](docs/CHECKPOINTS.md): explanation, sequence and progress.
 4. [40 team prompts](docs/BUILD_PHASES.md): contract owner first, then Android, cloud/database and Android UI/web dashboard work in parallel.
 5. Relevant [protocol](docs/PROTOCOL.md), [agent](docs/AGENT_CONTRACT.md), [UI](docs/UX_SPEC.md) and [acceptance](docs/TEST_MATRIX.md) contracts.
+6. [CP01 role A baseline](docs/CP01_BASELINE.md): selected server/database/dashboard/provider/deployment stack, frozen contracts, ownership paths and wiring hooks.
 
 Use [README.md](README.md) for Android setup on Windows/macOS/Linux. [Environment setup](docs/ENVIRONMENT_SETUP.md) records historical host checks; it does not prove networking or cloud behavior.
 

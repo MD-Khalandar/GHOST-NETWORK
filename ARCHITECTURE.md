@@ -2,7 +2,7 @@
 
 GHOST is an Android mesh communication app for outages. The wider product includes saved-contact messaging, SOS/help and in-app internet services. **Build SOS sending first, coordinated by one cloud agent.** A web dashboard shows incoming requests, helpers/supplies and agent activity from the same cloud database. Local LLM features, ordinary chat, general information services and LoRa are later work.
 
-Current repository state: Android build scaffold only. This document describes planned components, not working features. Preserve the existing Android toolchain.
+Current repository state: CP01 foundations are integrated: typed contracts, deterministic Android fakes, four Android preview screens and a cloud-service health/config scaffold. SOS sending, signatures, Room, radios, database coordination and the dashboard remain planned components. See [CP01 evidence](docs/evidence/cp01/integration.md). Preserve the existing Android toolchain.
 
 ## SOS architecture
 
@@ -35,6 +35,12 @@ A connected phone can sync directly with the same cloud API. Any opted-in connec
 ## Components and ownership
 
 Keep one Android `:app` module, a separately runnable `server/` service and a web frontend in `dashboard/`. Use Kotlin, Compose Material 3, Room, coroutines/Flow and simple factory injection on Android. Choose and record the server/database/dashboard stack, model provider and deployment target at checkpoint 1 before parallel implementation; the API/event contracts stay provider-independent. Dashboard work must not delay the SOS sending path.
+
+CP01 role A records the selected implementation stack in
+[`docs/CP01_BASELINE.md`](docs/CP01_BASELINE.md): TypeScript/Fastify server,
+PostgreSQL 16, React/Vite dashboard, server-side OpenAI Responses API adapter,
+and a Linux x86_64 Docker Compose deployment target. Those choices do not add
+provider-specific fields to the Android or wire contracts.
 
 | Area | Responsibility |
 | --- | --- |

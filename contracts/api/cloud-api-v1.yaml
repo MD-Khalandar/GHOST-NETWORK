@@ -1,0 +1,759 @@
+openapi: 3.1.0
+info:
+  title: GHOST cloud coordination API
+  version: 1.0.0
+  description: >-
+    CP01 contract for authenticated gateway synchronization and dashboard reads/
+    approvals. The API exposes committed server state only. It never exposes
+    provider credentials or a raw model-inference proxy.
+servers:
+  - url: https://ghost.example.invalid
+    description: Deployment placeholder; configured per environment.
+security:
+  - bearerAuth: []
+tags:
+  - name: health
+  - name: dashboard
+  - name: sync
+paths:
+  /v1/health:
+    get:
+      tags: [health]
+      security: []
+      operationId: getHealth
+      responses:
+        '200':
+          description: Process and configuration health.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /v1/dashboard/sos:
+    get:
+      tags: [dashboard]
+      operationId: listDashboardSos
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - name: state
+          in: query
+          schema:
+            $ref: '#/components/schemas/SosState'
+        - name: category
+          in: query
+          schema:
+            $ref: '#/components/schemas/SosCategory'
+      responses:
+        '200':
+          description: Bounded committed SOS page.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardSosPage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /v1/dashboard/sos/{requestId}:
+    get:
+      tags: [dashboard]
+      operationId: getDashboardSos
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: Committed request detail and related state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardSosDetail'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/dashboard/helpers:
+    get:
+      tags: [dashboard]
+      operationId: listDashboardHelpers
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Bounded helper page.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HelperPage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /v1/dashboard/offers:
+    get:
+      tags: [dashboard]
+      operationId: listDashboardOffers
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - name: requestId
+          in: query
+          schema:
+            $ref: '#/components/schemas/RequestId'
+      responses:
+        '200':
+          description: Bounded offer page.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OfferPage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /v1/dashboard/runs:
+    get:
+      tags: [dashboard]
+      operationId: listDashboardRuns
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - name: requestId
+          in: query
+          schema:
+            $ref: '#/components/schemas/RequestId'
+      responses:
+        '200':
+          description: Persisted, sanitized coordinator trace page.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RunPage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /v1/dashboard/proposals/{proposalId}/approve:
+    post:
+      tags: [dashboard]
+      operationId: approveProposal
+      parameters:
+        - $ref: '#/components/parameters/ProposalId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProposalDecisionRequest'
+      responses:
+        '200':
+          description: Idempotent approval outcome for the exact version.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProposalDecisionResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /v1/dashboard/proposals/{proposalId}/reject:
+    post:
+      tags: [dashboard]
+      operationId: rejectProposal
+      parameters:
+        - $ref: '#/components/parameters/ProposalId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProposalDecisionRequest'
+      responses:
+        '200':
+          description: Idempotent rejection outcome for the exact version.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProposalDecisionResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /v1/sync/upload:
+    post:
+      tags: [sync]
+      operationId: uploadGatewayBatch
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SyncUploadRequest'
+      responses:
+        '200':
+          description: Per-event durable outcomes; duplicates return the original outcome.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncUploadResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+
+  /v1/sync/download:
+    get:
+      tags: [sync]
+      operationId: downloadGatewayBatch
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Gateway-scoped cloud-signed packets.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncDownloadResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /v1/sync/download-ack:
+    post:
+      tags: [sync]
+      operationId: acknowledgeGatewayDownload
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SyncDownloadAckRequest'
+      responses:
+        '204':
+          description: Cursor may advance after local durable persistence.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+
+  parameters:
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      schema:
+        type: string
+        maxLength: 256
+    Limit:
+      name: limit
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 50
+    RequestId:
+      name: requestId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/RequestId'
+    ProposalId:
+      name: proposalId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/ProposalId'
+
+  responses:
+    BadRequest:
+      description: Invalid, expired, oversized, or out-of-scope request.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    Unauthorized:
+      description: Missing or invalid authentication.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    Forbidden:
+      description: Authenticated principal lacks the required scope.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    NotFound:
+      description: Record is not visible in the caller's scope.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    Conflict:
+      description: Exact version is stale or the current state prevents the action.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    PayloadTooLarge:
+      description: Batch exceeds server limits.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    ServiceUnavailable:
+      description: Required dependency is unavailable.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+
+  schemas:
+    NodeId:
+      type: string
+      pattern: '^[0-9a-f]{64}$'
+    Uuid:
+      type: string
+      format: uuid
+    RequestId:
+      allOf: [{ $ref: '#/components/schemas/Uuid' }]
+    ProposalId:
+      allOf: [{ $ref: '#/components/schemas/Uuid' }]
+    PacketId:
+      allOf: [{ $ref: '#/components/schemas/Uuid' }]
+    EventId:
+      allOf: [{ $ref: '#/components/schemas/Uuid' }]
+    Base64Url:
+      type: string
+      pattern: '^[A-Za-z0-9_-]*$'
+    SosCategory:
+      type: string
+      enum: [MEDICAL, TRAPPED, WATER, FOOD, SHELTER, OTHER]
+    SosState:
+      type: string
+      enum: [OPEN, ACKNOWLEDGED, HELP_OFFERED, CLOSED]
+    ResourceType:
+      type: string
+      enum: [WATER, FOOD, SHELTER, MEDICAL_SUPPLIES, TRANSPORT, OTHER_RESOURCE]
+    OfferState:
+      type: string
+      enum: [AVAILABLE, WITHDRAWN, EXPIRED, PARTIALLY_ALLOCATED, FULLY_ALLOCATED]
+    ApiError:
+      type: object
+      required: [code, message, retryable]
+      properties:
+        code:
+          type: string
+          maxLength: 80
+        message:
+          type: string
+          maxLength: 300
+        retryable:
+          type: boolean
+        request_id:
+          type: string
+          maxLength: 80
+    HealthResponse:
+      type: object
+      required: [status, contract_version]
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded]
+        contract_version:
+          type: string
+          const: ghost.contracts.v1
+        database:
+          type: string
+          enum: [ready, unavailable, not_checked]
+        model_provider:
+          type: string
+          enum: [configured, unavailable, not_checked]
+    Consent:
+      type: object
+      required: [public_mesh_allowed, cloud_processing_allowed]
+      properties:
+        public_mesh_allowed:
+          type: boolean
+        cloud_processing_allowed:
+          type: boolean
+    WirePacket:
+      type: object
+      required: [immutable_envelope_bytes, signature, relay]
+      properties:
+        immutable_envelope_bytes:
+          $ref: '#/components/schemas/Base64Url'
+        signature:
+          $ref: '#/components/schemas/Base64Url'
+        relay:
+          type: object
+          required: [remaining_hops, hop_count]
+          properties:
+            remaining_hops:
+              type: integer
+              minimum: 0
+              maximum: 4
+            hop_count:
+              type: integer
+              minimum: 0
+              maximum: 4
+            previous_node_id:
+              $ref: '#/components/schemas/NodeId'
+    Receipt:
+      type: object
+      required: [packet_id, recipient_node_id, receipt_type, observed_at_ms]
+      properties:
+        packet_id:
+          $ref: '#/components/schemas/PacketId'
+        recipient_node_id:
+          $ref: '#/components/schemas/NodeId'
+        receipt_type:
+          type: string
+          enum: [PERSISTED_BY_RECIPIENT, READ_BY_RECIPIENT]
+        observed_at_ms:
+          type: integer
+          format: int64
+    SyncUploadRequest:
+      type: object
+      required: [idempotency_key, packets, receipts]
+      properties:
+        idempotency_key:
+          type: string
+          maxLength: 128
+        packets:
+          type: array
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/WirePacket'
+        receipts:
+          type: array
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/Receipt'
+    SyncUploadResponse:
+      type: object
+      required: [results]
+      properties:
+        results:
+          type: array
+          maxItems: 100
+          items:
+            type: object
+            required: [event_id, status]
+            properties:
+              event_id:
+                $ref: '#/components/schemas/EventId'
+              status:
+                type: string
+                enum: [ACCEPTED, DUPLICATE, REJECTED]
+              cloud_revision:
+                type: integer
+                format: int64
+              error_code:
+                type: string
+                maxLength: 80
+    SyncDownloadResponse:
+      type: object
+      required: [cursor, next_cursor, packets]
+      properties:
+        cursor:
+          type: string
+          maxLength: 256
+        next_cursor:
+          type: string
+          maxLength: 256
+        packets:
+          type: array
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/WirePacket'
+    SyncDownloadAckRequest:
+      type: object
+      required: [cursor, packet_ids]
+      properties:
+        cursor:
+          type: string
+          maxLength: 256
+        packet_ids:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/PacketId'
+    DashboardSosSummary:
+      type: object
+      required: [request_id, category, state, source_node_id, reported_at_ms, received_at_ms, stale]
+      properties:
+        request_id:
+          $ref: '#/components/schemas/RequestId'
+        category:
+          $ref: '#/components/schemas/SosCategory'
+        state:
+          $ref: '#/components/schemas/SosState'
+        description:
+          type: string
+          maxLength: 2000
+        people_count:
+          type: integer
+          minimum: 1
+          maximum: 1000
+        coarse_area:
+          type: string
+          maxLength: 120
+        source_node_id:
+          $ref: '#/components/schemas/NodeId'
+        reported_at_ms:
+          type: integer
+          format: int64
+        received_at_ms:
+          type: integer
+          format: int64
+        stale:
+          type: boolean
+    DashboardSosPage:
+      type: object
+      required: [items, next_cursor, server_time_ms]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/DashboardSosSummary'
+        next_cursor:
+          type: string
+          maxLength: 256
+        server_time_ms:
+          type: integer
+          format: int64
+    DashboardSosDetail:
+      type: object
+      required: [request, offers, proposals, receipts]
+      properties:
+        request:
+          $ref: '#/components/schemas/DashboardSosSummary'
+        offers:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/OfferSummary'
+        proposals:
+          type: array
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/ProposalSummary'
+        receipts:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/Receipt'
+    HelperSummary:
+      type: object
+      required: [owner_node_id, availability, updated_at_ms, stale]
+      properties:
+        owner_node_id:
+          $ref: '#/components/schemas/NodeId'
+        display_name:
+          type: string
+          maxLength: 120
+        coarse_area:
+          type: string
+          maxLength: 120
+        help_types:
+          type: array
+          maxItems: 10
+          items:
+            type: string
+        availability:
+          type: string
+          enum: [AVAILABLE, UNAVAILABLE, UNKNOWN]
+        updated_at_ms:
+          type: integer
+          format: int64
+        stale:
+          type: boolean
+    HelperPage:
+      type: object
+      required: [items, next_cursor, server_time_ms]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/HelperSummary'
+        next_cursor:
+          type: string
+          maxLength: 256
+        server_time_ms:
+          type: integer
+          format: int64
+    OfferSummary:
+      type: object
+      required: [offer_id, owner_node_id, resource_type, state, updated_at_ms, stale]
+      properties:
+        offer_id:
+          $ref: '#/components/schemas/Uuid'
+        owner_node_id:
+          $ref: '#/components/schemas/NodeId'
+        resource_type:
+          $ref: '#/components/schemas/ResourceType'
+        quantity:
+          type: integer
+          minimum: 1
+        unit:
+          type: string
+          maxLength: 40
+        coarse_area:
+          type: string
+          maxLength: 120
+        available_until_ms:
+          type: integer
+          format: int64
+        state:
+          $ref: '#/components/schemas/OfferState'
+        updated_at_ms:
+          type: integer
+          format: int64
+        stale:
+          type: boolean
+    OfferPage:
+      type: object
+      required: [items, next_cursor, server_time_ms]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/OfferSummary'
+        next_cursor:
+          type: string
+          maxLength: 256
+        server_time_ms:
+          type: integer
+          format: int64
+    ProposalSummary:
+      type: object
+      required: [proposal_id, version, request_id, offer_id, state, created_at_ms]
+      properties:
+        proposal_id:
+          $ref: '#/components/schemas/ProposalId'
+        version:
+          type: integer
+          minimum: 1
+        request_id:
+          $ref: '#/components/schemas/RequestId'
+        offer_id:
+          $ref: '#/components/schemas/Uuid'
+        state:
+          type: string
+          enum: [DRAFT, AWAITING_OPERATOR, APPROVED, REJECTED, DECLINED, CONFIRMED, STALE]
+        explanation:
+          type: string
+          maxLength: 1000
+        created_at_ms:
+          type: integer
+          format: int64
+        approval_id:
+          $ref: '#/components/schemas/Uuid'
+    RunSummary:
+      type: object
+      required: [run_id, request_id, state, created_at_ms, snapshot_revision]
+      properties:
+        run_id:
+          $ref: '#/components/schemas/Uuid'
+        request_id:
+          $ref: '#/components/schemas/RequestId'
+        state:
+          type: string
+          enum: [QUEUED, RUNNING, WAITING_FOR_OPERATOR, WAITING_FOR_OWNER, REPLAN_PENDING, COMPLETE, NO_MATCH, FAILED, TIMED_OUT]
+        model_provider:
+          type: string
+          maxLength: 80
+        model_name:
+          type: string
+          maxLength: 120
+        snapshot_revision:
+          type: integer
+          format: int64
+        created_at_ms:
+          type: integer
+          format: int64
+    RunPage:
+      type: object
+      required: [items, next_cursor, server_time_ms]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/RunSummary'
+        next_cursor:
+          type: string
+          maxLength: 256
+        server_time_ms:
+          type: integer
+          format: int64
+    ProposalDecisionRequest:
+      type: object
+      required: [version, idempotency_key]
+      properties:
+        version:
+          type: integer
+          minimum: 1
+        idempotency_key:
+          type: string
+          maxLength: 128
+        note:
+          type: string
+          maxLength: 500
+    ProposalDecisionResponse:
+      type: object
+      required: [proposal_id, version, outcome, cloud_revision]
+      properties:
+        proposal_id:
+          $ref: '#/components/schemas/ProposalId'
+        version:
+          type: integer
+          minimum: 1
+        outcome:
+          type: string
+          enum: [APPROVED, REJECTED, ALREADY_APPLIED]
+        cloud_revision:
+          type: integer
+          format: int64
+        outgoing_packet_ids:
+          type: array
+          maxItems: 4
+          items:
+            $ref: '#/components/schemas/PacketId'

@@ -1,0 +1,183 @@
+syntax = "proto3";
+
+package ghost.contracts.v1;
+
+option java_package = "org.ghost.contracts.v1";
+option java_multiple_files = true;
+
+message ConsentV1 {
+  bool public_mesh_allowed = 1;
+  bool cloud_processing_allowed = 2;
+}
+
+message SosCreateV1 {
+  string request_id = 1;
+  SosCategoryV1 category = 2;
+  string description = 3;
+  optional uint32 people_count = 4;
+  optional string coarse_area = 5;
+  optional string landmark = 6;
+  ConsentV1 consent = 7;
+}
+
+message SosUpdateV1 {
+  string request_id = 1;
+  SosStateV1 state = 2;
+  optional string note = 3;
+  optional bool cloud_processing_allowed = 4;
+}
+
+message HelperProfilePublishV1 {
+  bytes owner_node_id = 1;
+  optional string display_name = 2;
+  optional string coarse_area = 3;
+  repeated HelpTypeV1 help_types = 4;
+  HelperAvailabilityV1 availability = 5;
+  ConsentV1 consent = 6;
+}
+
+message HelperProfileUpdateV1 {
+  bytes owner_node_id = 1;
+  optional string display_name = 2;
+  optional string coarse_area = 3;
+  repeated HelpTypeV1 help_types = 4;
+  optional HelperAvailabilityV1 availability = 5;
+  optional ConsentV1 consent = 6;
+}
+
+message OfferPublishV1 {
+  string offer_id = 1;
+  bytes owner_node_id = 2;
+  ResourceTypeV1 resource_type = 3;
+  optional uint32 quantity = 4;
+  optional string unit = 5;
+  optional string coarse_area = 6;
+  optional int64 available_until_ms = 7;
+  ConsentV1 consent = 8;
+}
+
+message OfferUpdateV1 {
+  string offer_id = 1;
+  bytes owner_node_id = 2;
+  OfferStateV1 state = 3;
+  optional uint32 quantity = 4;
+  optional string unit = 5;
+  optional string coarse_area = 6;
+  optional int64 available_until_ms = 7;
+  optional string note = 8;
+  optional ConsentV1 consent = 9;
+}
+
+message CloudAckV1 {
+  string origin_event_id = 1;
+  CloudAckStatusV1 status = 2;
+  uint64 cloud_revision = 3;
+  int64 received_at_ms = 4;
+  optional string error_code = 5;
+}
+
+message MatchProposedV1 {
+  string proposal_id = 1;
+  uint32 version = 2;
+  string request_id = 3;
+  string offer_id = 4;
+  string explanation = 5;
+  string approval_id = 6;
+}
+
+message MatchDeclinedV1 {
+  string proposal_id = 1;
+  uint32 version = 2;
+  bytes offer_owner_node_id = 3;
+  optional string reason = 4;
+}
+
+message MatchAcceptedV1 {
+  string proposal_id = 1;
+  uint32 version = 2;
+  bytes offer_owner_node_id = 3;
+  optional string note = 4;
+}
+
+message MatchConfirmedV1 {
+  string proposal_id = 1;
+  uint32 version = 2;
+  string request_id = 3;
+  string offer_id = 4;
+  string allocation_id = 5;
+}
+
+message DeliveryReceiptV1 {
+  string packet_id = 1;
+  bytes recipient_node_id = 2;
+  ReceiptTypeV1 receipt_type = 3;
+  int64 observed_at_ms = 4;
+}
+
+enum SosCategoryV1 {
+  SOS_CATEGORY_UNSPECIFIED = 0;
+  MEDICAL = 1;
+  TRAPPED = 2;
+  WATER = 3;
+  FOOD = 4;
+  SHELTER = 5;
+  OTHER = 6;
+}
+
+enum SosStateV1 {
+  SOS_STATE_UNSPECIFIED = 0;
+  OPEN = 1;
+  ACKNOWLEDGED = 2;
+  HELP_OFFERED = 3;
+  CLOSED = 4;
+}
+
+enum HelpTypeV1 {
+  HELP_TYPE_UNSPECIFIED = 0;
+  FIRST_AID = 1;
+  TRANSPORT = 2;
+  SEARCH = 3;
+  SHELTER = 4;
+  FOOD = 5;
+  WATER = 6;
+  OTHER_HELP = 7;
+}
+
+enum HelperAvailabilityV1 {
+  HELPER_AVAILABILITY_UNSPECIFIED = 0;
+  AVAILABLE = 1;
+  UNAVAILABLE = 2;
+  UNKNOWN = 3;
+}
+
+enum ResourceTypeV1 {
+  RESOURCE_TYPE_UNSPECIFIED = 0;
+  WATER = 1;
+  FOOD = 2;
+  SHELTER = 3;
+  MEDICAL_SUPPLIES = 4;
+  TRANSPORT = 5;
+  OTHER_RESOURCE = 6;
+}
+
+enum OfferStateV1 {
+  OFFER_STATE_UNSPECIFIED = 0;
+  AVAILABLE = 1;
+  WITHDRAWN = 2;
+  EXPIRED = 3;
+  PARTIALLY_ALLOCATED = 4;
+  FULLY_ALLOCATED = 5;
+}
+
+enum CloudAckStatusV1 {
+  CLOUD_ACK_STATUS_UNSPECIFIED = 0;
+  ACCEPTED = 1;
+  DUPLICATE = 2;
+  REJECTED = 3;
+}
+
+enum ReceiptTypeV1 {
+  RECEIPT_TYPE_UNSPECIFIED = 0;
+  PERSISTED_BY_RECIPIENT = 1;
+  READ_BY_RECIPIENT = 2;
+}

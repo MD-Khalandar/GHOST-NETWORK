@@ -1,7 +1,4 @@
 <resources>
     <string name="app_name">GHOST</string>
-    <string name="setup_title">GHOST</string>
-    <string name="setup_description">Offline emergency coordination</string>
-    <string name="setup_status">Development setup. Coordination features are not available yet.</string>
 </resources>
 
