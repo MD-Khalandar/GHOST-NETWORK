@@ -11,7 +11,7 @@ data class GatewayUiState(val configured: Boolean = false, val serverUrl: String
                           val uploading: Boolean = false, val message: String = "Connect to GHOST to share nearby and online.",
                           val automatic: Boolean = false, val active: Boolean = false, val online: Boolean = false)
 
-/** Foreground uploads use durable report queues; no separate background service. */
+/** Durable sync queues run while the user's connection service is active. */
 @OptIn(ExperimentalCoroutinesApi::class)
 class GatewaySync(scope: CoroutineScope, configs: StateFlow<GatewayConfig?>, enabled: Flow<Boolean>,
                   private val client: HttpGatewayClient, private val repository: LocalSosRepository,

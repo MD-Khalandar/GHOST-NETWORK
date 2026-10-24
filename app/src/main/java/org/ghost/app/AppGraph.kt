@@ -37,6 +37,7 @@ class AppGraph(application: Application) : AndroidViewModel(application) {
     }.getOrNull()
     private val gatewayClient = HttpGatewayClient(openConnection = { openServerConnection(application, it) }) { gatewaySettings.config.value }
     private val connectionActive = MutableStateFlow(false)
+    val connectionRequested = connectionActive.asStateFlow()
     private val serverNetwork = observeServerNetwork(application).stateIn(viewModelScope, SharingStarted.Eagerly, false)
     private val automaticGateway = AutomaticGateway(viewModelScope, gatewaySettings, BuildConfig.SERVER_URL,
         cloudKey?.let { GatewayEnrollmentClient(it, { identity }, BuildConfig.DEBUG,
@@ -118,13 +119,14 @@ class AppGraph(application: Application) : AndroidViewModel(application) {
               catch (error: Exception) { operation.value = LocalUiState(error = if (error is IllegalArgumentException) error.message else "SOS could not be saved. Check storage and the signing key, then retry.") }
         }
     }
-    private var meshEnabled = false
     private var meshStart: Job? = null
-    fun startNearby() { meshEnabled = true; resumeNearby() }
-    fun resumeNearby() {
-        if (!meshEnabled) return
+    fun startNearby() {
+        try { GhostConnectionService.connect(getApplication()) }
+        catch (_: Exception) { connectionFailed() }
+    }
+    internal fun beginConnection() {
+        if (connectionActive.value) return
         connectionActive.value = true
-        if (meshStart?.isActive == true || nearby.state.value.active) return
         meshStart = viewModelScope.launch {
             try {
                 val name = withContext(Dispatchers.IO) { "GHOST ${identity.nodeId.value.take(8)}" }
@@ -133,8 +135,12 @@ class AppGraph(application: Application) : AndroidViewModel(application) {
               catch (_: Exception) { operation.value = LocalUiState(error = "Nearby could not start. Check the signing key, permissions and Google Play services.") }
         }
     }
-    fun pauseNearby() { connectionActive.value = false; meshStart?.cancel(); meshStart = null; nearby.close() }
-    fun stopNearby() { meshEnabled = false; pauseNearby() }
+    internal fun endConnection() { connectionActive.value = false; meshStart?.cancel(); meshStart = null; nearby.close() }
+    internal fun connectionFailed() {
+        endConnection()
+        operation.update { it.copy(error = "GHOST could not keep the connection active. Open the app and tap Connect again.") }
+    }
+    fun stopNearby() { endConnection(); GhostConnectionService.disconnect(getApplication()) }
     private fun saveGateway(url: String, token: String, saved: () -> Unit) {
         if (operation.value.saving) return
         operation.update { it.copy(saving = true, error = null) }
@@ -213,8 +219,7 @@ class AppGraph(application: Application) : AndroidViewModel(application) {
     }
 
     override fun onCleared() {
-        // SDK stop calls are immediate; the app also stops links when its activity backgrounds.
-        nearby.close()
+        endConnection()
         db.close()
         super.onCleared()
     }

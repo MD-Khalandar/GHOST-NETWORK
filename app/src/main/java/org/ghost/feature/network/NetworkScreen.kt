@@ -59,7 +59,7 @@ fun NetworkScreen(state: FoundationState, onRetry: () -> Unit, modifier: Modifie
                 item("radio-details") {
                     InfoCard("Connecting nearby", "Keep Bluetooth and Wi-Fi on.") {
                         Text(local.network.message.userMessage())
-                        Text("Keep GHOST open so nearby phones can connect and pass along requests you've chosen to share.")
+                        Text("After connecting, nearby sharing and online sync continue when you switch apps or lock the screen. Use Disconnect here or in the GHOST notification to stop.")
                         TextButton(onClick = { context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}"))) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Open app settings") }
                     }
                 }

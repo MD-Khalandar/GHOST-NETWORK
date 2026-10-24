@@ -32,7 +32,7 @@ fun HomeScreen(state: FoundationState, onSendSos: () -> Unit, onOpenRequests: ()
     GhostScreen("Help starts nearby", "Ask for help, even without internet.", modifier, contentPadding, state.simulated) {
         item("mesh") {
             InfoCard("Connect with nearby phones", local.meshStatus()) {
-                Text("Connect with nearby phones and save shared requests online over cellular or Wi-Fi. Keep GHOST open to stay connected.")
+                Text("Connect with nearby phones and save shared requests online over cellular or Wi-Fi. Sharing continues when you switch apps or lock the screen; disconnect here or from the GHOST notification.")
                 Button(onClick = { if (local.network.active || local.network.starting || local.gateway.active) actions?.stopNearby?.invoke() else actions?.startNearby?.invoke() },
                     enabled = actions != null, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
                     Text(if (local.network.active || local.network.starting || local.gateway.active) "Disconnect from GHOST" else "Connect to GHOST")

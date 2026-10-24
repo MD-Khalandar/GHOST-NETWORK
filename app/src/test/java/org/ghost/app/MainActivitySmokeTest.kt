@@ -22,16 +22,16 @@ class MainActivitySmokeTest {
     @Test
     fun launcherUsesEmptyRealStorageAndRetainsItsGraphAcrossRecreation() {
         compose.waitUntil(5_000) {
-            ViewModelProvider(compose.activity)[AppGraph::class.java].local.value.draft != null &&
+            (compose.activity.application as GhostApplication).graph.local.value.draft != null &&
                 !ViewModelProvider(compose.activity)[FoundationViewModel::class.java].state.value.loading
         }
-        val graph = ViewModelProvider(compose.activity)[AppGraph::class.java]
+        val graph = (compose.activity.application as GhostApplication).graph
         compose.onNodeWithText("Requests").performClick()
         compose.onNodeWithText("No requests yet").performScrollTo().assertIsDisplayed()
         compose.activityRule.scenario.recreate()
         compose.onNodeWithText("Requests").assertIsSelected()
         compose.runOnIdle {
-            assertSame(graph, ViewModelProvider(compose.activity)[AppGraph::class.java])
+            assertSame(graph, (compose.activity.application as GhostApplication).graph)
             val state = ViewModelProvider(compose.activity)[FoundationViewModel::class.java].state.value
             assertEquals(0, state.requests.size)
             assertEquals(0, state.offers.size)

@@ -7,7 +7,7 @@ import org.ghost.gateway.api.GatewayReachability
 data class AutomaticConnection(val available: Boolean, val active: Boolean = false, val online: Boolean = false,
                                val message: String = "Tap Connect to GHOST to connect nearby and online.")
 
-/** Only a user's foreground connection and an available network enable enrollment. */
+/** A user's active connection service and an available network enable enrollment. */
 class AutomaticGateway(private val scope: CoroutineScope, private val settings: GatewaySettings,
     private val serverUrl: String, private val client: GatewayEnrollmentClient?, enabled: Flow<Boolean>, networkAvailable: Flow<Boolean>,
     private val reachability: (GatewayReachability) -> Unit, private val now: () -> Long = System::currentTimeMillis) {

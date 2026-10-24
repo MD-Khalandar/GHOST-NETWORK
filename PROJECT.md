@@ -9,7 +9,7 @@ Stack: one Kotlin/Compose app with Room/Nearby, one Fastify server with
 PostgreSQL with OpenAI or Gemini, and a React/Vite dashboard. API and worker share one service.
 
 Built: SOS forms/drafts and signed reports in Room, local-only saves, and one-tap
-mesh join with automatic Nearby connections/reconnection. Foreground SOS relay
+mesh join with automatic Nearby connections/reconnection. SOS relay
 has a four-transfer budget, bounded per-phone queues, receipt-driven retries and
 visible relay status.
 Network shows direct and recently reported remote links with dragging, pinch zoom
@@ -39,7 +39,7 @@ Server SOS uploads now persist in PostgreSQL with consent/signature checks,
 transactional deduplication and stored signed cloud acknowledgements. Local
 embedded-PostgreSQL tests pass; external deployment has not been verified.
 Connect to GHOST now joins nearby phones and automatically connects online over
-cellular or Wi-Fi while foregrounded. Hosted servers use Android's default route,
+cellular or Wi-Fi while its foreground connection service is active. Hosted servers use Android's default route,
 including VPNs; private LAN servers use available Wi-Fi. Builds include the server URL and trusted public key;
 phones prove their existing Keystore identity with signed one-use challenges and
 receive renewable gateway-only sessions. Credentials stay encrypted on the phone;
@@ -49,7 +49,7 @@ Enrollment reuses pending challenges without invalidating another caller's proof
 Shared-network enrollment allows 600 requests/minute per IP, removing the old 15-phone bottleneck;
 separate persistent packet budgets limit uploads across device renewal and servers.
 Throttled uploads stay queued for retry. Handshake, cancellation, renewal,
-cellular/LAN routing, offline/foreground gating and upload tests pass locally;
+cellular/LAN routing, offline/connection gating and upload tests pass locally;
 physical one-click enrollment and credential persistence still need device testing.
 Cloud acknowledgements now return through the mesh with their own durable queue,
 expiry and four-transfer budget. The original phone shows verified server receipt.
@@ -121,7 +121,16 @@ supplies as used and frees volunteers. Invitations expire within an hour/source
 expiry. Local signatures, Room/mesh/HTTP, concurrency, rollback and restart tests
 cover the loop. Physical three-phone and deployed PostgreSQL testing remain.
 
-Next: field-test assistance, improve fresh GPS and background operation. Server
+Connect now starts a connected-device foreground service with a persistent GHOST
+notification and Disconnect action. One process-wide runtime is shared by activities
+and the service; switching apps, locking or destroying a screen no longer stops
+relay, enrollment, uploads or assistance polling. Disconnect/service destruction
+stops radio work and gates sync. Notification denial does not block connecting;
+Android may hide the drawer notification. Process death/force-stop/reboot needs a
+new Connect tap. Service/activity/notification lifecycle tests pass locally; handset
+battery/lock-screen behavior still needs testing.
+
+Next: field-test assistance/background connections and improve fresh GPS. Server
 commitment and requester-reported resolution do not independently prove delivery.
 
 Validate signed sharing consent, preserve signed bytes, reject forged/duplicate

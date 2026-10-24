@@ -26,7 +26,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         if (Build.VERSION.SDK_INT >= 29) window.isNavigationBarContrastEnforced = false
-        graph = ViewModelProvider(this)[AppGraph::class.java]
+        graph = (application as GhostApplication).graph
         val trustViewModel = ViewModelProvider(this)[DeviceTrustViewModel::class.java]
         val screens = ViewModelProvider(this, object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
@@ -42,19 +42,14 @@ class MainActivity : ComponentActivity() {
             val trust by trustViewModel.state.collectAsStateWithLifecycle()
             val local by graph.local.collectAsStateWithLifecycle()
             GhostTheme { GhostApp(state, screens::retry, trust, trustViewModel::retry, local, graph.actions({
-                val missing = graph.nearby.missingPermissions()
-                if (missing.isEmpty()) graph.startNearby() else permissionRequest.launch(missing)
+                val missing = graph.nearby.missingPermissions().toMutableList()
+                if (Build.VERSION.SDK_INT >= 33 && androidx.core.content.ContextCompat.checkSelfPermission(this,
+                    android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED)
+                    missing.add(android.Manifest.permission.POST_NOTIFICATIONS)
+                if (missing.isEmpty()) graph.startNearby() else permissionRequest.launch(missing.toTypedArray())
             }, {
                 locationPermissionRequest.launch(arrayOf(android.Manifest.permission.ACCESS_FINE_LOCATION, android.Manifest.permission.ACCESS_COARSE_LOCATION))
             })) }
         }
-    }
-    override fun onStart() {
-        super.onStart()
-        if (::graph.isInitialized) graph.resumeNearby()
-    }
-    override fun onStop() {
-        if (::graph.isInitialized && !isChangingConfigurations) graph.pauseNearby()
-        super.onStop()
     }
 }

@@ -31,7 +31,7 @@ import org.robolectric.annotation.Config
 @Config(sdk=[35])
 class GatewayAssistanceTest {
     private fun key()=KeyPairGenerator.getInstance("EC").apply{initialize(ECGenParameterSpec("secp256r1"))}.generateKeyPair().let{SigningIdentity(it.private,it.public)}
-    private fun TestScope.until(condition:suspend ()->Boolean){repeat(1000){runCurrent();if(runBlocking{condition()})return;Thread.sleep(5)};fail("Assistance gateway did not reach expected state")}
+    private fun TestScope.until(condition:suspend ()->Boolean){repeat(1000){runCurrent();if(runBlocking{condition()})return;Thread.sleep(5);advanceTimeBy(100)};fail("Assistance gateway did not reach expected state")}
     @Test fun downloadRequiresPinnedSignaturesAndCheckpointsOnlyAfterStorageThenUploadsOwnerDecision()=runTest {
         val context:Application=RuntimeEnvironment.getApplication();val db=Room.inMemoryDatabaseBuilder(context,GhostDatabase::class.java).build()
         val cloud=key();val owner=key();val requester=key();val now=1792860000000L
@@ -45,11 +45,12 @@ class GatewayAssistanceTest {
         val server=HttpServer.create(InetSocketAddress("127.0.0.1",0),0)
         val token="g".repeat(43)
         server.createContext("/v1/sync/download") {exchange->
-            assertEquals("Bearer $token",exchange.requestHeaders.getFirst("Authorization"));downloads.incrementAndGet()
+            assertEquals("Bearer $token",exchange.requestHeaders.getFirst("Authorization"))
             val cursor=exchange.requestURI.query.substringAfter("cursor=").substringBefore("&")
             val packet=if(cursor=="0")invitation.takeIf{valid.get()}?:invitation.copy(signature="AA") else if(cursor=="1" && accepted.get())confirmation else null
             val next=if(packet==null)cursor else if(cursor=="0")"1" else "2"
             val response=Json.encodeToString(SyncDownloadResponse(cursor,next,listOfNotNull(packet))).encodeToByteArray()
+            downloads.incrementAndGet() // Signal only after selecting this response's signature.
             exchange.sendResponseHeaders(200,response.size.toLong());exchange.responseBody.use{it.write(response)}
         }
         server.createContext("/v1/sync/download-ack"){it.sendResponseHeaders(204,-1);it.close()}

@@ -28,12 +28,12 @@ source scripts/env.sh
 
 APK: `app/build/outputs/apk/debug/app-debug.apk`. With a phone connected, use
 `installDebug` and launch GHOST. SOS drafts, reports and queued packets are saved
-locally. Nearby runs while the app is open and can relay public SOS reports.
+locally. After Connect, a foreground service keeps nearby relay and gateway sync active when the app is backgrounded or the screen locks.
 Configured gateway phones can upload reports with cloud consent.
 
 For two phones with Google Play services:
 
-1. Keep Bluetooth/Wi-Fi on and both apps open. Tap **Connect to GHOST** on each and allow Android's required permissions. Discovery, connections and reconnection are automatic; no phone selection or pairing approval.
+1. Keep Bluetooth/Wi-Fi on. Open both apps to connect. Tap **Connect to GHOST** on each and allow Android's required permissions. Discovery, connections and reconnection are automatic; no phone selection or pairing approval.
 2. Tap **Send SOS**, describe the help needed, then **Send SOS**. Category, area and a +/− people counter are under **Optional details**. There is no review screen.
 3. Check Requests on the other phone. The sender shows receipt only after the receiver saves the report and returns a valid signature.
 
@@ -66,8 +66,15 @@ data upgrades in place. The user reports the mesh works on physical phones.
 
 The mesh is open to nearby GHOST phones; connections have no manual code check.
 Signing verifies report integrity and key possession, not a person's identity.
-Relay pauses when the app backgrounds and resumes when returning to the app;
-**Disconnect from GHOST** stops it until you join again.
+After **Connect to GHOST**, a connected-device foreground service keeps relay and
+online sync active when switching apps, locking the screen or closing the activity.
+The **GHOST is active** notification opens the app and has **Disconnect**; the app's
+Disconnect button stops the same session. Android 13+ asks for notification
+permission when connecting; denial does not block the service, but Android can hide
+its notification from the drawer (use the app or Android's active-app controls).
+Explicit disconnect, force-stop or process termination requires another Connect tap;
+there is no automatic reboot startup. Manufacturer battery policies and deep idle
+can still interrupt radios/network work; verify lock-screen behavior on real phones.
 Connections' **Known network** graph shows direct neighbors and fresh connections
 reported by other phones. Use the **1–4 hop slider** to see farther; it only filters
 the display, or choose **All known** for the bounded discovered graph. **Full screen**
@@ -115,7 +122,7 @@ Build properties `ghostServerUrl` and `ghostCloudPublicKey` (or environment vari
 Release builds require HTTPS and a nonempty trusted public key.
 
 Install the same configured APK on participating phones. Tap **Connect to GHOST**,
-allow first-use Android permissions, and keep the app open. Nearby connections
+allow first-use Android permissions. Connection work then continues through the foreground service. Nearby connections
 start automatically; cellular or Wi-Fi enables server connection and device enrollment
 without entering URLs or tokens. Hosted servers use Android's default connection,
 including VPNs. A private LAN server uses available Wi-Fi; internet alone cannot
@@ -125,7 +132,7 @@ server-side. Dashboard/operator authentication remains separate.
 The phone checks both enrollment replies against its trusted server key and proves
 possession of its existing Android Keystore identity. An expiring gateway-only
 credential is stored encrypted and renewed automatically, including after a 401.
-Disconnection, backgrounding or losing all usable networks pauses online transfers; reconnecting
+Disconnecting or losing all usable networks pauses online transfers; reconnecting
 resumes them. New publications enable both sharing flags; uploads still require those signed flags, and **Received by server** requires a verified, saved acknowledgement.
 No connection status creates an SOS or confirms assistance. Manual gateway tokens
 remain available only under **Connections → Technical details** in legacy builds
@@ -228,7 +235,7 @@ prevent double booking. Invites expire within an hour, bounded by source availab
 Signed updates return directly or through supporting mesh peers. Requesters see
 invitations and commitments in **Requests**; owners can **Cancel commitment** under
 **Offer help**. All participating relay phones need this app version. Gateways poll
-while connected and foregrounded; download cursors and signed packets persist in Room.
+while the connection service is active; download cursors and signed packets persist in Room.
 An owner tap, a server commitment and physical assistance are separate states.
 
 Supply cards show last-known available/reserved/used quantities. Edits preserve

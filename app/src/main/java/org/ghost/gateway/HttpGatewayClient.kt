@@ -35,7 +35,7 @@ class HttpGatewayClient(private val openConnection: (java.net.URL) -> HttpURLCon
             connection = socket
             withTimeout(20000) {
                 val transfer = async(Dispatchers.IO) { post(socket, settings, request) }
-                // Closing also unblocks IO when the app backgrounds or setup changes.
+                // Closing also unblocks IO when the user disconnects or setup changes.
                 try { Result.success(transfer.await()) } finally { socket.disconnect() }
             }
         } catch (_: TimeoutCancellationException) {
