@@ -9,6 +9,8 @@ import org.ghost.domain.model.*
 import org.ghost.feature.home.HomeScreen
 import org.ghost.feature.mission.MissionScreen
 import org.ghost.feature.network.NetworkScreen
+import org.ghost.app.LocalUiState
+import org.ghost.transport.nearby.NearbyState
 import org.ghost.feature.requests.RequestsScreen
 import org.ghost.gateway.api.GatewayReachability
 import org.ghost.transport.api.PeerHandle
@@ -75,4 +77,7 @@ private fun ErrorPreview() = PreviewFrame { NetworkScreen(FoundationState(failed
 
 @Preview(name = "Network · connected fixture", widthDp = 360, heightDp = 800)
 @Composable
-private fun NetworkPreview() = PreviewFrame { NetworkScreen(FoundationPreviewFixtures.connected, {}) }
+private fun NetworkPreview() = PreviewFrame {
+    NetworkScreen(FoundationPreviewFixtures.connected, {}, local = LocalUiState(
+        network = NearbyState(active = true), peerIdentities = mapOf("B" to "b".repeat(64))))
+}

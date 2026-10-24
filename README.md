@@ -55,6 +55,9 @@ The mesh is open to nearby GHOST phones; connections have no manual code check.
 Signing verifies report integrity and key possession, not a person's identity.
 Relay pauses when the app backgrounds and resumes when returning to the app;
 **Disconnect from mesh** stops it until you join again.
+Network's **Your nearby mesh** graph updates as direct neighbors connect and leave.
+Solid links are ready to relay; dashed links are still checking identity. It shows
+only this phone's direct connections, not the entire mesh or an SOS delivery path.
 
 Each phone has independent bounded queues. A report waits for its neighbor's
 signed receipt before the next report goes out on that link. Missing receipts

@@ -2,7 +2,6 @@ package org.ghost.feature.network
 
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Button
@@ -43,16 +42,12 @@ fun NetworkScreen(state: FoundationState, onRetry: () -> Unit, modifier: Modifie
                         TextButton(onClick = { context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}"))) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Open app settings") }
                     }
                 }
+                item("mesh-graph") {
+                    NearbyMeshGraph(state.peers, local.peerIdentities, local.network.active, local.network.starting)
+                }
                 local.error?.let { message -> item("local-error") { InfoCard("Local action unavailable", message) } }
                 (local.exchangeStatus ?: local.notice)?.let { message -> item("exchange") { InfoCard("Exchange status", message) } }
                 item("cloud") { InfoCard(state.cloud.label(), "Reachability alone does not confirm an uploaded report or assistance.") }
-                item("peers") {
-                    InfoCard(if (state.peers.isEmpty()) "No connected phones" else "Connected phones",
-                        "These are direct-link observations. They do not prove a relay path or recipient delivery.")
-                }
-                items(state.peers, key = { "${it.transportId}:${it.endpointId}" }) { peer ->
-                    InfoCard(local.peerIdentities[peer.endpointId]?.let { "Phone ${it.take(8)}" } ?: "Connecting to phone…", "Mesh neighbor")
-                }
                 item("retry") { TextButton(onClick = { actions?.retrySends?.invoke() }, enabled = actions != null, modifier = Modifier.heightIn(min = 48.dp)) { Text("Retry queued sends") } }
                 item("sharing") { InfoCard("Gateway sharing is off", "Cloud uploads are not implemented yet. Receipts confirm saving by the next phone, not server delivery.") }
                 item("identity") {

@@ -10,6 +10,9 @@ import org.ghost.feature.foundation.FoundationPreviewFixtures
 import org.ghost.feature.foundation.DeviceTrustState
 import org.ghost.feature.foundation.OperatorAccess
 import org.ghost.domain.model.SosDraft
+import org.ghost.feature.foundation.FoundationState
+import org.ghost.transport.api.PeerHandle
+import org.ghost.transport.nearby.NearbyState
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
@@ -125,5 +128,31 @@ class GhostAppUiTest {
         compose.onNodeWithText("Disconnect from mesh").performScrollTo().performClick()
         assertEquals(1, stops)
         assertEquals(0, publishes)
+    }
+
+    @Test
+    fun nearbyGraphTracksConnectionsIdentityChecksAndDisconnectWithoutInventingRoutes() {
+        val state = mutableStateOf(FoundationState())
+        val local = mutableStateOf(LocalUiState(network = NearbyState(active = true)))
+        compose.setContent { GhostTheme { GhostApp(state.value, {}, local = local.value) } }
+        compose.onNode(hasText("Network") and hasClickAction()).performClick()
+        compose.onNodeWithTag("nearby-mesh-graph").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithContentDescription("Your phone has 0 direct connections", substring = true).assertExists()
+        val a = PeerHandle("nearby", "A"); val b = PeerHandle("nearby", "B")
+        compose.runOnIdle {
+            state.value = state.value.copy(peers = listOf(a, b))
+            local.value = local.value.copy(peerIdentities = mapOf("A" to "a".repeat(64)))
+        }
+        compose.onNodeWithContentDescription("2 direct connections: 1 ready to relay, 1 checking identity", substring = true).assertExists()
+        compose.onNodeWithText("2. Checking phone…").performScrollTo().assertIsDisplayed()
+        compose.runOnIdle { local.value = local.value.copy(peerIdentities = mapOf("A" to "a".repeat(64), "B" to "b".repeat(64))) }
+        compose.onNodeWithContentDescription("2 direct connections: 2 ready to relay, 0 checking identity", substring = true).assertExists()
+        compose.runOnIdle { state.value = state.value.copy(peers = listOf(b)) }
+        compose.onNodeWithContentDescription("1 direct connections: 1 ready to relay", substring = true).assertExists()
+        compose.onNodeWithText("1. Phone aaaaaaaa · ready to relay").assertDoesNotExist()
+        // Stop hides stale peer/identity snapshots immediately.
+        compose.runOnIdle { local.value = local.value.copy(network = NearbyState()) }
+        compose.onNodeWithContentDescription("Your phone has 0 direct connections", substring = true).assertExists()
+        compose.onNodeWithText("1. Phone bbbbbbbb · ready to relay").assertDoesNotExist()
     }
 }
