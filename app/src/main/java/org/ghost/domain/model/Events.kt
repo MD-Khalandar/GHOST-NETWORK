@@ -5,8 +5,8 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 data class Consent(
-    @SerialName("public_mesh_allowed") val publicMeshAllowed: Boolean,
-    @SerialName("cloud_processing_allowed") val cloudProcessingAllowed: Boolean,
+    @SerialName("public_mesh_allowed") val publicMeshAllowed: Boolean = false,
+    @SerialName("cloud_processing_allowed") val cloudProcessingAllowed: Boolean = false,
 )
 
 @Serializable

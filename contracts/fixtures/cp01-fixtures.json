@@ -78,14 +78,7 @@
         }
       }
     ],
-    "receipts": [
-      {
-        "packet_id": "66666666-6666-4666-8666-666666666666",
-        "recipient_node_id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-        "receipt_type": "PERSISTED_BY_RECIPIENT",
-        "observed_at_ms": 1792861800000
-      }
-    ]
+    "receipts": []
   },
   "dashboard_sos_page": {
     "items": [

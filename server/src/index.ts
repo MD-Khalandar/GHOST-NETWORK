@@ -3,7 +3,7 @@ import { loadConfig } from "./config.js";
 
 export async function start(): Promise<void> {
   const config = loadConfig();
-  const app = buildApp();
+  const app = buildApp({ principals: config.authPrincipals, cloudSigningKeyPem: config.cloudSigningKeyPem });
   await app.listen({ host: config.host, port: config.port });
 }
 

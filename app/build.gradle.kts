@@ -1,8 +1,11 @@
+import com.google.protobuf.gradle.*
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
+    alias(libs.plugins.protobuf)
 }
 
 android {
@@ -15,10 +18,16 @@ android {
         targetSdk = 36
         versionCode = 1
         versionName = "0.1.0-dev"
+        val cloudKey = providers.gradleProperty("ghostCloudPublicKey").orElse("").get()
+        require(cloudKey.length <= 128 && cloudKey.matches(Regex("[A-Za-z0-9_-]*"))) {
+            "ghostCloudPublicKey must be a base64url P-256 SPKI public key"
+        }
+        buildConfigField("String", "CLOUD_PUBLIC_KEY", "\"$cloudKey\"")
     }
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     compileOptions {
@@ -31,6 +40,7 @@ android {
     }
 
     sourceSets {
+        getByName("main").proto { srcDir("$rootDir/contracts/proto") }
         getByName("test").resources.directories.add("$rootDir/contracts/fixtures")
     }
 
@@ -40,6 +50,13 @@ android {
             it.jvmArgs("--add-opens=java.base/java.lang=ALL-UNNAMED", "--add-opens=java.base/java.util=ALL-UNNAMED")
             it.systemProperty("robolectric.dependency.repo.url", "https://repo.maven.apache.org/maven2")
         }
+    }
+}
+
+protobuf {
+    protoc { artifact = "com.google.protobuf:protoc:${libs.versions.protobuf.get()}" }
+    generateProtoTasks {
+        all().configureEach { builtins { maybeCreate("java").option("lite") } }
     }
 }
 

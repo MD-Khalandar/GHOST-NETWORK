@@ -16,6 +16,8 @@ import org.ghost.domain.model.CloudCoordinationState
 import org.ghost.domain.model.CloudCoordinationStatus
 import org.ghost.feature.foundation.FoundationPreviewFixtures
 import org.ghost.feature.foundation.FoundationState
+import org.ghost.feature.foundation.DeviceTrustState
+import org.ghost.feature.foundation.OperatorAccess
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -52,6 +54,37 @@ class GhostAppUiTest {
         compose.onNode(hasText("Network") and hasClickAction()).performClick()
         compose.onNodeWithText("Radio simulation").performScrollTo().assertIsDisplayed()
         screenshot("network-light")
+    }
+
+    @Test
+    fun operatorSessionStatesNeverExposePhoneApprovalControls() {
+        val trust = mutableStateOf(DeviceTrustState())
+        compose.setContent { GhostTheme { GhostApp(FoundationPreviewFixtures.loaded, {}, trust.value) } }
+        compose.onNode(hasText("Network") and hasClickAction()).performClick()
+        for ((access, label) in listOf(
+            OperatorAccess.SIGN_IN_REQUIRED to "Operator sign-in required",
+            OperatorAccess.NOT_AUTHORIZED to "Operator access denied",
+            OperatorAccess.AUTHENTICATED_OPERATOR to "Operator session authenticated",
+        )) {
+            compose.runOnIdle { trust.value = DeviceTrustState(operatorAccess = access) }
+            compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText(label))
+            compose.onNodeWithText(label).assertIsDisplayed()
+            compose.onNodeWithText("Approve").assertDoesNotExist()
+        }
+    }
+
+    @Test
+    fun publicSharingAndCloudConsentDefaultOffAndRemainIndependent() {
+        compose.setContent { GhostTheme { GhostApp(FoundationPreviewFixtures.loaded, {}) } }
+        compose.onNodeWithText("Send SOS").performScrollTo().performClick()
+        compose.onNodeWithText("Share publicly with nearby phones").performScrollTo().assertIsOff().performClick().assertIsOn()
+        compose.onNodeWithText("Allow cloud coordination").performScrollTo().assertIsOff().performClick().assertIsOn()
+        compose.onNodeWithText("Share publicly with nearby phones").performScrollTo().performClick().assertIsOff()
+        compose.onNodeWithText("Allow cloud coordination").performScrollTo().assertIsOn()
+        compose.onNodeWithText("Close preview").performClick()
+        compose.onNodeWithText("Send SOS").performScrollTo().performClick()
+        compose.onNodeWithText("Share publicly with nearby phones").performScrollTo().assertIsOff()
+        compose.onNodeWithText("Allow cloud coordination").performScrollTo().assertIsOff()
     }
 
     @Test

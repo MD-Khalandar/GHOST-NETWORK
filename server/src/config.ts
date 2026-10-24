@@ -1,3 +1,5 @@
+import { parsePrincipals, SigningIdentity, type Principal } from "./security.js";
+
 export const CONTRACT_VERSION = "ghost.contracts.v1" as const;
 
 export type ServerEnvironment = "development" | "test" | "production";
@@ -11,6 +13,8 @@ export interface ServerConfig {
   modelProvider: ModelProviderKind;
   model: string;
   openAiApiKey?: string;
+  authPrincipals: Principal[];
+  cloudSigningKeyPem?: string;
 }
 
 export class ConfigValidationError extends Error {
@@ -77,6 +81,18 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): Server
   const model = requiredValue("GHOST_MODEL", environment, issues);
   const modelProvider = parseProvider(environment.GHOST_MODEL_PROVIDER, issues);
   const openAiApiKey = environment.GHOST_OPENAI_API_KEY?.trim();
+  let authPrincipals: Principal[] = [];
+  try { authPrincipals = parsePrincipals(environment.GHOST_AUTH_PRINCIPALS); }
+  catch { issues.push("GHOST_AUTH_PRINCIPALS must contain valid, distinct role/token-hash records"); }
+  const cloudSigningKeyPem = environment.GHOST_CLOUD_SIGNING_KEY_PEM?.replaceAll("\\n", "\n");
+  if (cloudSigningKeyPem) {
+    try { SigningIdentity.fromPem(cloudSigningKeyPem); }
+    catch { issues.push("GHOST_CLOUD_SIGNING_KEY_PEM must be a P-256 private key"); }
+  }
+  if (environment.GHOST_ENV === "production") {
+    if (!authPrincipals.length) issues.push("GHOST_AUTH_PRINCIPALS is required in production");
+    if (!cloudSigningKeyPem) issues.push("GHOST_CLOUD_SIGNING_KEY_PEM is required in production");
+  }
 
   if (databaseUrl) {
     validateDatabaseUrl(databaseUrl, issues);
@@ -92,6 +108,8 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): Server
     databaseUrl,
     modelProvider,
     model,
+    authPrincipals,
+    ...(cloudSigningKeyPem ? { cloudSigningKeyPem } : {}),
     ...(openAiApiKey ? { openAiApiKey } : {}),
   };
 

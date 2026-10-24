@@ -3,8 +3,15 @@ package org.ghost.feature.home
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
@@ -53,6 +60,8 @@ fun HomeScreen(state: FoundationState, onSendSos: () -> Unit, onOpenRequests: ()
 
 @Composable
 fun SosPreviewDialog(onDismiss: () -> Unit) {
+    var publicSharing by rememberSaveable { mutableStateOf(false) }
+    var cloudConsent by rememberSaveable { mutableStateOf(false) }
     val windowHeight = LocalWindowInfo.current.containerSize.height
     val maximumHeight = with(LocalDensity.current) { windowHeight.toDp() * 0.85f }
     Dialog(onDismissRequest = onDismiss) {
@@ -60,12 +69,27 @@ fun SosPreviewDialog(onDismiss: () -> Unit) {
             Column(Modifier.fillMaxWidth().heightIn(max = maximumHeight).padding(24.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 Text("SOS preview", style = MaterialTheme.typography.headlineSmall)
-                Text("Sending is unavailable in this preview. Nothing has been sent.\n\nWhen sending is available, you’ll review your report and choose public sharing and cloud consent separately.",
-                    modifier = Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()))
+                Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Sending is unavailable in this preview. Nothing has been sent. These choices apply to this preview only.")
+                    ConsentChoice("Share publicly with nearby phones", publicSharing) { publicSharing = it }
+                    Text("Other phones relaying a public report can read it. Signing does not hide its content.")
+                    ConsentChoice("Allow cloud coordination", cloudConsent) { cloudConsent = it }
+                    Text("Allow the server and its model provider to process this report for coordination. This is separate from public sharing.")
+                }
                 TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
                     Text("Close preview")
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun ConsentChoice(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).toggleable(checked, role = Role.Checkbox, onValueChange = onCheckedChange),
+        verticalAlignment = Alignment.CenterVertically) {
+        Checkbox(checked, onCheckedChange = null)
+        Text(label, Modifier.weight(1f))
     }
 }

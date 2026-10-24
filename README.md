@@ -4,7 +4,8 @@ Android/Kotlin/Jetpack Compose mesh communication app. Build SOS/help first with
 one cloud coordinator, reached by offline phones through mesh gateways, with a
 shared request/helper/supply database and a web dashboard. Messaging,
 local LLM helpers and other in-app internet services follow later. The current app
-is a scaffold; see [the overview](README_START_HERE.md), [10 checkpoints](docs/CHECKPOINTS.md)
+has preview screens and an identity/trust foundation; SOS sending is still pending.
+See [the overview](README_START_HERE.md), [10 checkpoints](docs/CHECKPOINTS.md)
 and [team prompts](docs/BUILD_PHASES.md).
 
 Develop the same project on **Windows, macOS, or Linux**. It produces an Android
@@ -109,9 +110,10 @@ only; Linux and Intel Mac use the manual prerequisites above.
 - APK: `app/build/outputs/apk/debug/app-debug.apk`.
 - Unit-test report: `app/build/reports/tests/testDebugUnitTest/index.html`.
 - Minimum Android API: 24; handset model/radio compatibility requires real-device testing.
-- The Mac build has been checked locally. Windows/Linux setup and physical-device
-  behavior need verification on those hosts; emulators do not prove real relay
-  or cloud coordination. The server is planned separately in checkpoint 1.
+- Mac foundation checks and Windows build/host trust tests are recorded. The full
+  Windows installer, Linux setup and physical-device behavior still need their own
+  verification; host tests do not prove radio relay or cloud coordination. The
+  separate [server](server/README.md) implements trust guards, with persistence pending.
 
 Keep `local.properties`, SDKs, caches, signing credentials, and model weights out
 of Git. See [environment details](docs/ENVIRONMENT_SETUP.md) and the

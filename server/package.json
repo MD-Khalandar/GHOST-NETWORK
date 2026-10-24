@@ -2,7 +2,7 @@
   "name": "ghost-cloud-server",
   "private": true,
   "version": "0.1.0-dev",
-  "description": "GHOST CP01 cloud service scaffold",
+  "description": "GHOST cloud service and identity/trust foundation",
   "type": "module",
   "engines": {
     "node": ">=22"
@@ -12,10 +12,12 @@
     "dev": "tsx watch src/index.ts",
     "start": "node dist/index.js",
     "test": "tsx --test src/*.test.ts",
-    "smoke": "tsx src/smoke.ts"
+    "smoke": "tsx src/smoke.ts",
+    "verify:android": "tsx src/verify-android.ts"
   },
   "dependencies": {
-    "fastify": "5.12.7"
+    "fastify": "5.12.7",
+    "protobufjs": "8.8.1"
   },
   "devDependencies": {
     "@types/node": "26.6.5",

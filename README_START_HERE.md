@@ -4,7 +4,7 @@ GHOST's wider vision is mesh communication, saved-contact messaging, SOS/help an
 
 Local LLM helpers, ordinary chat, generic information services and LoRa are deferred. When no gateway has internet, SOS still stores/relays locally but cloud coordination waits.
 
-**Current state:** CP01 foundations are complete: Android Home/Requests/Mission/Network previews, deterministic local fixtures and a runnable server health/config scaffold. The app labels its data simulated; Send SOS opens a preview and does not transmit. Shared database, real cloud coordination and dashboard implementation are later checkpoints. See [integration checks and run instructions](docs/evidence/cp01/integration.md).
+**Current state:** CP01 foundations plus CP02 identity/trust implementation. The phone loads a device signing key and shows cloud-pin diagnostics; SOS preview has separate public/cloud consent controls, both off initially. Requests and networking still use labelled simulations; Send SOS does not transmit. Server role guards and signature validation work, but persistent endpoints return 501. Shared database, real cloud coordination and dashboard implementation remain later work. See [current scope, checks and handset test steps](docs/evidence/cp02/trust.md).
 
 ## Read / work
 

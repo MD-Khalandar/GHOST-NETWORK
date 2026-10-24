@@ -1,16 +1,20 @@
 # GHOST contracts v1
 
-This directory is owned by the CP01 contract/integration role. It is the
-provider-independent source of truth for the SOS phase.
+This directory is the provider-independent source of truth for the SOS phase.
+Shared changes belong to the contract/integration owner, including when one
+implementer performs all roles on `main`.
 
 ## Files
 
+- `TRUST_V1.md` — implemented CP02 signing, authority, bounds and authentication rules.
 - `proto/ghost_wire_v1.proto` — immutable packet and relay framing.
 - `proto/ghost_events_v1.proto` — signed SOS/helper/offer/cloud/coordination/
   receipt payloads.
 - `api/cloud-api-v1.yaml` — authenticated dashboard and gateway API boundary.
 - `fixtures/cp01-fixtures.json` — deterministic examples shared by Android,
   server, and dashboard tests.
+- `fixtures/cp02-signatures.json` — real cross-platform signatures and binary
+  encodings using public test-only identities.
 
 ## Rules
 
@@ -27,5 +31,6 @@ provider-independent source of truth for the SOS phase.
    is not cloud acceptance.
 
 The Kotlin types under `app/src/main/java/org/ghost/domain/model` mirror the
-semantic contract for Android callers. They do not replace CP02 signature,
-encoding, or validation code.
+semantic contract for Android callers. Android generates Java lite protobuf
+classes during its build; server codecs load these same schemas. Security and
+protocol implementations validate exact origin bytes before any future projection.

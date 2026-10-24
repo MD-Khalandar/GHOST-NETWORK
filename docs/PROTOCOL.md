@@ -1,6 +1,6 @@
 # SOS event and synchronization contract
 
-Planned contract only; no wire/API implementation exists. Checkpoint 1 freezes shared schemas/interfaces and fixtures; checkpoint 2 implements signatures/validation. The CP01 source of truth is [`contracts/`](../contracts/README.md), including the proto field numbers, API paths, and deterministic examples. Ordinary chat, generic information requests and local inference protocols are deferred.
+CP02 implements protobuf encoding, identity/signatures, event validation and API role guards; durable ingestion, radio forwarding and synchronization remain later work. The source of truth is [`contracts/`](../contracts/README.md), including proto field numbers, API paths and shared examples. See [the trust contract](../contracts/TRUST_V1.md) for exact key/signature bytes, limits, consent and rejection codes. Ordinary chat, generic information requests and local inference protocols are deferred.
 
 ## Immutable packets
 
@@ -47,7 +47,7 @@ Only the configured cloud identity may publish authoritative cloud events. A han
 
 ## Cloud synchronization boundary
 
-- Authenticated HTTPS uploads carry batches of unchanged origin packets and phone receipts. A connected originating phone uses the same API directly. Server verifies signer/key binding, authority, consent, version/size/expiry and idempotency before persistence.
+- Authenticated HTTPS uploads carry batches of unchanged origin packets, including signed phone receipt packets. The legacy `receipts` field stays empty; unsigned receipt payloads cannot prove delivery. A connected originating phone uses the same API directly. Server verifies signer/key binding, authority, consent, version/size/expiry and idempotency before persistence.
 - Cloud acceptance means event/projection and any job trigger are committed together. Duplicate upload via multiple gateways returns the same durable result; it cannot start another logical job.
 - The cloud signs results, keeps a durable return outbox and exposes bounded cursor-based downloads scoped to authorized gateway/request associations. Untrusted requested node IDs alone cannot grant access to someone else's results.
 - A gateway persists returned packets/outbox before advancing its cursor, then uses normal mesh forwarding. A gateway download acknowledgement does not replace the destination phone's signed receipt.

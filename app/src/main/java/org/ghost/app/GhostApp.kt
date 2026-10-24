@@ -17,6 +17,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import org.ghost.design.GhostIcons
 import org.ghost.feature.foundation.FoundationState
+import org.ghost.feature.foundation.DeviceTrustState
 import org.ghost.feature.home.HomeScreen
 import org.ghost.feature.home.SosPreviewDialog
 import org.ghost.feature.mission.MissionScreen
@@ -25,7 +26,7 @@ import org.ghost.feature.requests.RequestsScreen
 
 /** A-owned navigation: features remain stateless and all sample content is explicitly simulated. */
 @Composable
-fun GhostApp(state: FoundationState, onRetry: () -> Unit) {
+fun GhostApp(state: FoundationState, onRetry: () -> Unit, trust: DeviceTrustState = DeviceTrustState(), onRetryIdentity: (() -> Unit)? = null) {
     var route by rememberSaveable { mutableStateOf(AppRoute.HOME) }
     var showSosPreview by rememberSaveable { mutableStateOf(false) }
     val savedScreens = rememberSaveableStateHolder()
@@ -94,7 +95,7 @@ fun GhostApp(state: FoundationState, onRetry: () -> Unit) {
                     { route = AppRoute.NETWORK }, onRetry, modifier, insets)
                 AppRoute.REQUESTS -> RequestsScreen(state, onRetry, modifier, insets)
                 AppRoute.MISSION -> MissionScreen(state, onRetry, modifier, insets)
-                AppRoute.NETWORK -> NetworkScreen(state, onRetry, modifier, insets)
+                AppRoute.NETWORK -> NetworkScreen(state, onRetry, modifier, insets, trust, onRetryIdentity)
             }
         }
     }

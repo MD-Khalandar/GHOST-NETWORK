@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { buildApp } from "./app.js";
 import { loadConfig } from "./config.js";
 
-loadConfig();
-const app = buildApp();
+const config = loadConfig();
+const app = buildApp({ principals: config.authPrincipals, cloudSigningKeyPem: config.cloudSigningKeyPem });
 
 try {
   const response = await app.inject({ method: "GET", url: "/v1/health" });

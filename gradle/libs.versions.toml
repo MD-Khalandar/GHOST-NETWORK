@@ -12,6 +12,7 @@ serialization = "1.9.0"
 nearby = "19.3.0"
 litertlm = "0.18.1"
 protobuf = "4.33.5"
+protobufPlugin = "0.10.0"
 junit = "4.13.2"
 robolectric = "4.17"
 
@@ -46,4 +47,5 @@ android-application = { id = "com.android.application", version.ref = "agp" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
+protobuf = { id = "com.google.protobuf", version.ref = "protobufPlugin" }
 

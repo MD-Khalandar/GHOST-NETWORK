@@ -7,7 +7,8 @@ import kotlinx.serialization.Serializable
 data class SyncUploadRequest(
     @SerialName("idempotency_key") val idempotencyKey: String,
     val packets: List<WirePacket>,
-    val receipts: List<DeliveryReceiptPayload>,
+    // CP02: legacy field stays empty. Receipts must be signed packets in packets.
+    val receipts: List<DeliveryReceiptPayload> = emptyList(),
 )
 
 @Serializable

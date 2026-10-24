@@ -11,6 +11,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import org.ghost.design.GhostTheme
 import org.ghost.feature.foundation.FoundationViewModel
+import org.ghost.feature.foundation.DeviceTrustViewModel
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -18,6 +19,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         if (Build.VERSION.SDK_INT >= 29) window.isNavigationBarContrastEnforced = false
         val graph = ViewModelProvider(this)[Cp01AppGraph::class.java]
+        val trustViewModel = ViewModelProvider(this)[DeviceTrustViewModel::class.java]
         val screens = ViewModelProvider(this, object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
@@ -29,7 +31,8 @@ class MainActivity : ComponentActivity() {
         })[FoundationViewModel::class.java]
         setContent {
             val state by screens.state.collectAsStateWithLifecycle()
-            GhostTheme { GhostApp(state, screens::retry) }
+            val trust by trustViewModel.state.collectAsStateWithLifecycle()
+            GhostTheme { GhostApp(state, screens::retry, trust, trustViewModel::retry) }
         }
     }
 }

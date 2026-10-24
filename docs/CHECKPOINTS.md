@@ -2,7 +2,7 @@
 
 Build SOS sending first: offline phones → mesh → online gateway → cloud database/dashboard → one cloud coordinator → approved response back through the mesh. The database stores requests, helpers and supply/help offers. Ordinary chat, generic internet services, local LLM helpers and LoRa are deferred, not removed from the wider product.
 
-**Current position:** CP01 contracts and foundations complete within its host/simulation scope. A/B/C/D are integrated: typed contracts, deterministic Android fakes, server scaffold and the four-screen Android preview. See [combined checks and limitations](evidence/cp01/integration.md). CP02 is in progress per the user's 24 October 2026 update; its implementation is not integrated into this checkout. Physical/device/cloud acceptance gates remain open. Existing Android toolchain versions are preserved.
+**Current position:** CP01 foundations are complete within their host/simulation scope. CP02 identity/trust is implemented on `main`, with handset evidence pending; the user assigned all implementation to one agent. See [CP02 scope and checks](evidence/cp02/trust.md) and the historical [CP01 report](evidence/cp01/integration.md). Physical/device/cloud acceptance gates remain open. Existing Android toolchain versions are preserved.
 
 Checkpoints are acceptance milestones, not the size of an implementation step.
 For the hackathon, use the [simple implementation shape](../ARCHITECTURE.md#hackathon-implementation),
@@ -42,7 +42,7 @@ Each checkpoint has **four copyable prompts** in [BUILD_PHASES.md](BUILD_PHASES.
 Record real evidence links and verified user-pushed commits; do not infer acceptance from a commit. Statuses: not started, in progress, implemented/evidence pending, blocked, complete.
 
 - 01 — Complete (host/simulation foundations): [integration evidence](evidence/cp01/integration.md), [Android fakes](evidence/cp01/android.md), [UI](evidence/cp01/ui.md). No physical or real-cloud gates claimed.
-- 02 — In progress (user-reported; trust implementation/evidence not integrated here).
+- 02 — Implemented / evidence pending: [trust implementation and handset checks](evidence/cp02/trust.md). No physical key-storage gate claimed.
 - 03 — Not started.
 - 04 — Not started.
 - 05 — Not started.
