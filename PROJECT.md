@@ -48,8 +48,13 @@ verified server receipts return through the mesh. Help types, area, quantity/uni
 and six-hour availability appear in dashboard Helpers/Supplies lists. The latest
 owner-signed helper report controls availability; supplies are separate offers.
 Existing phone data migrates in place. Local-only publications stay local.
+Owners can edit supply quantity/unit/area or withdraw the same offer. Signed full
+updates carry the original ownership proof and keep its expiry and sharing flags;
+latest-only forwarding and projections prevent delayed originals undoing changes.
+Dashboard shows withdrawn offers. The coordinator should read resource_offer_latest
+and exclude withdrawn (data.state = 2), expired or unavailable supplies.
 
-Next: supply edits/withdrawals, matching → approval, owner decisions and outage recovery.
+Next: integrate the cloud coordinator → approval, owner decisions and outage recovery.
 
 Keep public/cloud consent separate, preserve signed bytes, reject forged/duplicate
 events, and keep cloud/provider secrets server-side. Queued, received and confirmed are distinct.

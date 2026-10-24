@@ -148,20 +148,23 @@ class AppGraph(application: Application) : AndroidViewModel(application) {
             catch (_: Exception) { operation.update { it.copy(error = "Cloud queue could not be reopened. Try again.") } }
         }
     }
-    private fun publishResource(draft: ResourceDraft, saved: () -> Unit) {
+    private fun publishResource(draft: ResourceDraft, saved: () -> Unit, withdraw: Boolean = false) {
         if (operation.value.saving) return
         operation.update { it.copy(saving = true, error = null, notice = null) }
         viewModelScope.launch {
             try {
-                repository.resources.publish(draft).getOrThrow()
-                operation.update { it.copy(saving = false, notice = if (draft.publicSharing) "Help saved. Waiting to share with nearby phones." else "Help saved on this phone only.") }
+                (if (withdraw) repository.resources.updateOffer(draft, withdraw = true) else repository.resources.publish(draft)).getOrThrow()
+                operation.update { it.copy(saving = false, notice = if (withdraw)
+                    (if (draft.publicSharing) "Withdrawn on this phone. Waiting to share the withdrawal." else "Offer withdrawn on this phone.")
+                    else if (draft.publicSharing) "Help saved. Waiting to share with nearby phones." else "Help saved on this phone only.") }
                 saved(); exchange.flush()
             } catch (cancelled: CancellationException) { throw cancelled }
               catch (error: Exception) { operation.update { it.copy(saving = false, error = if (error is IllegalArgumentException) error.message else "Could not save help. Check storage and the signing key.") } }
         }
     }
     fun actions(start: () -> Unit) = LocalActions({ draft -> if (!operation.value.saving) draftWrites.trySend(DraftWrite(draft)) },
-        ::saveDraft, ::publish, start, ::stopNearby, ::retrySends, ::saveGateway, ::clearGateway, ::publishResource)
+        ::saveDraft, ::publish, start, ::stopNearby, ::retrySends, ::saveGateway, ::clearGateway,
+        { draft, saved -> publishResource(draft, saved) }, { draft, saved -> publishResource(draft, saved, withdraw = true) })
 
     override fun onCleared() {
         // SDK stop calls are immediate; the app also stops links when its activity backgrounds.

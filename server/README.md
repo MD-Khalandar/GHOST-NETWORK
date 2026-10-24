@@ -31,7 +31,7 @@ node --env-file=server/.env server/dist/index.js
 
 `POST /v1/sync/upload` accepts a gateway bearer token and
 `{"idempotency_key":"unique-batch-id","packets":[...]}` (1–50 signed SOS_CREATE,
-HELPER_PROFILE_PUBLISH or OFFER_PUBLISH packets). Both public sharing
+HELPER_PROFILE_PUBLISH, OFFER_PUBLISH or OFFER_UPDATE packets). Both public sharing
 and cloud consent must be signed on. The gateway
 may relay another phone's SOS. Any invalid or conflicting item rolls back the
 batch; other event kinds are not accepted in this slice. Helper/supply payloads
@@ -71,7 +71,17 @@ latest publication per owner (ordered by signed timestamp then event ID, so a
 delayed old report cannot undo newer availability). Responses include the public
 resource fields, owner ID, timestamps and cloud revision; no signed packet bytes.
 Expiry remains visible and never confirms allocation. Supplies have unique offer
-IDs and remain separate offers. Updates/withdrawals are not accepted yet.
+IDs and remain separate offers. OFFER_UPDATE is a complete owner-signed snapshot:
+state (AVAILABLE/WITHDRAWN), optional quantity, unit, area and unchanged availability
+deadline/consent. It includes the original publication's exact envelope/signature
+as ownership proof; updates can arrive before the original. Their timestamp must
+be newer than the original, and expiry cannot extend it. The API projects the
+latest timestamp/event ID per offer across kinds 5/6, including withdrawals.
+
+Coordinator integration: query the `resource_offer_latest` view rather than raw
+kind-5 publications. It returns the latest signed event per offer; `data.state = 2`
+means withdrawn (legacy publications without state mean available). Also check
+expiry/available_until_ms and quantities before suggesting or approving matches.
 
 Matching/approval and download handlers still return 501.
 See [PROJECT.md](../PROJECT.md).

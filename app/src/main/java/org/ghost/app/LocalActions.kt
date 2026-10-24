@@ -38,4 +38,5 @@ data class LocalActions(
     val saveGateway: ((String, String, () -> Unit) -> Unit)? = null,
     val clearGateway: (() -> Unit)? = null,
     val publishResource: ((ResourceDraft, () -> Unit) -> Unit)? = null,
+    val withdrawResource: ((ResourceDraft, () -> Unit) -> Unit)? = null,
 )

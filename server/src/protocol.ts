@@ -128,7 +128,22 @@ function validate(packet: WirePacket, options: ValidationOptions): VerifiedPacke
       payloadCheck(uuid(p.offer_id) && (e.kind === 5 ? integer(p.resource_type, 1, 6) : integer(p.state, 1, 2)) &&
         (p.quantity === undefined || integer(p.quantity, 0, 1000000)) && text(p.unit, 40) && text(p.coarse_area, 120) &&
         text(p.note, 500) && (p.available_until_ms === undefined || integer(p.available_until_ms, e.created_at_ms + 1)));
-      if (e.kind === 6) owner("offer", p.offer_id);
+      if (e.kind === 6 && (p.original_offer_envelope?.length || p.original_offer_signature?.length)) {
+        payloadCheck(p.original_offer_envelope?.length <= MAX_ENVELOPE_BYTES && p.original_offer_signature?.length <= 72 &&
+          p.unit !== undefined && p.coarse_area !== undefined && p.available_until_ms !== undefined && p.consent);
+        const originalEnvelope = decode("ImmutableEnvelopeV1", p.original_offer_envelope);
+        payloadCheck(originalEnvelope.kind === 5);
+        const original = validatePacket({ immutable_envelope_bytes: p.original_offer_envelope.toString("base64url"),
+          signature: p.original_offer_signature.toString("base64url"), relay: { remaining_hops: 4, hop_count: 0 } },
+          { nowMs: options.nowMs, forCloud: options.forCloud });
+        check(original.payload.offer_id === p.offer_id && hex(original.envelope.sender_node_id) === sender, "INVALID_ACTOR");
+        payloadCheck(!!p.consent.public_mesh_allowed === !!original.payload.consent.public_mesh_allowed &&
+          !!p.consent.cloud_processing_allowed === !!original.payload.consent.cloud_processing_allowed &&
+          e.created_at_ms > original.envelope.created_at_ms && e.expires_at_ms <= original.envelope.expires_at_ms &&
+          p.available_until_ms === Math.min(original.envelope.expires_at_ms, original.payload.available_until_ms ?? original.envelope.expires_at_ms) &&
+          (p.state !== 1 || p.quantity === undefined || p.quantity > 0));
+        authority = { ownerNodeId: sender, cloudProcessingAllowed: !!original.payload.consent.cloud_processing_allowed };
+      } else if (e.kind === 6) owner("offer", p.offer_id);
       else { authority = options.lookup?.("offer", p.offer_id); check(!authority || authority.ownerNodeId === sender, "INVALID_ACTOR"); }
       break;
     case 7:

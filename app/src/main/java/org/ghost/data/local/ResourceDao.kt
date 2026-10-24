@@ -23,10 +23,10 @@ interface ResourceDao {
     @Query("SELECT COUNT(*) FROM resources") suspend fun count(): Int
     @Query("DELETE FROM resources WHERE expiresAt <= :now AND owned = 0") suspend fun prune(now: Long)
     @Query("DELETE FROM resources WHERE eventId IN (SELECT eventId FROM resources WHERE owned = 1 AND expiresAt <= :now ORDER BY createdAt DESC LIMIT -1 OFFSET 100)") suspend fun pruneOwned(now: Long)
-    @Query("SELECT * FROM resources WHERE publicSharing = 1 AND expiresAt > :now AND NOT EXISTS (SELECT 1 FROM resource_deliveries d WHERE d.packetId = resources.packetId AND d.peerNodeId = :peer) ORDER BY createdAt LIMIT 100")
+    @Query("SELECT * FROM resources WHERE publicSharing = 1 AND expiresAt > :now AND (kind = 3 OR NOT EXISTS (SELECT 1 FROM resources newer WHERE newer.entityId = resources.entityId AND (newer.createdAt > resources.createdAt OR (newer.createdAt = resources.createdAt AND newer.eventId > resources.eventId)))) AND NOT EXISTS (SELECT 1 FROM resource_deliveries d WHERE d.packetId = resources.packetId AND d.peerNodeId = :peer) ORDER BY createdAt LIMIT 100")
     suspend fun outgoing(now: Long, peer: String): List<ResourceRow>
     @Query("SELECT packetId FROM resources WHERE publicSharing = 1 AND expiresAt > :now") suspend fun active(now: Long): List<String>
-    @Query("SELECT * FROM resources WHERE publicSharing = 1 AND cloudConsent = 1 AND cloudAck IS NULL AND cloudError IS NULL AND expiresAt > :now ORDER BY createdAt LIMIT 20") suspend fun uploads(now: Long): List<ResourceRow>
+    @Query("SELECT * FROM resources WHERE publicSharing = 1 AND cloudConsent = 1 AND cloudAck IS NULL AND cloudError IS NULL AND expiresAt > :now AND (kind = 3 OR NOT EXISTS (SELECT 1 FROM resources newer WHERE newer.entityId = resources.entityId AND (newer.createdAt > resources.createdAt OR (newer.createdAt = resources.createdAt AND newer.eventId > resources.eventId)))) ORDER BY createdAt LIMIT 20") suspend fun uploads(now: Long): List<ResourceRow>
     @Query("UPDATE resources SET cloudAck = :ack, cloudError = NULL WHERE eventId = :id AND cloudAck IS NULL") suspend fun acknowledge(id: String, ack: ByteArray)
     @Query("UPDATE resources SET cloudError = :code WHERE eventId = :id AND cloudAck IS NULL") suspend fun reject(id: String, code: String)
     @Query("UPDATE resources SET cloudError = NULL WHERE expiresAt > :now") suspend fun retry(now: Long)

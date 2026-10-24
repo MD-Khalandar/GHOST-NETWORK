@@ -56,5 +56,22 @@ test("signed helper/supply uploads deduplicate, preserve owner identity, and pro
       assert.equal((await app.inject({ url })).statusCode, 401);
       assert.equal((await app.inject({ url, headers: gatewayHeaders })).statusCode, 403);
     }
+    const lateId = randomUUID();
+    const lateBase = make(5, { ...offerData, offer_id: lateId });
+    const editData = { offer_id: lateId, owner_node_id: Buffer.from(origin.nodeId, "hex"), state: 1, quantity: 8,
+      unit: "litres", coarse_area: "East gate", available_until_ms: now + 50000, consent,
+      original_offer_envelope: Buffer.from(lateBase.immutable_envelope_bytes, "base64url"),
+      original_offer_signature: Buffer.from(lateBase.signature, "base64url") };
+    const edited = make(6, editData, now - 500);
+    const withdrawn = make(6, { ...editData, state: 2 }, now);
+    assert.equal((await upload([withdrawn])).statusCode, 200); // proof permits update before creation
+    assert.equal((await upload([lateBase, edited])).statusCode, 200);
+    const latest = (await app.inject({ url: "/v1/dashboard/offers", headers: viewerHeaders })).json().items.find((item: any) => item.offer_id === lateId);
+    assert.equal(latest.state, 2); assert.equal(latest.quantity, 8); assert.equal(latest.coarse_area, "East gate");
+    assert.equal((await pg.query("SELECT * FROM resource_offer_latest WHERE entity_id = $1", [lateId])).rows.length, 1);
+    assert.equal((await upload([withdrawn])).json().results[0].status, "DUPLICATE");
+    assert.equal((await upload([make(6, { ...editData, owner_node_id: Buffer.from(stranger.nodeId, "hex") }, now, stranger)])).json().code, "INVALID_ACTOR");
+    assert.equal((await upload([make(6, { ...editData, original_offer_signature: Buffer.alloc(70, 1) }, now)])).json().code, "BAD_SIGNATURE");
+    assert.equal((await upload([make(6, { ...editData, available_until_ms: now + 60000 }, now)])).json().code, "INVALID_PAYLOAD");
   } finally { await app.close(); }
 });

@@ -236,6 +236,39 @@ class LocalSosRepositoryTest {
         assertNull(restoredDb.sos().delivery(first.packetId, c.nodeId.value))
     }
 
+    @Test fun offerEditsAndWithdrawalsAreOwnerSignedAndCannotBeUndoneByLateOriginals() = runBlocking {
+        val owner = key(); val carrier = key(); var clock = time
+        val ownedDb = open(); val source = LocalSosRepository(ownedDb, { owner }, { clock })
+        val receiverName = "offer-edits-${UUID.randomUUID()}.db"; val receivedDb = open(receiverName)
+        val receiver = LocalSosRepository(receivedDb, { carrier }, { clock })
+        source.resources.publish(ResourceDraft(supply = true, quantity = "20", unit = "litres", cloudConsent = true)).getOrThrow()
+        val original = source.resources.outgoing(carrier.nodeId.value, emptySet()).single()
+        val draft = source.resources.observeSummaries().first().single().editDraft!!
+        clock += 1000
+        source.resources.publish(draft.copy(quantity = "8", area = "East gate")).getOrThrow()
+        assertTrue(source.resources.publish(draft.copy(quantity = "7")).isFailure) // stale editor
+        val update = source.resources.outgoing(carrier.nodeId.value, emptySet()).single { it.kind == 6 }
+        receiver.resources.receive(WireCodec.decode(update.wire), owner.nodeId.value) // original has not arrived
+        assertEquals(8, receiver.resources.observeOffers().first().single().quantity)
+        assertEquals(original.expiresAt, update.expiresAt)
+        val editor = source.resources.observeSummaries().first().single().editDraft!!
+        clock += 1000
+        source.resources.updateOffer(editor, withdraw = true).getOrThrow()
+        val withdrawal = source.resources.outgoing(carrier.nodeId.value, emptySet()).last { it.kind == 6 }
+        receiver.resources.receive(WireCodec.decode(withdrawal.wire), owner.nodeId.value)
+        receiver.resources.receive(WireCodec.decode(original.wire), owner.nodeId.value)
+        receiver.resources.receive(WireCodec.decode(update.wire), owner.nodeId.value)
+        assertEquals(OfferState.WITHDRAWN, receiver.resources.observeOffers().first().single().state)
+        assertNull(source.resources.observeSummaries().first().single().editDraft)
+        assertTrue(receiver.resources.updateOffer(editor, withdraw = true).isFailure) // another phone cannot edit
+        receivedDb.close(); databases.remove(receivedDb)
+        val reopened = LocalSosRepository(open(receiverName), { carrier }, { clock })
+        assertEquals(OfferState.WITHDRAWN, reopened.resources.observeOffers().first().single().state)
+        clock = original.expiresAt
+        assertTrue(source.resources.outgoing(carrier.nodeId.value, emptySet()).isEmpty())
+        assertTrue(source.resources.updateOffer(editor, withdraw = true).isFailure)
+    }
+
     @Test fun resourcePublicationsSurviveRestartValidateConsentAndDeduplicateSupplySaves() = runBlocking {
         val owner = key(); val named = "resources-${UUID.randomUUID()}.db"; val db = open(named)
         var resourceTime = time

@@ -122,7 +122,14 @@ Supply offers also appear in Requests. Existing Room data upgrades without reset
 The dashboard's **Helpers** and **Supplies** tabs show uploaded owner-reported
 availability with expiry and pagination. A newer shared volunteer report replaces
 the previous profile, including marking yourself unavailable. Each supply save is
-a separate offer; supply editing/withdrawal and matching/approval are next work.
+a separate offer. Under your saved supplies, **Edit offer** changes quantity,
+unit or area and **Withdraw offer** marks it unavailable. Edits keep the original
+offer ID, type, expiry and sharing choices. Latest changes relay and upload with
+their own verified receipts; a local withdrawal is still waiting until it reaches
+other phones/server. Updates carry the original ownership proof, so arrival order
+doesn't revive withdrawn stock. All phones carrying edits need the updated app;
+offline/older copies may remain stale until updated or expired. Matching/approval
+is next work.
 
 ## Server
 

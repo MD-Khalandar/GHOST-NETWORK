@@ -6,15 +6,17 @@ export interface ResourceRecord {
   owner_node_id: string; offer_id?: string; display_name?: string | null; coarse_area: string | null;
   help_types?: number[]; availability?: number; resource_type?: number; quantity?: number | null; unit?: string | null;
   available_until_ms?: number; expires_at_ms: number; received_at_ms: number; created_at_ms: number; cloud_revision: number;
+  state?: number;
 }
 export const helpNames = ["Other", "First aid", "Transport", "Search", "Shelter", "Food", "Water", "Other help"];
 export const supplyNames = ["Other", "Water", "Food", "Shelter", "Medical supplies", "Transport", "Other supplies"];
 
 export function ResourceCard({ item, kind, now }: { item: ResourceRecord; kind: "helpers" | "offers"; now: number }) {
   const expired = Math.min(item.expires_at_ms, item.available_until_ms ?? item.expires_at_ms) <= now;
-  const available = !expired && (kind === "offers" || item.availability === 1);
+  const withdrawn = kind === "offers" && item.state === 2;
+  const available = !withdrawn && !expired && (kind === "offers" || item.availability === 1);
   return <article className="resource-card">
-    <span className={`badge ${available ? "received" : "expired"}`}>{expired ? "Expired" : available ? "Reported available" : "Reported unavailable / unknown"}</span>
+    <span className={`badge ${available ? "received" : "expired"}`}>{withdrawn ? "Withdrawn" : expired ? "Expired" : available ? "Reported available" : "Reported unavailable / unknown"}</span>
     <h2>{kind === "helpers" ? item.display_name || `Helper ${item.owner_node_id.slice(0, 8)}` : supplyNames[item.resource_type ?? 0]}</h2>
     <p>{kind === "helpers" ? item.help_types?.map(type => helpNames[type]).join(" · ") :
       item.quantity === null ? "Quantity not provided" : `${item.quantity} ${item.unit || "units (unspecified)"}`}</p>

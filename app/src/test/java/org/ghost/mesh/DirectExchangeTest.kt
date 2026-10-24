@@ -130,6 +130,23 @@ class DirectExchangeTest {
         assertEquals(3, runBlocking { a.db.resources().count() })
         assertEquals(1, sends("A", "B", 3)); assertEquals(1, sends("A", "B", 5))
         assertEquals(2, runBlocking { b.db.resources().count() })
+        runBlocking {
+            val edit = a.repo.resources.observeSummaries().first().single { !it.helper && it.editDraft?.publicSharing == true }.editDraft!!
+            a.repo.resources.publish(edit.copy(quantity = "8")).getOrThrow()
+            val withdrawal = a.repo.resources.observeSummaries().first().single { !it.helper && it.editDraft?.publicSharing == true }.editDraft!!
+            a.repo.resources.updateOffer(withdrawal, withdraw = true).getOrThrow()
+        }
+        until { g.repo.resources.observeOffers().first().single().state == OfferState.WITHDRAWN }
+        runBlocking {
+            for (report in g.repo.cloudOutgoing()) {
+                val ack = SignedPackets.create(cloud, 7, CloudAckV1.newBuilder().setOriginEventId(report.eventId)
+                    .setStatusValue(1).setCloudRevision(2).setReceivedAtMs(baseTime).build().toByteString(), baseTime,
+                    destination = a.key.nodeId.value)
+                g.repo.acceptCloudAck(report.eventId, ack, pin, 2)
+            }
+        }
+        until { a.repo.resources.observeSummaries().first().single { it.withdrawn }.cloudState == LocalCloudState.ACCEPTED }
+        assertTrue(sends("A", "B", 6) > 0)
     }
 
     @Test fun signedTopologyCrossesThreePhonesWithoutBecomingSosOrSurvivingDisconnect() = runTest {

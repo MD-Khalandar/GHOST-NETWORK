@@ -87,6 +87,7 @@ message PeerHelloV1 {
   bytes reply_to = 2;
   bool supports_topology = 3; // send graph updates only to supporting peers
   bool supports_resources = 4; // helper/supply publications (older peers still relay SOS)
+  bool supports_offer_updates = 5;
 }
 
 enum ConnectivityStatusV1 {
@@ -159,6 +160,9 @@ message OfferUpdateV1 {
   optional int64 available_until_ms = 7;
   optional string note = 8;
   optional ConsentV1 consent = 9;
+  // A complete edit carries the original signed publication, so it can arrive first.
+  bytes original_offer_envelope = 10;
+  bytes original_offer_signature = 11;
 }
 
 message CloudAckV1 {

@@ -68,12 +68,18 @@ export async function initializeDatabase(database: Database): Promise<void> {
     await connection.query("CREATE INDEX IF NOT EXISTS sync_uploads_created_at ON sync_uploads(created_at)");
     await connection.query(`CREATE TABLE IF NOT EXISTS resource_events (
       event_id UUID PRIMARY KEY, packet_id UUID NOT NULL UNIQUE,
-      kind SMALLINT NOT NULL CHECK (kind IN (3,5)), entity_id TEXT NOT NULL, owner_node_id TEXT NOT NULL,
+      kind SMALLINT NOT NULL CHECK (kind IN (3,5,6)), entity_id TEXT NOT NULL, owner_node_id TEXT NOT NULL,
       immutable_envelope BYTEA NOT NULL, origin_signature BYTEA NOT NULL, data JSONB NOT NULL,
       created_at_ms BIGINT NOT NULL, expires_at_ms BIGINT NOT NULL, received_at_ms BIGINT NOT NULL,
       cloud_revision BIGINT NOT NULL UNIQUE, cloud_ack JSONB NOT NULL
     )`);
     await connection.query("CREATE UNIQUE INDEX IF NOT EXISTS resource_offer_id ON resource_events(entity_id) WHERE kind = 5");
     await connection.query("CREATE INDEX IF NOT EXISTS resource_latest ON resource_events(kind, entity_id, created_at_ms DESC, event_id DESC)");
+    await connection.query("ALTER TABLE resource_events DROP CONSTRAINT IF EXISTS resource_events_kind_check");
+    await connection.query("ALTER TABLE resource_events ADD CONSTRAINT resource_events_kind_check CHECK (kind IN (3,5,6))");
+    // Stable read surface for matching: one effective version per offer, including withdrawals.
+    await connection.query(`CREATE OR REPLACE VIEW resource_offer_latest AS
+      SELECT DISTINCT ON (entity_id) * FROM resource_events WHERE kind IN (5,6)
+      ORDER BY entity_id, created_at_ms DESC, event_id DESC`);
   });
 }

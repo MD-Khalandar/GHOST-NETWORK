@@ -68,7 +68,8 @@ export class SosStore {
       const ordered = packets.map((packet, index) => ({ packet, index }))
         .sort((a, b) => `${a.packet.envelope.kind}:${a.packet.payload.request_id ?? a.packet.payload.offer_id ?? a.packet.envelope.sender_node_id.toString("hex")}`
           .localeCompare(`${b.packet.envelope.kind}:${b.packet.payload.request_id ?? b.packet.payload.offer_id ?? b.packet.envelope.sender_node_id.toString("hex")}`));
-      for (const id of [...new Set(packets.flatMap(packet => [packet.envelope.event_id, packet.envelope.packet_id]))].sort())
+      for (const id of [...new Set(packets.flatMap(packet => [packet.envelope.event_id, packet.envelope.packet_id,
+        ...(packet.payload.offer_id ? [`offer:${packet.payload.offer_id}`] : [])]))].sort())
         await connection.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [id]);
       for (const { packet: verified, index } of ordered) {
         const { envelope: e, payload: p, packet } = verified;
@@ -86,7 +87,7 @@ export class SosStore {
           packetId: randomUUID(), eventId: randomUUID(), createdAtMs: received,
           expiresAtMs: received + 86400000, destinationNodeId: e.sender_node_id.toString("hex"),
         });
-        if (e.kind === 3 || e.kind === 5) {
+        if ([3, 5, 6].includes(e.kind)) {
           const saved = await saveResource(connection, verified, bytes, revision, received, ack);
           response.results[index] = { event_id: e.event_id, status: saved.duplicate ? "DUPLICATE" : "ACCEPTED", cloud_revision: Number(saved.row.cloud_revision) };
           response.packets[index] = saved.row.cloud_ack;

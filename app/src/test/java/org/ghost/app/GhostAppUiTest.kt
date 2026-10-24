@@ -32,6 +32,26 @@ import org.robolectric.annotation.GraphicsMode
 class GhostAppUiTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
 
+    @Test fun ownedSupplyCanBeEditedAndWithdrawnWithoutCreatingAnotherOffer() {
+        val draft = org.ghost.domain.model.ResourceDraft(supply = true, quantity = "10", unit = "litres", publicSharing = true,
+            cloudConsent = true, editing = true, baseEventId = "latest-version")
+        val resource = org.ghost.domain.model.ResourceSummary(draft.id, "a".repeat(64), true, false, "Water · 10 litres", "Station",
+            true, Long.MAX_VALUE, LocalCloudState.QUEUED, editDraft = draft)
+        var saved: org.ghost.domain.model.ResourceDraft? = null
+        var withdrawn: org.ghost.domain.model.ResourceDraft? = null
+        val actions = LocalActions({}, { _, done -> done() }, { _, _ -> }, {}, {}, {},
+            publishResource = { value, done -> saved = value; done() }, withdrawResource = { value, done -> withdrawn = value; done() })
+        compose.setContent { GhostTheme { org.ghost.feature.home.ResourceFormDialog(LocalUiState(resources = listOf(resource)), actions, {}) } }
+        compose.onNodeWithText("Edit offer").performScrollTo().performClick()
+        compose.onNodeWithText("Edit supply offer").assertIsDisplayed()
+        compose.onNodeWithText("Quantity (optional)").performScrollTo().performTextReplacement("7")
+        compose.onNodeWithText("Share with nearby phones").performScrollTo().assertIsNotEnabled().assertIsOn()
+        compose.onNodeWithText("Save changes").performClick()
+        assertEquals(draft.id, saved!!.id); assertEquals("7", saved!!.quantity); assertTrue(saved!!.editing)
+        compose.onNodeWithText("Withdraw offer").performScrollTo().performClick()
+        assertEquals(draft.id, withdrawn!!.id); assertEquals(draft.baseEventId, withdrawn!!.baseEventId)
+    }
+
     @Test fun offerHelpOnlyPublishesOnSaveAndKeepsSharingChoicesIndependent() {
         var saved: org.ghost.domain.model.ResourceDraft? = null
         val actions = LocalActions({}, { _, done -> done() }, { _, _ -> }, {}, {}, {},

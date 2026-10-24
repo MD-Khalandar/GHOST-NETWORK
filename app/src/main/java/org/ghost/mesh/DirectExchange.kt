@@ -42,6 +42,7 @@ class DirectExchange(private val scope: CoroutineScope, private val transport: G
         var sendingReports = false
         var supportsTopology = false
         var supportsResources = false
+        var supportsOfferUpdates = false
         var topologySending: Job? = null
         val topologySent = mutableMapOf<String, Pair<String, Int>>()
         val topologyLastSent = mutableMapOf<String, Long>()
@@ -175,7 +176,7 @@ class DirectExchange(private val scope: CoroutineScope, private val transport: G
     private suspend fun sendHello(peer: PeerHandle, session: Session, replyTo: ByteString = ByteString.EMPTY) {
         val packet = withContext(Dispatchers.IO) {
             SignedPackets.create(identity(), 13, PeerHelloV1.newBuilder().setChallenge(ByteString.copyFrom(session.challenge))
-                .setReplyTo(replyTo).setSupportsTopology(true).setSupportsResources(true).build().toByteString(), now(), ttl = 300000)
+                .setReplyTo(replyTo).setSupportsTopology(true).setSupportsResources(true).setSupportsOfferUpdates(true).build().toByteString(), now(), ttl = 300000)
         }
         control(peer, session, packet)
     }
@@ -192,6 +193,7 @@ class DirectExchange(private val scope: CoroutineScope, private val transport: G
             session.helloNode = node
             session.supportsTopology = hello.supportsTopology
             session.supportsResources = hello.supportsResources
+            session.supportsOfferUpdates = hello.supportsOfferUpdates
             if (hello.replyTo.isEmpty) {
                 if (!session.replied) { session.replied = true; sendHello(peer, session, hello.challenge) }
             } else {
@@ -209,12 +211,12 @@ class DirectExchange(private val scope: CoroutineScope, private val transport: G
         }
         val node = session.nodeId
         if (node == null) {
-            require(envelope.kindValue in setOf(1, 3, 5, 7, 12, 15) && session.pending.size < 4)
+            require(envelope.kindValue in setOf(1, 3, 5, 6, 7, 12, 15) && session.pending.size < 4)
             session.pending.add(packet); return
         }
         when (envelope.kindValue) {
-            3, 5 -> {
-                require(session.supportsResources)
+            3, 5, 6 -> {
+                require(session.supportsResources && (envelope.kindValue != 6 || session.supportsOfferUpdates))
                 val receipt = repository.resources.receive(packet, node)
                 if (!current(peer, session)) return
                 session.confirmed.add(envelope.packetId)
@@ -333,6 +335,7 @@ class DirectExchange(private val scope: CoroutineScope, private val transport: G
                         val returns = if (cloudKey != null) repository.outgoingCloudReturns(session.nodeId!!, excluded)
                             .map { Outgoing(it.packetId, it.wire, true) } else emptyList()
                         val resources = if (session.supportsResources) repository.resources.outgoing(session.nodeId!!, excluded)
+                            .filter { it.kind != 6 || session.supportsOfferUpdates }
                             .map { Outgoing(it.packetId, it.wire, false) } else emptyList()
                         // Interleave return traffic with SOS so neither queue starves the other.
                         val candidates = buildList {

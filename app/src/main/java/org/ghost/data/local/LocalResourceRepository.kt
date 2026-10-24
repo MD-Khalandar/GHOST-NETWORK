@@ -16,31 +16,37 @@ class LocalResourceRepository(private val db: GhostDatabase, private val identit
     fun observeRows() = dao.observe()
     private fun timedRows() = combine(dao.observe(), flow { while (true) { emit(now()); delay(30000) } }) { rows, time -> rows to time }
     fun observeSummaries(): Flow<List<ResourceSummary>> = timedRows().map { (rows, time) ->
-        rows.distinctBy { it.kind to it.entityId }.map { row ->
+        rows.distinctBy { (if (it.kind == 3) "helper:" else "offer:") + it.entityId }.map { row ->
             val data = envelope(row).payloadBytes
+            val offer = if (row.kind != 3) offer(row) else null
+            val withdrawn = row.kind == 6 && OfferUpdateV1.parseFrom(data).stateValue == 2
             val title = if (row.kind == 3) HelperProfilePublishV1.parseFrom(data).let {
                 (it.displayName.takeIf(String::isNotBlank) ?: "Helper") + " · " + it.helpTypesList.joinToString { type -> type.name.removePrefix("HELP_TYPE_").lowercase().replace('_', ' ') }
-            } else OfferPublishV1.parseFrom(data).let {
+            } else offer!!.let {
                 it.resourceType.name.removePrefix("RESOURCE_TYPE_").lowercase().replace('_', ' ') +
                     if (it.hasQuantity()) " · ${it.quantity} ${it.unit}" else ""
             }
-            val area = if (row.kind == 3) HelperProfilePublishV1.parseFrom(data).coarseArea else OfferPublishV1.parseFrom(data).coarseArea
-            val available = row.expiresAt > time && (row.kind != 3 || HelperProfilePublishV1.parseFrom(data).availabilityValue == 1)
+            val area = if (row.kind == 3) HelperProfilePublishV1.parseFrom(data).coarseArea else offer!!.coarseArea
+            val available = !withdrawn && row.expiresAt > time && (row.kind != 3 || HelperProfilePublishV1.parseFrom(data).availabilityValue == 1)
             ResourceSummary(row.entityId, row.owner, row.owned, row.kind == 3, title, area.takeIf(String::isNotBlank), available, row.expiresAt,
                 when { row.cloudAck != null -> LocalCloudState.ACCEPTED
                     !row.publicSharing || !row.cloudConsent -> LocalCloudState.NOT_SHARED
                     row.expiresAt <= time -> LocalCloudState.EXPIRED
                     row.cloudError != null -> LocalCloudState.REJECTED
-                    else -> LocalCloudState.QUEUED })
+                    else -> LocalCloudState.QUEUED }, withdrawn, if (row.owned && offer != null && available)
+                    ResourceDraft(row.entityId, supply = true, area = offer.coarseArea, resourceType = ResourceType.entries[offer.resourceTypeValue - 1],
+                        quantity = if (offer.hasQuantity()) offer.quantity.toString() else "", unit = offer.unit,
+                        publicSharing = row.publicSharing, cloudConsent = row.cloudConsent, editing = true, baseEventId = row.eventId) else null)
         }
     }.flowOn(Dispatchers.IO)
 
     override fun observeOffers(requestId: RequestId?): Flow<List<OfferSummary>> = timedRows().map { (rows, time) ->
-        rows.filter { it.kind == 5 }.distinctBy { it.entityId }.map { row ->
-            val p = OfferPublishV1.parseFrom(envelope(row).payloadBytes)
+        rows.filter { it.kind in setOf(5, 6) }.distinctBy { it.entityId }.map { row ->
+            val p = offer(row)
+            val withdrawn = row.kind == 6 && OfferUpdateV1.parseFrom(envelope(row).payloadBytes).stateValue == 2
             OfferSummary(OfferId(row.entityId), NodeId(row.owner), ResourceType.entries[p.resourceTypeValue - 1],
                 if (p.hasQuantity()) p.quantity else null, p.unit.takeIf(String::isNotBlank), p.coarseArea.takeIf(String::isNotBlank),
-                row.expiresAt, if (row.expiresAt <= time) OfferState.EXPIRED else OfferState.AVAILABLE, row.createdAt, row.expiresAt <= time)
+                row.expiresAt, if (withdrawn) OfferState.WITHDRAWN else if (row.expiresAt <= time) OfferState.EXPIRED else OfferState.AVAILABLE, row.createdAt, row.expiresAt <= time)
         }
     }.flowOn(Dispatchers.IO)
 
@@ -53,8 +59,41 @@ class LocalResourceRepository(private val db: GhostDatabase, private val identit
         else {
             if (draft.quantity.isNotBlank() && draft.quantity.toIntOrNull() !in 1..1000000)
                 return Result.failure(IllegalArgumentException("Enter a quantity between 1 and 1,000,000."))
+            if (draft.editing) return updateOffer(draft)
             publishOffer(OfferPublishPayload(OfferId(draft.id), owner, draft.resourceType, draft.quantity.toIntOrNull(),
                 draft.unit.trim().takeIf(String::isNotBlank), draft.area.trim().takeIf(String::isNotBlank), consent = consent))
+        }
+    }
+    suspend fun updateOffer(draft: ResourceDraft, withdraw: Boolean = false): Result<LocalPublishResult> = publishResult {
+        db.withTransaction {
+            val row = dao.entity(draft.id) ?: error("Offer not found.")
+            val key = identity()
+            require(row.kind in setOf(5, 6) && row.owned && row.owner == key.nodeId.value) { "Only the owner can change this offer." }
+            require(row.eventId == draft.baseEventId) { "This offer changed. Reopen it before saving." }
+            require(draft.publicSharing == row.publicSharing && draft.cloudConsent == row.cloudConsent) { "Sharing choices stay the same when editing an offer." }
+            require(row.expiresAt > now() && (row.kind != 6 || OfferUpdateV1.parseFrom(envelope(row).payloadBytes).stateValue != 2)) { "This offer is withdrawn or expired." }
+            require(withdraw || draft.quantity.isBlank() || draft.quantity.toIntOrNull() in 1..1000000) { "Enter a positive quantity up to 1,000,000." }
+            require(draft.unit.length <= 40 && draft.area.length <= 120)
+            val original = original(row)
+            val base = OfferPublishV1.parseFrom(original.first.payloadBytes)
+            require(draft.resourceType.ordinal + 1 == base.resourceTypeValue) { "Create a new offer to change its type." }
+            val current = offer(row)
+            val timestamp = maxOf(now(), row.createdAt + 1)
+            require(timestamp < row.expiresAt) { "This offer has expired." }
+            val p = OfferUpdateV1.newBuilder().setOfferId(row.entityId).setOwnerNodeId(base.ownerNodeId)
+                .setStateValue(if (withdraw) 2 else 1).setUnit(if (withdraw) current.unit else draft.unit.trim())
+                .setCoarseArea(if (withdraw) current.coarseArea else draft.area.trim()).setAvailableUntilMs(row.expiresAt)
+                .setConsent(base.consent).setOriginalOfferEnvelope(original.third)
+                .setOriginalOfferSignature(original.second)
+                .apply { if (withdraw && current.hasQuantity()) quantity = current.quantity
+                    else if (!withdraw) draft.quantity.toIntOrNull()?.let { quantity = it } }.build()
+            val packet = SignedPackets.create(key, 6, p.toByteString(), timestamp, ttl = row.expiresAt - timestamp)
+            if (row.publicSharing) PacketValidator().verify(packet, now())
+            val e = parse(packet)
+            dao.prune(now()); dao.pruneOwned(now()); require(dao.count() < 1000) { "Saved help queue is full." }
+            dao.insert(ResourceRow(e.eventId, e.packetId, row.entityId, 6, row.owner, true, row.publicSharing,
+                row.cloudConsent, timestamp, row.expiresAt, WireCodec.encode(packet)))
+            LocalPublishResult(e.eventId, row.publicSharing)
         }
     }
     override suspend fun publishHelper(payload: HelperProfilePublishPayload): Result<LocalPublishResult> = publishResult {
@@ -108,7 +147,9 @@ class LocalResourceRepository(private val db: GhostDatabase, private val identit
         dao.outgoing(now(), peer).filterNot { it.packetId in excluded }.mapNotNull { prepare(it, peer) }
     }
     suspend fun prepare(packetId: String, peer: String): ResourceRow? = withContext(Dispatchers.IO) {
-        if (dao.delivery(packetId, peer) != null) null else dao.packet(packetId)?.let { prepare(it, peer) }
+        if (dao.delivery(packetId, peer) != null) null else dao.packet(packetId)?.let {
+            if (it.kind != 3 && dao.entity(it.entityId)?.eventId != it.eventId) null else prepare(it, peer)
+        }
     }
     private fun prepare(row: ResourceRow, peer: String): ResourceRow? {
         val p = WireCodec.decode(row.wire)
@@ -118,24 +159,31 @@ class LocalResourceRepository(private val db: GhostDatabase, private val identit
     }
     suspend fun receive(packet: WirePacket, peer: String): ByteArray = withContext(Dispatchers.IO) {
         val verified = PacketValidator().verify(packet, now()); val e = verified.envelope
-        require(e.kindValue in setOf(3, 5) && packet.relay.hopCount > 0 && packet.relay.previousNodeId?.value == peer)
+        require(e.kindValue in setOf(3, 5, 6) && packet.relay.hopCount > 0 && packet.relay.previousNodeId?.value == peer)
         val owner = SigningIdentity.hex(e.senderNodeId.toByteArray()); val key = identity()
         val helper = verified.payload as? HelperProfilePublishV1
         val offer = verified.payload as? OfferPublishV1
+        val update = verified.payload as? OfferUpdateV1
+        require(update == null || !update.originalOfferEnvelope.isEmpty) { "Offer update needs its ownership proof." }
+        val base = offer ?: update?.let { OfferPublishV1.parseFrom(ImmutableEnvelopeV1.parseFrom(it.originalOfferEnvelope).payloadBytes) }
         require(helper == null || helper.helpTypesCount > 0)
         require(offer == null || !offer.hasQuantity() || offer.quantity > 0)
-        val entity = helper?.let { owner } ?: offer!!.offerId
-        val shared = helper?.consent ?: offer!!.consent
-        val expires = minOf(e.expiresAtMs, offer?.takeIf { it.hasAvailableUntilMs() }?.availableUntilMs ?: e.expiresAtMs)
+        val entity = helper?.let { owner } ?: base!!.offerId
+        val shared = helper?.consent ?: base!!.consent
+        val expires = minOf(e.expiresAtMs, base?.takeIf { it.hasAvailableUntilMs() }?.availableUntilMs ?: e.expiresAtMs)
         require(expires > now())
         val receipt = WireCodec.encode(SignedPackets.create(key, 12, DeliveryReceiptV1.newBuilder().setPacketId(e.packetId)
             .setRecipientNodeId(ByteString.copyFrom(WireCodec.bytes(key.nodeId.value))).setReceiptTypeValue(1).setObservedAtMs(now()).build().toByteString(), now(), destination = peer))
         db.withTransaction {
             require(db.sos().event(e.eventId) == null && db.sos().packet(e.packetId) == null && db.sos().cloudReturn(e.packetId) == null && db.sos().cloudReturnEvent(e.eventId) == null)
-            val old = dao.event(e.eventId) ?: dao.packet(e.packetId) ?: if (offer != null) dao.entity(entity) else null
+            val old = dao.event(e.eventId) ?: dao.packet(e.packetId)
             if (old != null) require(old.publicSharing && WireCodec.decode(old.wire).immutableEnvelopeBytesBase64 == packet.immutableEnvelopeBytesBase64) { "Conflicting help publication." }
             else {
                 require(owner != key.nodeId.value && peer != key.nodeId.value)
+                if (base != null) dao.entity(entity)?.let { known ->
+                    require(known.kind in setOf(5, 6) && known.owner == owner && original(known).third ==
+                        (update?.originalOfferEnvelope ?: ByteString.copyFrom(WireCodec.unbase64(packet.immutableEnvelopeBytesBase64, PacketValidator.MAX_ENVELOPE)))) { "Conflicting offer ownership." }
+                }
                 dao.prune(now()); require(dao.count() < 1000) { "Saved help queue is full." }
                 dao.insert(ResourceRow(e.eventId, e.packetId, entity, e.kindValue, owner, false, true, shared.cloudProcessingAllowed,
                     e.createdAtMs, expires, WireCodec.encode(packet)))
@@ -145,6 +193,20 @@ class LocalResourceRepository(private val db: GhostDatabase, private val identit
             val response = cached ?: receipt
             dao.saveDelivery(delivery.copy(receiptToPeer = response)); response
         }
+    }
+    private fun original(row: ResourceRow): Triple<ImmutableEnvelopeV1, ByteString, ByteString> {
+        val packet = WireCodec.decode(row.wire)
+        val e = parse(packet)
+        return if (row.kind == 5) Triple(e, ByteString.copyFrom(WireCodec.unbase64(packet.signature, 72)),
+            ByteString.copyFrom(WireCodec.unbase64(packet.immutableEnvelopeBytesBase64, PacketValidator.MAX_ENVELOPE)))
+        else OfferUpdateV1.parseFrom(e.payloadBytes).let { Triple(ImmutableEnvelopeV1.parseFrom(it.originalOfferEnvelope), it.originalOfferSignature, it.originalOfferEnvelope) }
+    }
+    private fun offer(row: ResourceRow): OfferPublishV1 {
+        val base = OfferPublishV1.parseFrom(original(row).first.payloadBytes)
+        if (row.kind == 5) return base
+        val update = OfferUpdateV1.parseFrom(envelope(row).payloadBytes)
+        return base.toBuilder().clearQuantity().apply { if (update.hasQuantity()) quantity = update.quantity }
+            .setUnit(update.unit).setCoarseArea(update.coarseArea).setAvailableUntilMs(update.availableUntilMs).build()
     }
     private fun envelope(row: ResourceRow) = parse(WireCodec.decode(row.wire))
     private fun parse(packet: WirePacket) = ImmutableEnvelopeV1.parseFrom(WireCodec.unbase64(packet.immutableEnvelopeBytesBase64, PacketValidator.MAX_ENVELOPE))

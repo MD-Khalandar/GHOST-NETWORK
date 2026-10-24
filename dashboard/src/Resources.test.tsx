@@ -11,4 +11,6 @@ test("helper and supplier cards escape owner text and distinguish expiry from co
   assert.match(html, /Reported available/); assert.match(html, /No reservation or assistance is confirmed/);
   const supply = renderToStaticMarkup(<ResourceCard item={{ ...helper, offer_id: "offer", resource_type: 1, quantity: 20, unit: "litres", available_until_ms: 2500 }} kind="offers" now={3000}/>);
   assert.match(supply, /Expired/); assert.match(supply, /20 litres/);
+  const withdrawn = renderToStaticMarkup(<ResourceCard item={{ ...helper, resource_type: 1, quantity: 8, state: 2 }} kind="offers" now={3000}/>);
+  assert.match(withdrawn, /Withdrawn/); assert.doesNotMatch(withdrawn, /Reported available/);
 });

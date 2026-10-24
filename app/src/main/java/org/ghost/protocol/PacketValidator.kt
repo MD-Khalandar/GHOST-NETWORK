@@ -95,7 +95,20 @@ class PacketValidator(
                 check(SigningIdentity.hex(p.ownerNodeId.toByteArray()) == sender, Rejection.INVALID_ACTOR)
                 check(uuid(p.offerId) && p.stateValue in 1..2 && (!p.hasQuantity() || p.quantity in 0..1000000) && text(p.unit, 40) && text(p.coarseArea, 120) && text(p.note, 500) &&
                     (!p.hasAvailableUntilMs() || p.availableUntilMs in (e.createdAtMs + 1)..MAX_SAFE))
-                owner(AuthorityKind.OFFER, p.offerId)
+                if (!p.originalOfferEnvelope.isEmpty || !p.originalOfferSignature.isEmpty) {
+                    check(p.originalOfferEnvelope.size() <= MAX_ENVELOPE && p.originalOfferSignature.size() <= 72)
+                    val originalEnvelope = ImmutableEnvelopeV1.parseFrom(p.originalOfferEnvelope)
+                    check(originalEnvelope.kindValue == 5 && p.hasUnit() && p.hasCoarseArea() && p.hasAvailableUntilMs() && p.hasConsent())
+                    val original = PacketValidator().verify(WirePacket(WireCodec.base64(p.originalOfferEnvelope.toByteArray()),
+                        WireCodec.base64(p.originalOfferSignature.toByteArray()), org.ghost.domain.model.RelayMetadata(4, 0)), now, forCloud)
+                    val offer = original.payload as OfferPublishV1
+                    check(offer.offerId == p.offerId && original.envelope.senderNodeId == e.senderNodeId, Rejection.INVALID_ACTOR)
+                    check(p.consent == offer.consent && e.createdAtMs > original.envelope.createdAtMs &&
+                        e.expiresAtMs <= original.envelope.expiresAtMs && p.availableUntilMs == minOf(
+                            original.envelope.expiresAtMs, if (offer.hasAvailableUntilMs()) offer.availableUntilMs else original.envelope.expiresAtMs) &&
+                        (p.stateValue != 1 || !p.hasQuantity() || p.quantity > 0))
+                    authority = Authority(sender, offer.consent.cloudProcessingAllowed)
+                } else owner(AuthorityKind.OFFER, p.offerId)
             }
             7 -> CloudAckV1.parseFrom(data).also { p ->
                 check(uuid(p.originEventId) && p.statusValue in 1..3 && p.cloudRevision in 1..MAX_SAFE && p.receivedAtMs in 1..(now + CLOCK_SKEW) && text(p.errorCode, 80))
