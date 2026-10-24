@@ -5,7 +5,7 @@ import test from "node:test";
 import { createPacket, decode, encode, PacketError, REJECTION_CODES, validatePacket, type AuthorityLookup, type WirePacket } from "./protocol.js";
 import { nodeId, SigningIdentity, verifySignature } from "./security.js";
 
-const fixture = JSON.parse(readFileSync(new URL("../../contracts/fixtures/cp02-signatures.json", import.meta.url), "utf8"));
+const fixture = JSON.parse(readFileSync(new URL("../../contracts/fixtures/security-vectors.json", import.meta.url), "utf8"));
 const identity = (data = fixture.device) => new SigningIdentity(createPrivateKey({ key: Buffer.from(data.test_only_private_pkcs8, "base64url"), format: "der", type: "pkcs8" }));
 const packet = (kind: number): WirePacket => structuredClone(fixture.packets.find((p: { kind: number }) => p.kind === kind).packet);
 const lookup: AuthorityLookup = (kind, id, version) => {

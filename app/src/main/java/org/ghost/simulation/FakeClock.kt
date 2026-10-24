@@ -5,7 +5,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /** Manually advanced fixture time. No wall clock, timers, or production clock contract. */
-class FakeClock(initialTimeMs: Long = Cp01Fixtures.REPORTED_AT_MS) {
+class FakeClock(initialTimeMs: Long = DemoData.REPORTED_AT_MS) {
     init {
         require(initialTimeMs >= 0) { "Fixture time must be non-negative" }
     }

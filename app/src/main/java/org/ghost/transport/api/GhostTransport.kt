@@ -39,8 +39,7 @@ data class SendResult(
 )
 
 /**
- * Boundary owned by A. Nearby, MeshEngine, and future adapters depend on this
- * contract rather than on one another's SDKs or persistence implementations.
+ * Nearby adapters and routing depend on this boundary rather than each other's internals.
  */
 interface GhostTransport {
     val id: String

@@ -5,7 +5,7 @@ import { buildApp } from "./app.js";
 import { ConfigValidationError, loadConfig } from "./config.js";
 import { parsePrincipals, tokenHash, type Principal } from "./security.js";
 
-const fixture = JSON.parse(readFileSync(new URL("../../contracts/fixtures/cp02-signatures.json", import.meta.url), "utf8"));
+const fixture = JSON.parse(readFileSync(new URL("../../contracts/fixtures/security-vectors.json", import.meta.url), "utf8"));
 const roles = ["gateway", "viewer", "operator"] as const;
 const tokens = { gateway: "g".repeat(43), viewer: "v".repeat(43), operator: "o".repeat(43) };
 const principals: Principal[] = roles.map(role => ({ id: role, role, token_sha256: tokenHash(tokens[role]), ...(role === "gateway" ? { gateway_node_id: "a".repeat(64) } : {}) }));
@@ -34,7 +34,7 @@ test("gateway/viewer/operator roles are isolated on every protected route", asyn
 
 test("upload verifies origin independently of gateway and never claims persistence", async () => {
   const app = buildApp({ principals, now: () => fixture.now_ms });
-  const payload = { idempotency_key: "test", packets: [fixture.packets[0].packet], receipts: [] };
+  const payload = { idempotency_key: "test", packets: [fixture.packets[0].packet] };
   const headers = { authorization: `Bearer ${tokens.gateway}` };
   try {
     // This is a relayed origin: the authenticated gateway is not required to be the origin signer.
@@ -55,7 +55,7 @@ test("malformed/duplicate role records and unsafe production config fail without
   assert.throws(() => parsePrincipals(JSON.stringify([principals[0], principals[0]])));
   assert.throws(() => parsePrincipals(JSON.stringify([{ ...principals[1], role: "admin" }])));
   assert.throws(() => parsePrincipals(JSON.stringify([{ ...principals[0], gateway_node_id: "fake" }])));
-  assert.throws(() => loadConfig({ GHOST_ENV: "production", GHOST_DATABASE_URL: "postgresql://localhost/ghost", GHOST_MODEL: "fake", GHOST_CLOUD_SIGNING_KEY_PEM: "private-secret" }), (error: unknown) => {
+  assert.throws(() => loadConfig({ GHOST_ENV: "production", GHOST_CLOUD_SIGNING_KEY_PEM: "private-secret" }), (error: unknown) => {
     assert.ok(error instanceof ConfigValidationError); assert.doesNotMatch(error.message, /private-secret/); return true;
   });
 });

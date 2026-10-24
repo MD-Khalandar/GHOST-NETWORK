@@ -1,7 +1,6 @@
 package org.ghost.security
 
 import com.google.protobuf.ByteString
-import java.io.File
 import java.security.KeyFactory
 import java.security.spec.PKCS8EncodedKeySpec
 import kotlinx.serialization.json.*
@@ -15,7 +14,7 @@ import org.junit.Test
 /** Actual host JCA crypto and generated protobuf; not Android Keystore/hardware evidence. */
 class PacketValidatorTest {
     private val json = Json { explicitNulls = false }
-    private val fixture = checkNotNull(javaClass.classLoader?.getResourceAsStream("cp02-signatures.json"))
+    private val fixture = checkNotNull(javaClass.classLoader?.getResourceAsStream("security-vectors.json"))
         .bufferedReader().use { json.parseToJsonElement(it.readText()).jsonObject }
     private val now = fixture.getValue("now_ms").jsonPrimitive.long
     private val device = fixture.getValue("device").jsonObject
@@ -106,12 +105,9 @@ class PacketValidatorTest {
         reject(Rejection.CONSENT_REQUIRED) { validator.verify(WireCodec.sign(identity(), hidden), now, forCloud = true) }
     }
 
-    @Test fun hostSignedPacketIsAvailableForTheServerInteroperabilityCheck() {
+    @Test fun signedBytesSurviveRelayMetadataChanges() {
         val signed = WireCodec.sign(identity(), validator.verify(packet(1), now).envelope)
         validator.verify(signed, now)
-        val artifact = File("build/reports/cp02/android-signature.json")
-        checkNotNull(artifact.parentFile).mkdirs()
-        artifact.writeText(json.encodeToString(signed))
         val relayed = signed.copy(relay = signed.relay.copy(remainingHops = 3, hopCount = 1, previousNodeId = org.ghost.domain.model.NodeId("a".repeat(64))))
         validator.verify(relayed, now)
         assertEquals(signed.signature, relayed.signature)

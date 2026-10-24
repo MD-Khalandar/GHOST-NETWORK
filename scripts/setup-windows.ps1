@@ -1,7 +1,7 @@
 # Requires Windows x64 and PowerShell 5.1+. Installs tools locally, without admin.
 # Android Studio is optional; use its SDK/Device Manager to add an emulator.
 [CmdletBinding()]
-param([switch]$WithModel)
+param()
 $ErrorActionPreference = 'Stop'
 if ($env:OS -ne 'Windows_NT' -or [Environment]::Is64BitOperatingSystem -eq $false -or
     $env:PROCESSOR_ARCHITECTURE -eq 'ARM64' -or $env:PROCESSOR_ARCHITEW6432 -eq 'ARM64') {
@@ -85,11 +85,6 @@ if (Test-Path "$toolsRoot\bin\android.bat") {
 }
 foreach ($sdkPackage in @('platform-tools', 'platforms\android-36', 'build-tools\36.0.0')) {
     if (-not (Test-Path "$env:ANDROID_HOME\$sdkPackage\source.properties")) { throw "Missing SDK package: $sdkPackage" }
-}
-if ($WithModel) {
-    $modelRoot = Join-Path $projectRoot '.local\models'
-    New-Item -ItemType Directory -Force $modelRoot | Out-Null
-    Get-VerifiedDownload 'https://huggingface.co/litert-community/Qwen3-0.6B/resolve/e6687177e00897731e7716267eebd4eba0dde7c2/Qwen3-0.6B.litertlm' "$modelRoot\Qwen3-0.6B.litertlm" 'c5f39b4191926786c3e6668b62af4d6eb15248dfc7a5348252a9b406f33f2108'
 }
 Write-Host 'Setup complete. From the project root, run:'
 Write-Host '  . .\scripts\env.ps1'

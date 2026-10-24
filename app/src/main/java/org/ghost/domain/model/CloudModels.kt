@@ -7,8 +7,6 @@ import kotlinx.serialization.Serializable
 data class SyncUploadRequest(
     @SerialName("idempotency_key") val idempotencyKey: String,
     val packets: List<WirePacket>,
-    // CP02: legacy field stays empty. Receipts must be signed packets in packets.
-    val receipts: List<DeliveryReceiptPayload> = emptyList(),
 )
 
 @Serializable
@@ -52,31 +50,6 @@ data class DashboardSosSummary(
 )
 
 @Serializable
-data class DashboardSosPage(
-    val items: List<DashboardSosSummary>,
-    @SerialName("next_cursor") val nextCursor: String,
-    @SerialName("server_time_ms") val serverTimeMs: Long,
-)
-
-@Serializable
-data class HelperSummary(
-    @SerialName("owner_node_id") val ownerNodeId: NodeId,
-    @SerialName("display_name") val displayName: String? = null,
-    @SerialName("coarse_area") val coarseArea: String? = null,
-    @SerialName("help_types") val helpTypes: List<HelpType>,
-    val availability: HelperAvailability,
-    @SerialName("updated_at_ms") val updatedAtMs: Long,
-    val stale: Boolean,
-)
-
-@Serializable
-data class HelperPage(
-    val items: List<HelperSummary>,
-    @SerialName("next_cursor") val nextCursor: String,
-    @SerialName("server_time_ms") val serverTimeMs: Long,
-)
-
-@Serializable
 data class OfferSummary(
     @SerialName("offer_id") val offerId: OfferId,
     @SerialName("owner_node_id") val ownerNodeId: NodeId,
@@ -88,44 +61,6 @@ data class OfferSummary(
     val state: OfferState,
     @SerialName("updated_at_ms") val updatedAtMs: Long,
     val stale: Boolean,
-)
-
-@Serializable
-data class OfferPage(
-    val items: List<OfferSummary>,
-    @SerialName("next_cursor") val nextCursor: String,
-    @SerialName("server_time_ms") val serverTimeMs: Long,
-)
-
-@Serializable
-enum class ProposalState {
-    DRAFT,
-    AWAITING_OPERATOR,
-    APPROVED,
-    REJECTED,
-    DECLINED,
-    CONFIRMED,
-    STALE,
-}
-
-@Serializable
-data class ProposalSummary(
-    @SerialName("proposal_id") val proposalId: ProposalId,
-    val version: Int,
-    @SerialName("request_id") val requestId: RequestId,
-    @SerialName("offer_id") val offerId: OfferId,
-    val state: ProposalState,
-    val explanation: String? = null,
-    @SerialName("created_at_ms") val createdAtMs: Long,
-    @SerialName("approval_id") val approvalId: ApprovalId? = null,
-)
-
-@Serializable
-data class DashboardSosDetail(
-    val request: DashboardSosSummary,
-    val offers: List<OfferSummary>,
-    val proposals: List<ProposalSummary>,
-    val receipts: List<DeliveryReceiptPayload>,
 )
 
 @Serializable
@@ -148,65 +83,3 @@ enum class CloudCoordinationStatus {
     ALLOCATION_CONFIRMED,
     FAILED,
 }
-
-@Serializable
-enum class RunState {
-    QUEUED,
-    RUNNING,
-    WAITING_FOR_OPERATOR,
-    WAITING_FOR_OWNER,
-    REPLAN_PENDING,
-    COMPLETE,
-    NO_MATCH,
-    FAILED,
-    TIMED_OUT,
-}
-
-@Serializable
-data class RunSummary(
-    @SerialName("run_id") val runId: String,
-    @SerialName("request_id") val requestId: RequestId,
-    val state: RunState,
-    @SerialName("model_provider") val modelProvider: String? = null,
-    @SerialName("model_name") val modelName: String? = null,
-    @SerialName("snapshot_revision") val snapshotRevision: Long,
-    @SerialName("created_at_ms") val createdAtMs: Long,
-)
-
-@Serializable
-data class RunPage(
-    val items: List<RunSummary>,
-    @SerialName("next_cursor") val nextCursor: String,
-    @SerialName("server_time_ms") val serverTimeMs: Long,
-)
-
-@Serializable
-data class ProposalDecisionRequest(
-    val version: Int,
-    @SerialName("idempotency_key") val idempotencyKey: String,
-    val note: String? = null,
-)
-
-@Serializable
-enum class ProposalDecisionOutcome {
-    APPROVED,
-    REJECTED,
-    ALREADY_APPLIED,
-}
-
-@Serializable
-data class ProposalDecisionResponse(
-    @SerialName("proposal_id") val proposalId: ProposalId,
-    val version: Int,
-    val outcome: ProposalDecisionOutcome,
-    @SerialName("cloud_revision") val cloudRevision: Long,
-    @SerialName("outgoing_packet_ids") val outgoingPacketIds: List<PacketId> = emptyList(),
-)
-
-@Serializable
-data class ApiError(
-    val code: String,
-    val message: String,
-    val retryable: Boolean,
-    @SerialName("request_id") val requestId: String? = null,
-)

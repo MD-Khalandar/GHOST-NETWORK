@@ -1,6 +1,0 @@
-interface:
-  display_name: "GHOST Offline Data"
-  short_description: "Build Room repositories and durable offline state"
-
-policy:
-  allow_implicit_invocation: true

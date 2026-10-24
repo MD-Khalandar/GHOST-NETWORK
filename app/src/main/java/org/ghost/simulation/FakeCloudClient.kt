@@ -38,12 +38,12 @@ class FakeCloudClient(private val clock: FakeClock) : GatewayClient {
     }
 
     suspend fun enqueueUploadResult(request: SyncUploadRequest, result: Result<SyncUploadResponse>) = mutex.withLock {
-        uploads.add(request.copy(packets = request.packets.snapshot(), receipts = request.receipts.snapshot()),
+        uploads.add(request.copy(packets = request.packets.snapshot()),
             result.map { it.copy(results = it.results.snapshot()) })
     }
 
     suspend fun enqueueDownloadResult(cursor: String?, limit: Int, result: Result<SyncDownloadResponse>) = mutex.withLock {
-        require(limit in 1..100) { "CP01 download limit must be 1..100" }
+        require(limit in 1..100) { "Demo download limit must be 1..100" }
         result.getOrNull()?.let { require(it.packets.size <= limit) { "Fixture page exceeds its requested limit" } }
         downloads.add(FakeDownloadQuery(cursor, limit), result.map { it.copy(packets = it.packets.snapshot()) })
     }
@@ -53,7 +53,7 @@ class FakeCloudClient(private val clock: FakeClock) : GatewayClient {
     }
 
     override suspend fun upload(request: SyncUploadRequest): Result<SyncUploadResponse> = mutex.withLock {
-        val copy = request.copy(packets = request.packets.snapshot(), receipts = request.receipts.snapshot())
+        val copy = request.copy(packets = request.packets.snapshot())
         mutableUploadCalls.value = (uploadCalls.value + FakeCloudCall(copy, clock.nowMs)).snapshot()
         unavailable()?.let { return@withLock Result.failure(it) }
         acceptedUploads[copy.idempotencyKey]?.let { (previous, response) ->
@@ -68,7 +68,7 @@ class FakeCloudClient(private val clock: FakeClock) : GatewayClient {
     override suspend fun download(cursor: String?, limit: Int): Result<SyncDownloadResponse> = mutex.withLock {
         val query = FakeDownloadQuery(cursor, limit)
         mutableDownloadCalls.value = (downloadCalls.value + FakeCloudCall(query, clock.nowMs)).snapshot()
-        if (limit !in 1..100) return@withLock Result.failure(IllegalArgumentException("CP01 download limit must be 1..100"))
+        if (limit !in 1..100) return@withLock Result.failure(IllegalArgumentException("Demo download limit must be 1..100"))
         unavailable()?.let { return@withLock Result.failure(it) }
         downloaded[query]?.let { return@withLock Result.success(it) }
         downloads.take(query).also { result -> result.getOrNull()?.let { downloaded[query] = it } }

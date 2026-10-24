@@ -20,10 +20,5 @@ for package in cmdline-tools/latest platform-tools platforms/android-36 build-to
     sed -n '/^Pkg.Revision/p; /^AndroidVersion.ApiLevel/p' "$properties"
 done
 adb devices -l
-if [ -f "$GHOST_ROOT/.local/models/Qwen3-0.6B.litertlm" ]; then
-    shasum -a 256 "$GHOST_ROOT/.local/models/Qwen3-0.6B.litertlm"
-else
-    printf '%s\n' 'Coordinator model is not downloaded.'
-fi
-printf '%s\n' 'Physical relay, runtime permissions, and offline model inference require real phones.'
+printf '%s\n' 'Physical relay and runtime permissions require real phones.'
 

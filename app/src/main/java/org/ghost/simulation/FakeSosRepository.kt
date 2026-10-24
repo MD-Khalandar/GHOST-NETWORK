@@ -8,10 +8,10 @@ import org.ghost.domain.model.*
 import org.ghost.domain.repository.LocalPublishResult
 import org.ghost.domain.repository.SosRepository
 
-/** CP01 memory-only local publication. It never transmits or marks cloud acceptance. */
+/** Memory-only demo publication. It never transmits or marks cloud acceptance. */
 class FakeSosRepository(
     private val clock: FakeClock,
-    private val sourceNodeId: NodeId = Cp01Fixtures.requester,
+    private val sourceNodeId: NodeId = DemoData.requester,
 ) : SosRepository {
     private val mutex = Mutex()
     private val mutablePending = MutableStateFlow<List<FakePublication<SosCreatePayload>>>(emptyList())

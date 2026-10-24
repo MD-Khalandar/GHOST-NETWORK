@@ -1,6 +1,6 @@
 buildscript {
     dependencies {
-        // AGP provides built-in Kotlin; align it with LiteRT-LM's Kotlin 2.4 metadata.
+        // Pin AGP's built-in Kotlin to the project's existing compiler version.
         classpath(libs.kotlin.gradle.plugin)
     }
 }

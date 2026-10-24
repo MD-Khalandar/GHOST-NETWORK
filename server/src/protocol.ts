@@ -2,10 +2,9 @@ import protobuf from "protobufjs";
 import { fileURLToPath } from "node:url";
 import { nodeId, publicKey, SigningIdentity, verifySignature } from "./security.js";
 
-const root = new protobuf.Root().loadSync([
-  fileURLToPath(new URL("../../contracts/proto/ghost_wire_v1.proto", import.meta.url)),
-  fileURLToPath(new URL("../../contracts/proto/ghost_events_v1.proto", import.meta.url)),
-], { keepCase: true }).resolveAll();
+const root = new protobuf.Root().loadSync(
+  fileURLToPath(new URL("../../contracts/ghost.proto", import.meta.url)), { keepCase: true },
+).resolveAll();
 export const MAX_PACKET_BYTES = 32768;
 export const MAX_ENVELOPE_BYTES = 24576;
 export const MAX_PAYLOAD_BYTES = 16384;

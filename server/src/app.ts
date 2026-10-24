@@ -1,5 +1,4 @@
 import Fastify, { type FastifyInstance } from "fastify";
-import { CONTRACT_VERSION } from "./config.js";
 import { authenticate, SigningIdentity, type Principal, type Role } from "./security.js";
 import { PacketError, validatePacket, type AuthorityLookup, type WirePacket } from "./protocol.js";
 
@@ -41,7 +40,7 @@ export function buildApp(security: AppSecurity = {}): FastifyInstance {
         const body = request.body as { idempotency_key?: unknown; packets?: unknown; receipts?: unknown } | null;
         if (!body || typeof body.idempotency_key !== "string" || !body.idempotency_key.length || body.idempotency_key.length > 128 ||
             !Array.isArray(body.packets) || !body.packets.length || body.packets.length > 50 ||
-            !Array.isArray(body.receipts) || body.receipts.length !== 0) {
+            body.receipts !== undefined) {
           return reply.code(400).send({ code: "INVALID_UPLOAD", message: "Use bounded signed packets; unsigned receipts are forbidden", retryable: false });
         }
         try {
@@ -53,18 +52,13 @@ export function buildApp(security: AppSecurity = {}): FastifyInstance {
           return reply.code(400).send({ code, message: "Packet rejected", retryable: false });
         }
       }
-      // CP02 verifies trust, but cannot acknowledge ingestion/approval before CP03/CP07 persistence exists.
+      // Trust checks do not imply that a request has been stored or approved.
       return reply.code(501).send({ code: "NOT_IMPLEMENTED", message: "Persistent operation is not implemented", retryable: false });
     } });
   }
 
   app.get("/v1/health", async (_request, reply) => {
-    return reply.code(200).send({
-      status: "ok",
-      contract_version: CONTRACT_VERSION,
-      database: "not_checked",
-      model_provider: "configured",
-    });
+    return reply.code(200).send({ status: "ok" });
   });
 
   return app;

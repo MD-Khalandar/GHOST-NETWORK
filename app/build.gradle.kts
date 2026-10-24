@@ -40,7 +40,7 @@ android {
     }
 
     sourceSets {
-        getByName("main").proto { srcDir("$rootDir/contracts/proto") }
+        getByName("main").proto { srcDir("$rootDir/contracts") }
         getByName("test").resources.directories.add("$rootDir/contracts/fixtures")
     }
 
@@ -81,12 +81,10 @@ dependencies {
     implementation(libs.coroutines.android)
     implementation(libs.serialization.json)
     implementation(libs.nearby.connections)
-    implementation(libs.litertlm.android)
     implementation(libs.protobuf.javalite)
 
     testImplementation(libs.junit)
     testImplementation(libs.coroutines.test)
-    testImplementation(libs.room.testing)
     testImplementation(libs.robolectric)
     testImplementation(libs.compose.ui.test.junit4)
     debugImplementation(libs.compose.ui.test.manifest)

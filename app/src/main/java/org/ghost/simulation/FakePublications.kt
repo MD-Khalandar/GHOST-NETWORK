@@ -7,6 +7,6 @@ import java.util.UUID
 data class FakePublication<T>(val eventId: String, val payload: T, val queuedAtMs: Long)
 
 internal fun fixtureEventId(kind: String, owner: String, id: String): String =
-    UUID.nameUUIDFromBytes("ghost.cp01/$kind/$owner/$id".toByteArray(Charsets.UTF_8)).toString()
+    UUID.nameUUIDFromBytes("ghost.demo/$kind/$owner/$id".toByteArray(Charsets.UTF_8)).toString()
 
 internal fun <T> Iterable<T>.snapshot(): List<T> = Collections.unmodifiableList(toList())

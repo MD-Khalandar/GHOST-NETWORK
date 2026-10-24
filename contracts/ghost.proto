@@ -5,6 +5,76 @@ package ghost.contracts.v1;
 option java_package = "org.ghost.contracts.v1";
 option java_multiple_files = true;
 
+// Shared phone/server wire format. Preserve field numbers and signed origin bytes.
+
+message WirePacketV1 {
+  bytes immutable_envelope_bytes = 1;
+  bytes signature = 2;
+  RelayMetadataV1 relay = 3;
+}
+
+message RelayMetadataV1 {
+  uint32 remaining_hops = 1;
+  uint32 hop_count = 2;
+  bytes previous_node_id = 3; // raw 32-byte SHA-256 NodeId; empty at origin
+}
+
+message ImmutableEnvelopeV1 {
+  uint32 version = 1;
+  string packet_id = 2;
+  string event_id = 3;
+  bytes sender_node_id = 4; // raw 32-byte SHA-256 public-key digest
+  bytes sender_signing_public_key = 5;
+  DestinationV1 destination = 6;
+  EventKindV1 kind = 7;
+  int64 created_at_ms = 8;
+  int64 expires_at_ms = 9;
+  PriorityV1 priority = 10;
+  PayloadFormatV1 payload_format = 11;
+  bytes payload_bytes = 12;
+}
+
+message DestinationV1 {
+  DestinationKindV1 kind = 1;
+  bytes node_id = 2; // required only when kind is NODE
+}
+
+enum DestinationKindV1 {
+  DESTINATION_KIND_UNSPECIFIED = 0;
+  BROADCAST = 1;
+  NODE = 2;
+}
+
+enum PriorityV1 {
+  PRIORITY_UNSPECIFIED = 0;
+  ROUTINE = 1;
+  IMPORTANT = 2;
+  SOS = 3;
+}
+
+enum PayloadFormatV1 {
+  PAYLOAD_FORMAT_UNSPECIFIED = 0;
+  PROTOBUF = 1;
+}
+
+enum EventKindV1 {
+  EVENT_KIND_UNSPECIFIED = 0;
+  SOS_CREATE = 1;
+  SOS_UPDATE = 2;
+  HELPER_PROFILE_PUBLISH = 3;
+  HELPER_PROFILE_UPDATE = 4;
+  OFFER_PUBLISH = 5;
+  OFFER_UPDATE = 6;
+  CLOUD_ACK = 7;
+  MATCH_PROPOSED = 8;
+  MATCH_DECLINED = 9;
+  MATCH_ACCEPTED = 10;
+  MATCH_CONFIRMED = 11;
+  DELIVERY_RECEIPT = 12;
+  PEER_HELLO = 13;
+  INVENTORY = 14;
+}
+
 message ConsentV1 {
   bool public_mesh_allowed = 1;
   bool cloud_processing_allowed = 2;

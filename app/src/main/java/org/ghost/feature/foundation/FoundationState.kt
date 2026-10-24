@@ -4,7 +4,7 @@ import org.ghost.domain.model.*
 import org.ghost.gateway.api.GatewayReachability
 import org.ghost.transport.api.PeerHandle
 
-/** Presentation-only CP01 state. Queued/delivery counts are not inferred from request totals. */
+/** Presentation state. Queued/delivery counts are not inferred from request totals. */
 data class FoundationState(
     val requests: List<DashboardSosSummary> = emptyList(),
     val offers: List<OfferSummary> = emptyList(),

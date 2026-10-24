@@ -10,7 +10,6 @@ room = "2.8.5"
 coroutines = "1.11.0"
 serialization = "1.9.0"
 nearby = "19.3.0"
-litertlm = "0.18.1"
 protobuf = "4.33.5"
 protobufPlugin = "0.10.0"
 junit = "4.13.2"
@@ -30,12 +29,10 @@ compose-material3 = { module = "androidx.compose.material3:material3" }
 room-runtime = { module = "androidx.room:room-runtime", version.ref = "room" }
 room-ktx = { module = "androidx.room:room-ktx", version.ref = "room" }
 room-compiler = { module = "androidx.room:room-compiler", version.ref = "room" }
-room-testing = { module = "androidx.room:room-testing", version.ref = "room" }
 coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "coroutines" }
 coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "coroutines" }
 serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "serialization" }
 nearby-connections = { module = "com.google.android.gms:play-services-nearby", version.ref = "nearby" }
-litertlm-android = { module = "com.google.ai.edge.litertlm:litertlm-android", version.ref = "litertlm" }
 protobuf-javalite = { module = "com.google.protobuf:protobuf-javalite", version.ref = "protobuf" }
 junit = { module = "junit:junit", version.ref = "junit" }
 robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectric" }

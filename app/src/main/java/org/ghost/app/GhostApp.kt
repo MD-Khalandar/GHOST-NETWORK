@@ -24,7 +24,7 @@ import org.ghost.feature.mission.MissionScreen
 import org.ghost.feature.network.NetworkScreen
 import org.ghost.feature.requests.RequestsScreen
 
-/** A-owned navigation: features remain stateless and all sample content is explicitly simulated. */
+/** Navigation only; sample request/network content remains explicitly simulated. */
 @Composable
 fun GhostApp(state: FoundationState, onRetry: () -> Unit, trust: DeviceTrustState = DeviceTrustState(), onRetryIdentity: (() -> Unit)? = null) {
     var route by rememberSaveable { mutableStateOf(AppRoute.HOME) }

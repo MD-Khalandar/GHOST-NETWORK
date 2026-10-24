@@ -2,10 +2,8 @@ package org.ghost.simulation
 
 import org.ghost.domain.model.*
 
-/** Typed copies of A's cp01-fixtures.json, checked against that resource in host tests.
- * Binary fields are placeholders, not valid signed GHOST packets.
- */
-object Cp01Fixtures {
+/** Sample reports for the non-sending UI preview. */
+object DemoData {
     const val REPORTED_AT_MS = 1792859000000L
     val requester = NodeId("b".repeat(64))
     val helperOwner = NodeId("a".repeat(64))
@@ -40,16 +38,4 @@ object Cp01Fixtures {
         consent = Consent(publicMeshAllowed = true, cloudProcessingAllowed = true),
     )
 
-    fun packet() = WirePacket(
-        immutableEnvelopeBytesBase64 = "AQID",
-        signature = "BAUG",
-        relay = RelayMetadata(remainingHops = 3, hopCount = 1, previousNodeId = helperOwner),
-    )
-
-    fun receipt() = DeliveryReceiptPayload(
-        packetId = PacketId("66666666-6666-4666-8666-666666666666"),
-        recipientNodeId = requester,
-        receiptType = ReceiptType.PERSISTED_BY_RECIPIENT,
-        observedAtMs = 1792861800000L,
-    )
 }

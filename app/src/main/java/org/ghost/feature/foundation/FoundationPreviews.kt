@@ -13,7 +13,7 @@ import org.ghost.feature.requests.RequestsScreen
 import org.ghost.gateway.api.GatewayReachability
 import org.ghost.transport.api.PeerHandle
 
-/** D-owned presentation fixtures. No B repositories, SDK clients or mutations in previews. */
+/** Presentation fixtures; previews never start I/O. */
 object FoundationPreviewFixtures {
     val empty = FoundationState(cloud = GatewayReachability.OFFLINE)
     val loaded = empty.copy(

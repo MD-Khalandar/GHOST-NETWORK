@@ -24,13 +24,13 @@ class MainActivitySmokeTest {
         compose.waitUntil(5_000) {
             ViewModelProvider(compose.activity)[FoundationViewModel::class.java].state.value.requests.size == 1
         }
-        val graph = ViewModelProvider(compose.activity)[Cp01AppGraph::class.java]
+        val graph = ViewModelProvider(compose.activity)[AppGraph::class.java]
         compose.onNodeWithText("Requests").performClick()
         compose.onNodeWithText("Local report · Open").performScrollTo().assertIsDisplayed()
         compose.activityRule.scenario.recreate()
         compose.onNodeWithText("Requests").assertIsSelected()
         compose.runOnIdle {
-            assertSame(graph, ViewModelProvider(compose.activity)[Cp01AppGraph::class.java])
+            assertSame(graph, ViewModelProvider(compose.activity)[AppGraph::class.java])
             val state = ViewModelProvider(compose.activity)[FoundationViewModel::class.java].state.value
             assertEquals(1, state.requests.size)
             assertEquals(1, state.offers.size)

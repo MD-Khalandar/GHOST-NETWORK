@@ -20,7 +20,7 @@ for option in "$@"; do
     esac
 done
 
-mkdir -p .local/downloads .local/toolchains .local/models .local/apps \
+mkdir -p .local/downloads .local/toolchains .local/apps \
     "$ANDROID_HOME" "$ANDROID_USER_HOME" "$ANDROID_AVD_HOME" "$GRADLE_USER_HOME" .gradle
 
 verify() {
@@ -116,9 +116,5 @@ if "$with_studio"; then
     fi
 fi
 
-download https://huggingface.co/litert-community/Qwen3-0.6B/resolve/e6687177e00897731e7716267eebd4eba0dde7c2/Qwen3-0.6B.litertlm \
-    .local/models/Qwen3-0.6B.litertlm 256 c5f39b4191926786c3e6668b62af4d6eb15248dfc7a5348252a9b406f33f2108
-
 printf '%s\n' 'Toolchain installed. Source scripts/env.sh, then run ./gradlew assembleDebug testDebugUnitTest.'
-printf '%s\n' 'A downloaded model is not evidence of successful offline phone inference.'
 

@@ -14,7 +14,7 @@ data class LocalPublishResult(
     val queued: Boolean,
 )
 
-/** Room-backed local SOS boundary. Implemented by B after CP01. */
+/** Local SOS repository boundary; Room persistence is next. */
 interface SosRepository {
     fun observeRequests(): Flow<List<DashboardSosSummary>>
 

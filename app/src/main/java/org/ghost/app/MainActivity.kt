@@ -18,7 +18,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         if (Build.VERSION.SDK_INT >= 29) window.isNavigationBarContrastEnforced = false
-        val graph = ViewModelProvider(this)[Cp01AppGraph::class.java]
+        val graph = ViewModelProvider(this)[AppGraph::class.java]
         val trustViewModel = ViewModelProvider(this)[DeviceTrustViewModel::class.java]
         val screens = ViewModelProvider(this, object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
