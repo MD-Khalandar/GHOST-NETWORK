@@ -108,11 +108,21 @@ interface SosDao {
     @Upsert suspend fun saveDraft(row: DraftRow)
 }
 
-@Database(entities = [ReportRow::class, DraftRow::class, NeighborDeliveryRow::class, CloudReturnRow::class, CloudReturnDeliveryRow::class], version = 4, exportSchema = true)
+@Database(entities = [ReportRow::class, DraftRow::class, NeighborDeliveryRow::class, CloudReturnRow::class, CloudReturnDeliveryRow::class,
+    ResourceRow::class, ResourceDeliveryRow::class], version = 5, exportSchema = true)
 abstract class GhostDatabase : RoomDatabase() {
     abstract fun sos(): SosDao
+    abstract fun resources(): ResourceDao
 
     companion object {
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS resources (eventId TEXT NOT NULL, packetId TEXT NOT NULL, entityId TEXT NOT NULL, kind INTEGER NOT NULL, owner TEXT NOT NULL, owned INTEGER NOT NULL, publicSharing INTEGER NOT NULL, cloudConsent INTEGER NOT NULL, createdAt INTEGER NOT NULL, expiresAt INTEGER NOT NULL, wire BLOB NOT NULL, cloudAck BLOB, cloudError TEXT, PRIMARY KEY(eventId))")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_resources_packetId ON resources(packetId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_resources_entityId ON resources(entityId)")
+                db.execSQL("CREATE TABLE IF NOT EXISTS resource_deliveries (packetId TEXT NOT NULL, peerNodeId TEXT NOT NULL, receiptFromPeer BLOB, receiptToPeer BLOB, PRIMARY KEY(packetId, peerNodeId), FOREIGN KEY(packetId) REFERENCES resources(packetId) ON UPDATE NO ACTION ON DELETE CASCADE)")
+            }
+        }
         val MIGRATION_3_4 = object : Migration(3, 4) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("CREATE TABLE IF NOT EXISTS cloud_returns (packetId TEXT NOT NULL, eventId TEXT NOT NULL, originEventId TEXT NOT NULL, destination TEXT NOT NULL, expiresAt INTEGER NOT NULL, wire BLOB NOT NULL, PRIMARY KEY(packetId))")

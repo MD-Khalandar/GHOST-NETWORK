@@ -2,10 +2,8 @@ import { createHash, randomUUID } from "node:crypto";
 import type { Database, SqlConnection } from "./database.js";
 import { PacketError, signCloudPacket, type VerifiedPacket, type WirePacket } from "./protocol.js";
 import type { SigningIdentity } from "./security.js";
-
-export class UploadConflict extends Error {
-  constructor(readonly code: "IDEMPOTENCY_CONFLICT" | "REPORT_ID_CONFLICT") { super(code); }
-}
+import { saveResource, UploadConflict } from "./resource-store.js";
+export { UploadConflict } from "./resource-store.js";
 export interface UploadResponse {
   results: Array<{ event_id: string; status: "ACCEPTED" | "DUPLICATE"; cloud_revision: number }>;
   packets: WirePacket[];
@@ -68,11 +66,19 @@ export class SosStore {
       const response: UploadResponse = { results: [], packets: [] };
       // Consistent ordering avoids unique-index lock cycles for overlapping batches.
       const ordered = packets.map((packet, index) => ({ packet, index }))
-        .sort((a, b) => a.packet.payload.request_id.localeCompare(b.packet.payload.request_id));
+        .sort((a, b) => `${a.packet.envelope.kind}:${a.packet.payload.request_id ?? a.packet.payload.offer_id ?? a.packet.envelope.sender_node_id.toString("hex")}`
+          .localeCompare(`${b.packet.envelope.kind}:${b.packet.payload.request_id ?? b.packet.payload.offer_id ?? b.packet.envelope.sender_node_id.toString("hex")}`));
+      for (const id of [...new Set(packets.flatMap(packet => [packet.envelope.event_id, packet.envelope.packet_id]))].sort())
+        await connection.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [id]);
       for (const { packet: verified, index } of ordered) {
         const { envelope: e, payload: p, packet } = verified;
         if (e.expires_at_ms <= this.now()) throw new PacketError("EXPIRED");
         const bytes = Buffer.from(packet.immutable_envelope_bytes, "base64url");
+        // Serialize cross-family ID checks too: IDs cannot describe both SOS and resources.
+        const other = await connection.query(e.kind === 1
+          ? "SELECT event_id FROM resource_events WHERE event_id = $1 OR packet_id = $2"
+          : "SELECT event_id FROM sos_reports WHERE event_id = $1 OR packet_id = $2", [e.event_id, e.packet_id]);
+        if (other.rows.length) throw new UploadConflict("REPORT_ID_CONFLICT");
         const revision = Number((await connection.query("SELECT nextval('cloud_revision_seq') AS revision")).rows[0].revision);
         const received = this.now();
         const ack = signCloudPacket(this.signer, 7, { origin_event_id: e.event_id, status: 1,
@@ -80,6 +86,12 @@ export class SosStore {
           packetId: randomUUID(), eventId: randomUUID(), createdAtMs: received,
           expiresAtMs: received + 86400000, destinationNodeId: e.sender_node_id.toString("hex"),
         });
+        if (e.kind === 3 || e.kind === 5) {
+          const saved = await saveResource(connection, verified, bytes, revision, received, ack);
+          response.results[index] = { event_id: e.event_id, status: saved.duplicate ? "DUPLICATE" : "ACCEPTED", cloud_revision: Number(saved.row.cloud_revision) };
+          response.packets[index] = saved.row.cloud_ack;
+          continue;
+        }
         const saved = await connection.query(`INSERT INTO sos_reports (
           event_id, packet_id, request_id, sender_node_id, immutable_envelope, origin_signature,
           category, description, people_count, coarse_area, landmark, public_mesh_allowed, cloud_processing_allowed,

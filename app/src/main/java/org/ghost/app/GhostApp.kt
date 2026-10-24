@@ -21,6 +21,7 @@ import org.ghost.feature.foundation.FoundationState
 import org.ghost.feature.foundation.DeviceTrustState
 import org.ghost.feature.home.HomeScreen
 import org.ghost.feature.home.SosFormDialog
+import org.ghost.feature.home.ResourceFormDialog
 import org.ghost.domain.model.SosDraft
 import org.ghost.feature.mission.MissionScreen
 import org.ghost.feature.network.NetworkScreen
@@ -39,6 +40,7 @@ fun GhostApp(state: FoundationState, onRetry: () -> Unit, trust: DeviceTrustStat
              local: LocalUiState = LocalUiState(), actions: LocalActions? = null) {
     var route by rememberSaveable { mutableStateOf(AppRoute.HOME) }
     var showSosPreview by rememberSaveable { mutableStateOf(false) }
+    var showHelp by rememberSaveable { mutableStateOf(false) }
     val savedScreens = rememberSaveableStateHolder()
     val previewDraft = remember { SosDraft() }
     BackHandler(route != AppRoute.HOME) { route = AppRoute.HOME }
@@ -98,13 +100,14 @@ fun GhostApp(state: FoundationState, onRetry: () -> Unit, trust: DeviceTrustStat
             val modifier = Modifier.semantics { paneTitle = route.displayTitle }
             when (route) {
                 AppRoute.HOME -> HomeScreen(state, { showSosPreview = true }, { route = AppRoute.REQUESTS },
-                    { route = AppRoute.NETWORK }, onRetry, modifier, insets, local, actions)
+                    { route = AppRoute.NETWORK }, onRetry, modifier, insets, local, actions, onOfferHelp = { showHelp = true })
                 AppRoute.REQUESTS -> RequestsScreen(state, onRetry, modifier, insets)
                 AppRoute.MISSION -> MissionScreen(state, onRetry, modifier, insets)
                 AppRoute.NETWORK -> NetworkScreen(state, onRetry, modifier, insets, trust, onRetryIdentity, local, actions)
             }
         }
     }
+    if (showHelp) ResourceFormDialog(local, actions, onClose = { showHelp = false })
     if (showSosPreview) {
         val draft = local.draft ?: if (actions == null) previewDraft else null
         if (draft == null) AlertDialog(onDismissRequest = { showSosPreview = false }, title = { Text("Opening your request…") },

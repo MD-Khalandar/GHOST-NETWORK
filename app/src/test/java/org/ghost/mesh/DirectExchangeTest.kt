@@ -76,7 +76,7 @@ class DirectExchangeTest {
         val signingKey = key ?: newKey()
         names.add(databaseName)
         val db = Room.databaseBuilder(context, GhostDatabase::class.java, databaseName)
-            .addMigrations(GhostDatabase.MIGRATION_1_2, GhostDatabase.MIGRATION_2_3, GhostDatabase.MIGRATION_3_4).build().also { databases.add(it) }
+            .addMigrations(GhostDatabase.MIGRATION_1_2, GhostDatabase.MIGRATION_2_3, GhostDatabase.MIGRATION_3_4, GhostDatabase.MIGRATION_4_5).build().also { databases.add(it) }
         val repo = LocalSosRepository(db, { signingKey }, { baseTime + wallOffset + testScheduler.currentTime })
         val radio = Radio(name)
         val scope = CoroutineScope(backgroundScope.coroutineContext + Job(backgroundScope.coroutineContext[Job]))
@@ -104,6 +104,33 @@ class DirectExchangeTest {
     private fun sends(from: String, to: String, kind: Int = 1) = packets.count { it == Triple(from, to, kind) }
 
     @After fun close() { databases.forEach { it.close() }; names.forEach { context.deleteDatabase(it) } }
+
+    @Test fun helpersAndSuppliesRelayAndVerifiedServerReceiptsReturnToTheirOwner() = runTest {
+        val cloud = newKey(); val pin = cloud.publicKey.encoded
+        val a = phone("A", cloudKey = pin); val b = phone("B", cloudKey = pin); val g = phone("G", cloudKey = pin)
+        runBlocking {
+            a.repo.resources.publish(ResourceDraft(name = "Water volunteer", cloudConsent = true)).getOrThrow()
+            a.repo.resources.publish(ResourceDraft(supply = true, quantity = "20", unit = "litres", cloudConsent = true)).getOrThrow()
+            a.repo.resources.publish(ResourceDraft(supply = true, quantity = "5", publicSharing = false, cloudConsent = true)).getOrThrow()
+        }
+        connect("A", "B"); connect("B", "G")
+        until { g.db.resources().count() == 2 }
+        assertEquals(0, runBlocking { g.db.sos().count() })
+        assertEquals(2, runBlocking { g.repo.cloudOutgoing().size })
+        runBlocking {
+            for (report in g.repo.cloudOutgoing()) {
+                val ack = SignedPackets.create(cloud, 7, CloudAckV1.newBuilder().setOriginEventId(report.eventId)
+                    .setStatusValue(1).setCloudRevision(1).setReceivedAtMs(baseTime).build().toByteString(), baseTime,
+                    destination = a.key.nodeId.value, ttl = 86400000)
+                g.repo.acceptCloudAck(report.eventId, ack, pin, 1)
+            }
+        }
+        until { a.repo.resources.observeSummaries().first().count { it.cloudState == LocalCloudState.ACCEPTED } == 2 }
+        assertTrue(runBlocking { a.repo.cloudOutgoing().isEmpty() })
+        assertEquals(3, runBlocking { a.db.resources().count() })
+        assertEquals(1, sends("A", "B", 3)); assertEquals(1, sends("A", "B", 5))
+        assertEquals(2, runBlocking { b.db.resources().count() })
+    }
 
     @Test fun signedTopologyCrossesThreePhonesWithoutBecomingSosOrSurvivingDisconnect() = runTest {
         val a = phone("A"); phone("B")

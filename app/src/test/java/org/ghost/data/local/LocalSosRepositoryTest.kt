@@ -40,7 +40,7 @@ class LocalSosRepositoryTest {
     }
     private fun open(name: String = "test-${UUID.randomUUID()}.db"): GhostDatabase {
         names.add(name)
-        return Room.databaseBuilder(context, GhostDatabase::class.java, name).addMigrations(GhostDatabase.MIGRATION_1_2, GhostDatabase.MIGRATION_2_3, GhostDatabase.MIGRATION_3_4)
+        return Room.databaseBuilder(context, GhostDatabase::class.java, name).addMigrations(GhostDatabase.MIGRATION_1_2, GhostDatabase.MIGRATION_2_3, GhostDatabase.MIGRATION_3_4, GhostDatabase.MIGRATION_4_5)
             .setJournalMode(RoomDatabase.JournalMode.TRUNCATE).build().also { databases.add(it) }
     }
     private fun payload(public: Boolean = true, id: String = UUID.randomUUID().toString()) = SosCreatePayload(
@@ -234,6 +234,28 @@ class LocalSosRepositoryTest {
         assertTrue(expired.outgoing(e.nodeId.value).isEmpty())
         assertNull(expired.prepareOutgoing(first.packetId, e.nodeId.value))
         assertNull(restoredDb.sos().delivery(first.packetId, c.nodeId.value))
+    }
+
+    @Test fun resourcePublicationsSurviveRestartValidateConsentAndDeduplicateSupplySaves() = runBlocking {
+        val owner = key(); val named = "resources-${UUID.randomUUID()}.db"; val db = open(named)
+        var resourceTime = time
+        val repository = LocalSosRepository(db, { owner }, { resourceTime })
+        val draft = ResourceDraft(supply = true, quantity = "10", unit = "litres", cloudConsent = true)
+        repository.resources.publish(draft).getOrThrow()
+        resourceTime += 1000
+        repository.resources.publish(draft).getOrThrow()
+        assertEquals(1, db.resources().count())
+        assertTrue(repository.resources.publish(draft.copy(quantity = "-1")).isFailure)
+        val helper = ResourceDraft(name = "Volunteer", helpType = HelpType.FIRST_AID, publicSharing = false, cloudConsent = true)
+        repository.resources.publish(helper).getOrThrow()
+        assertEquals(1, repository.cloudOutgoing().size)
+        db.close(); databases.remove(db)
+        val reopened = open(named); val restored = LocalSosRepository(reopened, { owner }, { time })
+        val summaries = restored.resources.observeSummaries().first()
+        assertEquals(2, summaries.size)
+        assertEquals(LocalCloudState.NOT_SHARED, summaries.single { it.helper }.cloudState)
+        assertEquals(ResourceType.WATER, restored.resources.observeOffers().first().single().resourceType)
+        assertEquals(10, restored.resources.observeOffers().first().single().quantity)
     }
 
     @Test fun versionOneUpgradePreservesDraftSignedReportAndExistingAcknowledgement() = runBlocking {

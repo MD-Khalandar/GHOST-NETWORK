@@ -30,10 +30,13 @@ node --env-file=server/.env server/dist/index.js
 ```
 
 `POST /v1/sync/upload` accepts a gateway bearer token and
-`{"idempotency_key":"unique-batch-id","packets":[...]}` (1–50 signed SOS_CREATE
-packets). Both public sharing and cloud consent must be signed on. The gateway
+`{"idempotency_key":"unique-batch-id","packets":[...]}` (1–50 signed SOS_CREATE,
+HELPER_PROFILE_PUBLISH or OFFER_PUBLISH packets). Both public sharing
+and cloud consent must be signed on. The gateway
 may relay another phone's SOS. Any invalid or conflicting item rolls back the
-batch; other event kinds are not accepted in this slice.
+batch; other event kinds are not accepted in this slice. Helper/supply payloads
+must name the signing phone as owner. Resource events and their signed receipts
+persist in PostgreSQL; duplicate offer IDs cannot be republished with new content.
 
 Success returns `results` (event ID, ACCEPTED/DUPLICATE, cloud revision) and
 `packets` containing a stored cloud-signed acknowledgement addressed to each
@@ -62,5 +65,13 @@ enum), description, optional people/area/landmark, reported/expiry/received time
 in milliseconds, and cloud revision. Signed packets and credentials are excluded.
 Expired reports remain visible; server receipt never confirms assistance.
 
-Helpers, offers, matching/approval and download handlers still return 501.
+`GET /v1/dashboard/helpers` and `/v1/dashboard/offers` use the same viewer/operator
+authentication, no-store policy and `limit`/`before` pagination. Helpers return the
+latest publication per owner (ordered by signed timestamp then event ID, so a
+delayed old report cannot undo newer availability). Responses include the public
+resource fields, owner ID, timestamps and cloud revision; no signed packet bytes.
+Expiry remains visible and never confirms allocation. Supplies have unique offer
+IDs and remain separate offers. Updates/withdrawals are not accepted yet.
+
+Matching/approval and download handlers still return 501.
 See [PROJECT.md](../PROJECT.md).

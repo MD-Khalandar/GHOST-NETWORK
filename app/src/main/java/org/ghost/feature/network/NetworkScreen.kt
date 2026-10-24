@@ -69,7 +69,7 @@ fun NetworkScreen(state: FoundationState, onRetry: () -> Unit, modifier: Modifie
                 item("retry") { TextButton(onClick = { actions?.retrySends?.invoke() }, enabled = actions != null, modifier = Modifier.heightIn(min = 48.dp)) { Text("Try sending again") } }
                 item("sharing") {
                     InfoCard("Online sharing", local.gateway.message.userMessage()) {
-                        Text("Only requests with online sharing allowed are uploaded. The server's receipt can travel back through nearby phones. Saving a request does not mean help is arranged.")
+                        Text("Only reports with online sharing allowed are uploaded. Server receipts can travel back through nearby phones. Saving a request or offer does not mean help is arranged.")
                         TextButton({ setup = true }, enabled = actions?.saveGateway != null, modifier = Modifier.heightIn(min = 48.dp)) {
                             Text(if (local.gateway.configured) "Edit gateway setup" else "Configure gateway")
                         }

@@ -104,6 +104,26 @@ debug builds also allow HTTP for LAN/emulator testing (`10.0.2.2` reaches the
 emulator host). Upload and return paths have host HTTP/storage/exchange tests;
 deployed phone-to-cloud-to-mesh testing is still needed.
 
+## Helpers and supplies
+
+From Home, tap **Offer help**. Choose **Volunteer** (help type, optional name and
+area, available/unavailable) or **Supplies** (resource type, optional quantity,
+unit and area). Save before sharing; availability expires after six hours.
+**Share with nearby phones** and **Allow online help coordination** are separate
+choices. With nearby sharing off, the publication stays on the phone even if
+online consent is checked. There is no automatic assignment or reservation.
+
+Updated phones relay publications with the same four-transfer limit, signed
+neighbor receipts and gateway upload/return path as SOS. Older phones continue
+handling SOS; helper/supply relay requires updated peers. The form lists your
+saved help and shows **Received by server** only after verifying the receipt.
+Supply offers also appear in Requests. Existing Room data upgrades without reset.
+
+The dashboard's **Helpers** and **Supplies** tabs show uploaded owner-reported
+availability with expiry and pagination. A newer shared volunteer report replaces
+the previous profile, including marking yourself unavailable. Each supply save is
+a separate offer; supply editing/withdrawal and matching/approval are next work.
+
 ## Server
 
 See [server/README.md](server/README.md). Temporary tools/caches belong in ignored

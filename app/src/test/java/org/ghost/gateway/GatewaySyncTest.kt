@@ -45,7 +45,7 @@ class GatewaySyncTest {
     private fun open(name: String = "gateway-${UUID.randomUUID()}.db"): GhostDatabase {
         names.add(name)
         return Room.databaseBuilder(context, GhostDatabase::class.java, name)
-            .addMigrations(GhostDatabase.MIGRATION_1_2, GhostDatabase.MIGRATION_2_3, GhostDatabase.MIGRATION_3_4).build().also { databases.add(it) }
+            .addMigrations(GhostDatabase.MIGRATION_1_2, GhostDatabase.MIGRATION_2_3, GhostDatabase.MIGRATION_3_4, GhostDatabase.MIGRATION_4_5).build().also { databases.add(it) }
     }
     private suspend fun publish(repo: LocalSosRepository, public: Boolean = true, cloud: Boolean = true) = repo.publish(
         SosCreatePayload(RequestId(UUID.randomUUID().toString()), SosCategory.WATER, "Need water", consent = Consent(public, cloud))).getOrThrow()
@@ -119,7 +119,8 @@ class GatewaySyncTest {
         assertArrayEquals(expected.wire, runBlocking { restoredDb.sos().event(expected.eventId)!!.wire })
         assertTrue(runBlocking { restored.cloudOutgoing().isEmpty() })
         assertEquals(1, runBlocking { restored.outgoingCloudReturns(origin.nodeId.value).size })
-        assertEquals(LocalCloudState.ACCEPTED, runBlocking { restored.observeRequests().first().first { it.requestId.value == expected.requestId }.cloudState })
+        val requestId = runBlocking { restoredDb.sos().event(expected.eventId)!!.requestId }
+        assertEquals(LocalCloudState.ACCEPTED, runBlocking { restored.observeRequests().first().first { it.requestId.value == requestId }.cloudState })
     }
 
     @Test fun temporaryServerFailureKeepsQueueAndRetryUsesTheSameIdempotencyKey() = runTest {

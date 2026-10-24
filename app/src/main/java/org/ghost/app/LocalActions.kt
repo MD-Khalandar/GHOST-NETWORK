@@ -4,6 +4,8 @@ import org.ghost.domain.model.SosDraft
 import org.ghost.transport.nearby.NearbyState
 import org.ghost.gateway.GatewayUiState
 import org.ghost.mesh.TopologySnapshot
+import org.ghost.domain.model.ResourceDraft
+import org.ghost.domain.model.ResourceSummary
 
 data class LocalUiState(
     val draft: SosDraft? = null,
@@ -15,6 +17,7 @@ data class LocalUiState(
     val peerIdentities: Map<String, String> = emptyMap(),
     val gateway: GatewayUiState = GatewayUiState(),
     val topology: TopologySnapshot = TopologySnapshot(),
+    val resources: List<ResourceSummary> = emptyList(),
 )
 
 fun LocalUiState.meshStatus(): String = when {
@@ -34,4 +37,5 @@ data class LocalActions(
     val retrySends: () -> Unit,
     val saveGateway: ((String, String, () -> Unit) -> Unit)? = null,
     val clearGateway: (() -> Unit)? = null,
+    val publishResource: ((ResourceDraft, () -> Unit) -> Unit)? = null,
 )

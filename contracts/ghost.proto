@@ -86,6 +86,7 @@ message PeerHelloV1 {
   bytes challenge = 1;
   bytes reply_to = 2;
   bool supports_topology = 3; // send graph updates only to supporting peers
+  bool supports_resources = 4; // helper/supply publications (older peers still relay SOS)
 }
 
 enum ConnectivityStatusV1 {

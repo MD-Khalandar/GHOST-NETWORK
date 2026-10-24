@@ -24,7 +24,7 @@ import org.ghost.security.SigningIdentity
 
 class AppGraph(application: Application) : AndroidViewModel(application) {
     private val db = Room.databaseBuilder(application, GhostDatabase::class.java, "ghost.db")
-        .addMigrations(GhostDatabase.MIGRATION_1_2, GhostDatabase.MIGRATION_2_3, GhostDatabase.MIGRATION_3_4).build()
+        .addMigrations(GhostDatabase.MIGRATION_1_2, GhostDatabase.MIGRATION_2_3, GhostDatabase.MIGRATION_3_4, GhostDatabase.MIGRATION_4_5).build()
     private val identity by lazy { AndroidSigningIdentity().loadOrCreate() }
     val nearby = NearbyAdapter(application, viewModelScope)
     val repository = LocalSosRepository(db, { identity })
@@ -44,13 +44,14 @@ class AppGraph(application: Application) : AndroidViewModel(application) {
             GatewayReachability.UNKNOWN -> Connectivity.UNKNOWN
         })
     })
-    val dependencies = GhostAppDependencies(nearby, gatewayClient, repository, UnavailableOffers, UploadCoordinationState(repository))
+    val dependencies = GhostAppDependencies(nearby, gatewayClient, repository, repository.resources, UploadCoordinationState(repository))
     private val operation = MutableStateFlow(LocalUiState())
     private data class DraftWrite(val draft: SosDraft, val complete: (() -> Unit)? = null)
     private val draftWrites = Channel<DraftWrite>(Channel.CONFLATED)
     val local: StateFlow<LocalUiState> = combine(repository.observeDraft(), operation, nearby.state, exchange.identities, exchange.message) {
         draft, state, network, identities, message -> state.copy(draft = draft, network = network, peerIdentities = identities, exchangeStatus = message)
     }.combine(gateway.state) { state, cloud -> state.copy(gateway = cloud) }
+        .combine(repository.resources.observeSummaries()) { state, resources -> state.copy(resources = resources) }
         .combine(exchange.topology) { state, topology -> state.copy(topology = topology) }
         .combine(internet) { state, status -> state.copy(topology = state.topology.copy(
             localCapabilities = state.topology.localCapabilities.copy(internet = status))) }
@@ -147,8 +148,20 @@ class AppGraph(application: Application) : AndroidViewModel(application) {
             catch (_: Exception) { operation.update { it.copy(error = "Cloud queue could not be reopened. Try again.") } }
         }
     }
+    private fun publishResource(draft: ResourceDraft, saved: () -> Unit) {
+        if (operation.value.saving) return
+        operation.update { it.copy(saving = true, error = null, notice = null) }
+        viewModelScope.launch {
+            try {
+                repository.resources.publish(draft).getOrThrow()
+                operation.update { it.copy(saving = false, notice = if (draft.publicSharing) "Help saved. Waiting to share with nearby phones." else "Help saved on this phone only.") }
+                saved(); exchange.flush()
+            } catch (cancelled: CancellationException) { throw cancelled }
+              catch (error: Exception) { operation.update { it.copy(saving = false, error = if (error is IllegalArgumentException) error.message else "Could not save help. Check storage and the signing key.") } }
+        }
+    }
     fun actions(start: () -> Unit) = LocalActions({ draft -> if (!operation.value.saving) draftWrites.trySend(DraftWrite(draft)) },
-        ::saveDraft, ::publish, start, ::stopNearby, ::retrySends, ::saveGateway, ::clearGateway)
+        ::saveDraft, ::publish, start, ::stopNearby, ::retrySends, ::saveGateway, ::clearGateway, ::publishResource)
 
     override fun onCleared() {
         // SDK stop calls are immediate; the app also stops links when its activity backgrounds.

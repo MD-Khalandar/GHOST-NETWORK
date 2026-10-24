@@ -42,9 +42,15 @@ sit under optional Technical details.
 The web SOS desk lists server-received reports with request details, pagination,
 manual refresh and expiry labels. Viewer/operator tokens stay in tab memory;
 gateway tokens cannot read it. Local browser checks pass against signed uploads.
+Home's Offer help form saves signed volunteer profiles and supply offers in Room.
+Publications relay to supporting phones and upload with separate online consent;
+verified server receipts return through the mesh. Help types, area, quantity/unit
+and six-hour availability appear in dashboard Helpers/Supplies lists. The latest
+owner-signed helper report controls availability; supplies are separate offers.
+Existing phone data migrates in place. Local-only publications stay local.
 
-Next: helper/supply records and matching → approval, owner decisions and outage recovery.
+Next: supply edits/withdrawals, matching → approval, owner decisions and outage recovery.
 
 Keep public/cloud consent separate, preserve signed bytes, reject forged/duplicate
 events, and keep cloud/provider secrets server-side. Queued, received and confirmed are distinct.
-Chat, local AI and LoRa wait.
+Private messaging comes last. Local AI and LoRa wait.

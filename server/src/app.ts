@@ -4,6 +4,7 @@ import { PacketError, validatePacket, type AuthorityLookup, type WirePacket } fr
 import { initializeDatabase, type Database } from "./database.js";
 import { SosStore, UploadConflict } from "./sos-store.js";
 import { registerDashboard } from "./dashboard.js";
+import { listResources } from "./resource-store.js";
 
 export interface AppSecurity { principals?: readonly Principal[]; cloudSigningKeyPem?: string; lookup?: AuthorityLookup; now?: () => number; database?: Database }
 
@@ -48,7 +49,7 @@ export function buildApp(security: AppSecurity = {}): FastifyInstance {
         const p = authenticate(request.headers.authorization, principals)!;
         return { id: p.id, role: p.role, ...(p.gateway_node_id ? { gateway_node_id: p.gateway_node_id } : {}) };
       }
-      if (route.url === "/v1/dashboard/sos" || route.url === "/v1/dashboard/sos/:requestId") {
+      if (["/v1/dashboard/sos", "/v1/dashboard/sos/:requestId", "/v1/dashboard/helpers", "/v1/dashboard/offers"].includes(route.url)) {
         const query = request.query as Record<string, unknown>;
         const positiveInteger = (value: unknown): value is string => typeof value === "string" &&
           /^[1-9][0-9]{0,15}$/.test(value) && Number.isSafeInteger(Number(value));
@@ -66,6 +67,9 @@ export function buildApp(security: AppSecurity = {}): FastifyInstance {
             const report = await store.find(id!);
             return report ?? reply.code(404).send({ code: "NOT_FOUND", message: "Request not found", retryable: false });
           }
+          if (route.url.endsWith("helpers") || route.url.endsWith("offers"))
+            return await listResources(security.database!, route.url.endsWith("helpers") ? 3 : 5,
+              Number(query.limit ?? 30), query.before === undefined ? undefined : Number(query.before));
           return await store.list(Number(query.limit ?? 30), query.before === undefined ? undefined : Number(query.before));
         } catch {
           return reply.code(503).send({ code: "STORAGE_UNAVAILABLE", message: "Saved requests are temporarily unavailable", retryable: true });
@@ -83,7 +87,7 @@ export function buildApp(security: AppSecurity = {}): FastifyInstance {
             const verified = validatePacket(packet as WirePacket, {
               nowMs: (security.now ?? Date.now)(), forCloud: true, lookup: security.lookup,
             });
-            if (verified.envelope.kind !== 1) throw new PacketError("UNSUPPORTED_KIND");
+            if (![1, 3, 5].includes(verified.envelope.kind)) throw new PacketError("UNSUPPORTED_KIND");
             return verified;
           });
           if (!store) return reply.code(503).send({ code: "STORAGE_UNAVAILABLE", message: "SOS storage is not configured", retryable: true });

@@ -28,7 +28,7 @@ import org.ghost.feature.foundation.*
 @Composable
 fun HomeScreen(state: FoundationState, onSendSos: () -> Unit, onOpenRequests: () -> Unit, onOpenNetwork: () -> Unit,
                onRetry: () -> Unit, modifier: Modifier = Modifier, contentPadding: PaddingValues = PaddingValues(0.dp),
-               local: LocalUiState = LocalUiState(), actions: LocalActions? = null) {
+               local: LocalUiState = LocalUiState(), actions: LocalActions? = null, onOfferHelp: () -> Unit = {}) {
     GhostScreen("Help starts nearby", "Ask for help, even without internet.", modifier, contentPadding, state.simulated) {
         item("mesh") {
             InfoCard("Connect with nearby phones", local.meshStatus()) {
@@ -50,6 +50,11 @@ fun HomeScreen(state: FoundationState, onSendSos: () -> Unit, onOpenRequests: ()
                             contentColor = MaterialTheme.colorScheme.onError)) { Text("Send SOS") }
                     Text("Your request is saved on this phone, even when no other phones are nearby.", style = MaterialTheme.typography.bodySmall)
                 }
+            }
+        }
+        item("offer-help") {
+            InfoCard("Can you help?", "Volunteer your skills or offer supplies. Availability does not commit you to an assignment.") {
+                TextButton(onOfferHelp, Modifier.heightIn(min = 48.dp)) { Text("Offer help") }
             }
         }
         local.error?.let { item("error") { InfoCard("Something went wrong", it.userMessage()) } }

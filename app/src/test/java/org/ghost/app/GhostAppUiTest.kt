@@ -32,6 +32,27 @@ import org.robolectric.annotation.GraphicsMode
 class GhostAppUiTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
 
+    @Test fun offerHelpOnlyPublishesOnSaveAndKeepsSharingChoicesIndependent() {
+        var saved: org.ghost.domain.model.ResourceDraft? = null
+        val actions = LocalActions({}, { _, done -> done() }, { _, _ -> }, {}, {}, {},
+            publishResource = { value, done -> saved = value; done() })
+        compose.setContent { GhostTheme { GhostApp(FoundationPreviewFixtures.loaded, {}, actions = actions) } }
+        compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("Offer help"))
+        compose.onNodeWithText("Offer help").performClick()
+        assertNull(saved)
+        compose.onNodeWithText("Supplies").performClick()
+        compose.onNodeWithText("Quantity (optional)").performScrollTo().performTextInput("0")
+        compose.onNodeWithText("Save and share help").performClick()
+        assertNull(saved)
+        compose.onNodeWithText("Quantity (optional)").performScrollTo().performTextReplacement("12")
+        compose.onNodeWithText("Allow online help coordination").performScrollTo().assertIsOff().performClick()
+        compose.onNodeWithText("Share with nearby phones").performScrollTo().assertIsOn().performClick()
+        compose.onNodeWithText("Allow online help coordination").assertIsOn()
+        compose.onNodeWithText("Save on this phone").performClick()
+        assertEquals("12", saved!!.quantity)
+        assertTrue(saved!!.supply); assertFalse(saved!!.publicSharing); assertTrue(saved!!.cloudConsent)
+    }
+
     @Test
     fun navigationAndOpeningTheSosFormDoNotPublish() {
         compose.setContent { GhostTheme(darkTheme = false) { GhostApp(FoundationPreviewFixtures.loaded, {}) } }

@@ -66,5 +66,14 @@ export async function initializeDatabase(database: Database): Promise<void> {
       PRIMARY KEY (principal_id, idempotency_key)
     )`);
     await connection.query("CREATE INDEX IF NOT EXISTS sync_uploads_created_at ON sync_uploads(created_at)");
+    await connection.query(`CREATE TABLE IF NOT EXISTS resource_events (
+      event_id UUID PRIMARY KEY, packet_id UUID NOT NULL UNIQUE,
+      kind SMALLINT NOT NULL CHECK (kind IN (3,5)), entity_id TEXT NOT NULL, owner_node_id TEXT NOT NULL,
+      immutable_envelope BYTEA NOT NULL, origin_signature BYTEA NOT NULL, data JSONB NOT NULL,
+      created_at_ms BIGINT NOT NULL, expires_at_ms BIGINT NOT NULL, received_at_ms BIGINT NOT NULL,
+      cloud_revision BIGINT NOT NULL UNIQUE, cloud_ack JSONB NOT NULL
+    )`);
+    await connection.query("CREATE UNIQUE INDEX IF NOT EXISTS resource_offer_id ON resource_events(entity_id) WHERE kind = 5");
+    await connection.query("CREATE INDEX IF NOT EXISTS resource_latest ON resource_events(kind, entity_id, created_at_ms DESC, event_id DESC)");
   });
 }
