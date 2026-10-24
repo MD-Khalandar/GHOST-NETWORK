@@ -73,7 +73,8 @@ class LocalSosRepositoryTest {
         val draft = repo.observeDraft().first()!!.copy(description = "Need water")
         repo.saveDraft(draft)
         val input = payload(public = false, id = draft.requestId).copy(consent = Consent(false, true))
-        val first = repo.publish(input).getOrThrow()
+        // The form's current choice wins even if an older draft write still says GPS is on.
+        val first = repo.publish(input, locationSharing = false).getOrThrow()
         assertEquals(first, repo.publish(input).getOrThrow())
         assertEquals(1, db.sos().count())
         assertTrue(repo.outgoing().isEmpty())
@@ -81,6 +82,7 @@ class LocalSosRepositoryTest {
         val next = repo.observeDraft().first()!!
         assertFalse(next.publicSharing)
         assertTrue(next.cloudConsent)
+        assertFalse(next.locationSharing)
         assertNotEquals(draft.requestId, next.requestId)
         repo.saveDraft(draft)
         assertEquals(next, repo.observeDraft().first())

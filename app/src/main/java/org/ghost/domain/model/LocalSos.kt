@@ -10,6 +10,7 @@ data class SosDraft(
     val description: String = "",
     val people: String = "",
     val area: String = "",
+    val locationSharing: Boolean = true,
     val publicSharing: Boolean = false,
     val cloudConsent: Boolean = false,
 )

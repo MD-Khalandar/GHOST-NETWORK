@@ -5,6 +5,8 @@ export interface SosReport {
   people_count: number | null;
   coarse_area: string | null;
   landmark: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
   created_at_ms: number;
   expires_at_ms: number;
   received_at_ms: number;

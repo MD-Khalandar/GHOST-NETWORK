@@ -14,6 +14,7 @@ export function RequestDetails({ report, now, children }: { report: SosReport; n
     <dl className="details">
       <div><dt>Area</dt><dd>{report.coarse_area || "Not provided"}</dd></div>
       <div><dt>Landmark</dt><dd>{report.landmark || "Not provided"}</dd></div>
+      <div><dt>GPS location</dt><dd>{report.latitude != null && report.longitude != null ? `${report.latitude}, ${report.longitude}` : "Not provided"}</dd></div>
       <div><dt>People needing help</dt><dd>{report.people_count ?? "Not provided"}</dd></div>
       <div><dt>Reported</dt><dd>{time(report.created_at_ms)}</dd></div>
       <div><dt>Received by server</dt><dd>{time(report.received_at_ms)}</dd></div>

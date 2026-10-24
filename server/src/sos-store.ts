@@ -17,16 +17,20 @@ export interface DashboardSos {
   people_count: number | null;
   coarse_area: string | null;
   landmark: string | null;
+  latitude: number | null;
+  longitude: number | null;
   created_at_ms: number;
   expires_at_ms: number;
   received_at_ms: number;
   cloud_revision: number;
 }
-const dashboardColumns = "request_id, category, description, people_count, coarse_area, landmark, created_at_ms, expires_at_ms, received_at_ms, cloud_revision";
+const dashboardColumns = "request_id, category, description, people_count, coarse_area, landmark, latitude, longitude, created_at_ms, expires_at_ms, received_at_ms, cloud_revision";
 const dashboardReport = (row: Record<string, any>): DashboardSos => ({
   request_id: row.request_id, category: Number(row.category), description: row.description,
   people_count: row.people_count === null ? null : Number(row.people_count),
   coarse_area: row.coarse_area, landmark: row.landmark,
+  latitude: row.latitude === null ? null : Number(row.latitude),
+  longitude: row.longitude === null ? null : Number(row.longitude),
   created_at_ms: Number(row.created_at_ms), expires_at_ms: Number(row.expires_at_ms),
   received_at_ms: Number(row.received_at_ms), cloud_revision: Number(row.cloud_revision),
 });
@@ -95,13 +99,13 @@ export class SosStore {
         }
         const saved = await connection.query(`INSERT INTO sos_reports (
           event_id, packet_id, request_id, sender_node_id, immutable_envelope, origin_signature,
-          category, description, people_count, coarse_area, landmark, public_mesh_allowed, cloud_processing_allowed,
+          category, description, people_count, coarse_area, landmark, latitude, longitude, public_mesh_allowed, cloud_processing_allowed,
           created_at_ms, expires_at_ms, received_at_ms, cloud_revision, cloud_ack
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,TRUE,TRUE,$12,$13,$14,$15,$16::jsonb)
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,TRUE,TRUE,$14,$15,$16,$17,$18::jsonb)
         ON CONFLICT DO NOTHING RETURNING cloud_revision`, [e.event_id, e.packet_id, p.request_id,
           e.sender_node_id.toString("hex"), bytes, Buffer.from(packet.signature, "base64url"), p.category,
           p.description, p.people_count ?? null, p.coarse_area ?? null, p.landmark ?? null,
-          e.created_at_ms, e.expires_at_ms, received, revision, JSON.stringify(ack)]);
+          p.latitude ?? null, p.longitude ?? null, e.created_at_ms, e.expires_at_ms, received, revision, JSON.stringify(ack)]);
         const duplicate = !saved.rows.length;
         const stored = duplicate ? await this.existing(connection, verified, bytes) : { cloud_revision: revision, cloud_ack: ack };
         response.results[index] = { event_id: e.event_id, status: duplicate ? "DUPLICATE" : "ACCEPTED", cloud_revision: Number(stored.cloud_revision) };

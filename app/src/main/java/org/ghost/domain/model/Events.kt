@@ -50,6 +50,13 @@ data class SosCreatePayload(
     @SerialName("coarse_area") val coarseArea: String? = null,
     val landmark: String? = null,
     val consent: Consent,
+    val location: SosLocation? = null,
+)
+
+@Serializable
+data class SosLocation(
+    val latitude: Double,
+    val longitude: Double,
 )
 
 @Serializable

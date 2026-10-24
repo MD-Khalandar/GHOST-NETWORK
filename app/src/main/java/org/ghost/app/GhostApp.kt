@@ -115,6 +115,7 @@ fun GhostApp(state: FoundationState, onRetry: () -> Unit, trust: DeviceTrustStat
         else SosFormDialog(draft, local.saving, local.error, actions != null,
             onChange = { actions?.updateDraft?.invoke(it) },
             onSave = { value -> actions?.publish?.invoke(value) { showSosPreview = false; route = AppRoute.REQUESTS } },
-            onClose = { value -> if (actions == null) showSosPreview = false else actions.saveDraft(value) { showSosPreview = false } })
+            onClose = { value -> if (actions == null) showSosPreview = false else actions.saveDraft(value) { showSosPreview = false } },
+            onRequestLocation = actions?.requestLocation)
     }
 }

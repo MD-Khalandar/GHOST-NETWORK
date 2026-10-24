@@ -12,8 +12,8 @@ export function registerDashboard(app: FastifyInstance): void {
     setHeaders(response) {
       response.header("Cache-Control", "no-store");
       response.header("X-Content-Type-Options", "nosniff");
-      response.header("Referrer-Policy", "no-referrer");
-      response.header("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
+      response.header("Referrer-Policy", "strict-origin-when-cross-origin");
+      response.header("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data: https://tile.openstreetmap.org; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
     },
   });
   app.get("/dashboard", (_request, reply) => reply.redirect("/dashboard/"));

@@ -112,6 +112,8 @@ message SosCreateV1 {
   optional string coarse_area = 5;
   optional string landmark = 6;
   ConsentV1 consent = 7;
+  optional double latitude = 8;
+  optional double longitude = 9;
 }
 
 message SosUpdateV1 {

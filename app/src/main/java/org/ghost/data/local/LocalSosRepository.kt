@@ -69,19 +69,32 @@ class LocalSosRepository(
                 })
         }
     }.flowOn(Dispatchers.IO)
-    override suspend fun publish(payload: SosCreatePayload): Result<LocalPublishResult> = withContext(Dispatchers.IO) {
+    override suspend fun publish(payload: SosCreatePayload): Result<LocalPublishResult> = publish(payload, null)
+
+    suspend fun publish(payload: SosCreatePayload, locationSharing: Boolean?): Result<LocalPublishResult> = withContext(Dispatchers.IO) {
         try {
             writes.withLock {
                 require(payload.description.isNotBlank() && payload.description.length <= 2000) { "Describe the help you need (up to 2000 characters)." }
                 require(payload.peopleCount == null || payload.peopleCount in 1..1000) { "People count must be between 1 and 1000." }
                 require((payload.coarseArea?.length ?: 0) <= 120 && (payload.landmark?.length ?: 0) <= 120) { "Keep the area short (up to 120 characters)." }
+                payload.location?.let {
+                    require(it.latitude in -90.0..90.0 && it.longitude in -180.0..180.0) { "Invalid location." }
+                }
                 require(UUID.fromString(payload.requestId.value).toString() == payload.requestId.value) { "Invalid request identifier." }
                 val key = identity()
                 val timestamp = now()
                 val data = SosCreateV1.newBuilder().setRequestId(payload.requestId.value).setCategoryValue(payload.category.ordinal + 1)
                     .setDescription(payload.description).setConsent(ConsentV1.newBuilder()
                         .setPublicMeshAllowed(payload.consent.publicMeshAllowed).setCloudProcessingAllowed(payload.consent.cloudProcessingAllowed))
-                    .apply { payload.peopleCount?.let { peopleCount = it }; payload.coarseArea?.let { coarseArea = it }; payload.landmark?.let { landmark = it } }.build()
+                    .apply {
+                        payload.peopleCount?.let { peopleCount = it }
+                        payload.coarseArea?.let { coarseArea = it }
+                        payload.landmark?.let { landmark = it }
+                        payload.location?.let {
+                            latitude = it.latitude
+                            longitude = it.longitude
+                        }
+                    }.build()
                 val packet = SignedPackets.create(key, 1, data.toByteString(), timestamp)
                 val verified = org.ghost.contracts.v1.ImmutableEnvelopeV1.parseFrom(WireCodec.unbase64(packet.immutableEnvelopeBytesBase64, PacketValidator.MAX_ENVELOPE))
                 db.withTransaction {
@@ -101,7 +114,8 @@ class LocalSosRepository(
                         check(dao.insert(row) != -1L) { "Request could not be saved." }
                         val draft = dao.draft()?.let { json.decodeFromString<SosDraft>(it.value) }
                         if (draft?.requestId == payload.requestId.value) dao.saveDraft(DraftRow(value = json.encodeToString(
-                            SosDraft(publicSharing = payload.consent.publicMeshAllowed, cloudConsent = payload.consent.cloudProcessingAllowed))))
+                            SosDraft(publicSharing = payload.consent.publicMeshAllowed, cloudConsent = payload.consent.cloudProcessingAllowed,
+                                locationSharing = locationSharing ?: draft.locationSharing))))
                         LocalPublishResult(verified.eventId, payload.consent.publicMeshAllowed)
                     }
                 }.let { Result.success(it) }

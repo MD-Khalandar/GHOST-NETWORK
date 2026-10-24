@@ -111,7 +111,10 @@ function validate(packet: WirePacket, options: ValidationOptions): VerifiedPacke
   switch (e.kind) {
     case 1:
       payloadCheck(uuid(p.request_id) && integer(p.category, 1, 6) && text(p.description, 2000, true) &&
-        (p.people_count === undefined || integer(p.people_count, 1, 1000)) && text(p.coarse_area, 120) && text(p.landmark, 120));
+        (p.people_count === undefined || integer(p.people_count, 1, 1000)) && text(p.coarse_area, 120) && text(p.landmark, 120) &&
+        (p.latitude === undefined || typeof p.latitude === "number" && Number.isFinite(p.latitude) && p.latitude >= -90 && p.latitude <= 90) &&
+        (p.longitude === undefined || typeof p.longitude === "number" && Number.isFinite(p.longitude) && p.longitude >= -180 && p.longitude <= 180) &&
+        (p.latitude === undefined) === (p.longitude === undefined));
       authority = options.lookup?.("request", p.request_id);
       check(!authority || authority.ownerNodeId === sender, "INVALID_ACTOR");
       break;

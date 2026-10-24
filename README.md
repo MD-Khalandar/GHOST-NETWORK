@@ -38,7 +38,10 @@ For two phones with Google Play services:
 3. Check Requests on the other phone. The sender shows receipt only after the receiver saves the report and returns a valid signature.
 
 The form shows the sharing audience before sending. **Sharing settings** keeps
-mesh sharing and cloud consent separate and remembers them for the next SOS.
+mesh sharing, GPS location sharing and cloud consent separate and remembers them
+for the next SOS. GPS location sharing is on by default; when location permission
+and a fix no older than five minutes are available, the signed SOS includes latitude and
+longitude. If unavailable or disabled, the SOS is sent without location.
 New installations start with mesh sharing on and cloud consent off; existing
 drafts keep their choices. With mesh sharing off, **Save on this phone** saves
 locally. Public reports stay queued without peers. Joining alone never sends a
@@ -148,10 +151,14 @@ npm --prefix server start
 ```
 
 Open `http://127.0.0.1:3000/dashboard/` and enter a **viewer or operator** token
-supplied by the server administrator. It lists uploaded SOS reports; selecting a
-report shows its message, area, people count and timestamps. Refresh checks for
-new arrivals; older reports load in pages. Expiry does not mean help was provided.
-Tokens stay in tab memory; reload/sign-out clears access. Use HTTPS in deployment.
+supplied by the server administrator. It lists uploaded SOS reports and plots
+reports with shared GPS coordinates on the built-in server map. Select a marker
+to open its request details; reports without coordinates remain in the list but
+are not plotted. Leaflet provides pan/zoom and clickable markers over OpenStreetMap
+tiles. The basemap needs internet; tile requests reveal the viewed map area to
+OpenStreetMap but do not send SOS text or access tokens. Refresh checks for new arrivals;
+older reports load in pages. Expiry does not mean help was provided. Tokens stay
+in tab memory; reload/sign-out clears access. Use HTTPS in deployment.
 
 For UI development, run `npm --prefix dashboard run dev` alongside the server;
 open `http://127.0.0.1:5173/dashboard/`. Vite proxies `/v1` to port 3000.

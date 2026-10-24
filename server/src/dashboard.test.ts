@@ -27,7 +27,7 @@ test("dashboard reads real uploads with bounded pagination, detail lookup and ro
     assert.equal(empty.statusCode, 200); assert.deepEqual(empty.json(), { items: [], next_before: null });
     const packets = [1, 2, 3].map(index => createPacket(origin, 1, {
       request_id: randomUUID(), category: index, description: index === 1 ? "<script>alert('SOS')</script>" : `Help ${index}`,
-      ...(index === 1 ? { people_count: 2, coarse_area: "Station", landmark: "North gate" } : {}),
+      ...(index === 1 ? { people_count: 2, coarse_area: "Station", landmark: "North gate", latitude: 0, longitude: 44.25 } : {}),
       consent: { public_mesh_allowed: true, cloud_processing_allowed: true },
     }, { packetId: randomUUID(), eventId: randomUUID(), createdAtMs: now - 1000, expiresAtMs: now + 3600000 }));
     for (const packet of packets) {
@@ -43,6 +43,8 @@ test("dashboard reads real uploads with bounded pagination, detail lookup and ro
     assert.equal(second.json().items.length, 1); assert.equal(second.json().next_before, null);
     assert.equal(report.description, "<script>alert('SOS')</script>");
     assert.equal(report.people_count, 2); assert.equal(report.coarse_area, "Station"); assert.equal(report.landmark, "North gate");
+    assert.equal(report.latitude, 0); assert.equal(report.longitude, 44.25);
+    assert.equal(first.json().items[0].latitude, null); assert.equal(first.json().items[0].longitude, null);
     assert.equal(typeof report.created_at_ms, "number"); assert.equal(report.received_at_ms, now);
     assert.equal(typeof report.cloud_revision, "number");
     assert.doesNotMatch(second.body, /immutable_envelope|signature|cloud_ack|sender_node_id|token_sha256/);
