@@ -1,4 +1,5 @@
 import { parsePrincipals, SigningIdentity, type Principal } from "./security.js";
+import type { UploadLimits } from "./upload-limits.js";
 
 export interface ServerConfig {
   environment: "development" | "test" | "production";
@@ -11,6 +12,8 @@ export interface ServerConfig {
   coordinatorModel?: string;
   aiProvider?: "openai" | "gemini";
   geminiApiKey?: string;
+  uploadLimits?: Partial<UploadLimits>;
+  aiMaxCallsPerHour?: number;
 }
 
 export class ConfigValidationError extends Error {
@@ -22,6 +25,18 @@ export class ConfigValidationError extends Error {
 
 export function loadConfig(environment: NodeJS.ProcessEnv = process.env): ServerConfig {
   const issues: string[] = [];
+  const uploadLimits: Partial<UploadLimits> = {};
+  const positiveLimit = (name: string): number | undefined => {
+    if (environment[name] === undefined) return;
+    const value = Number(environment[name]);
+    if (!Number.isSafeInteger(value) || value < 1 || value > 1000000) issues.push(`${name} must be an integer from 1 to 1000000`);
+    return value;
+  };
+  for (const [name, key] of [["GHOST_UPLOAD_PACKETS_PER_DEVICE_MINUTE", "perDevice"],
+    ["GHOST_UPLOAD_PACKETS_PER_IP_MINUTE", "perIp"], ["GHOST_UPLOAD_PACKETS_GLOBAL_MINUTE", "global"]] as const) {
+    const value = positiveLimit(name); if (value !== undefined) uploadLimits[key] = value;
+  }
+  const aiMaxCallsPerHour = positiveLimit("GHOST_AI_MAX_CALLS_PER_HOUR");
   const mode = environment.GHOST_ENV?.trim() || "development";
   const aiProvider = environment.GHOST_AI_PROVIDER?.trim() || "openai";
   if (!["openai", "gemini"].includes(aiProvider)) issues.push("GHOST_AI_PROVIDER must be openai or gemini");
@@ -49,6 +64,7 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): Server
   }
   if (issues.length) throw new ConfigValidationError(issues);
   return { environment: mode as ServerConfig["environment"], host: environment.GHOST_HOST?.trim() || "127.0.0.1", port,
+    ...(Object.keys(uploadLimits).length ? { uploadLimits } : {}), ...(aiMaxCallsPerHour === undefined ? {} : { aiMaxCallsPerHour }),
     authPrincipals, ...(cloudSigningKeyPem ? { cloudSigningKeyPem } : {}), ...(databaseUrl ? { databaseUrl } : {}),
     ...(environment.OPENAI_API_KEY?.trim() ? { openaiApiKey: environment.OPENAI_API_KEY.trim() } : {}),
     ...(environment.GHOST_AI_PROVIDER?.trim() ? { aiProvider: aiProvider as "openai" | "gemini" } : {}),

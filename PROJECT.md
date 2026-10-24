@@ -36,12 +36,17 @@ Server SOS uploads now persist in PostgreSQL with consent/signature checks,
 transactional deduplication and stored signed cloud acknowledgements. Local
 embedded-PostgreSQL tests pass; external deployment has not been verified.
 Connect to GHOST now joins nearby phones and automatically connects online over
-Wi-Fi while foregrounded. Builds include the server URL and trusted public key;
+cellular or Wi-Fi while foregrounded. Hosted servers use Android's default route,
+including VPNs; private LAN servers use available Wi-Fi. Builds include the server URL and trusted public key;
 phones prove their existing Keystore identity with signed one-use challenges and
 receive renewable upload-only sessions. Credentials stay encrypted on the phone;
 the server stores their hashes. Manual gateway settings are legacy technical details.
 Only consented reports upload; verified server acknowledgements persist in Room.
-Handshake, renewal, offline/foreground gating and upload tests pass locally;
+Enrollment reuses pending challenges without invalidating another caller's proof.
+Shared-network enrollment allows 600 requests/minute per IP, removing the old 15-phone bottleneck;
+separate persistent packet budgets limit uploads across device renewal and servers.
+Throttled uploads stay queued for retry. Handshake, cancellation, renewal,
+cellular/LAN routing, offline/foreground gating and upload tests pass locally;
 physical one-click enrollment and credential persistence still need device testing.
 Cloud acknowledgements now return through the mesh with their own durable queue,
 expiry and four-transfer budget. The original phone shows verified server receipt.
@@ -92,7 +97,10 @@ suggestions and stores proposals without allocating stock. Leases, bounded retri
 and source checks guard processing. Dashboard AI suggestions shows runs and stale
 proposals; operators can request a rerun. Select GHOST_AI_PROVIDER=openai (default)
 or gemini, set its OPENAI_API_KEY/GEMINI_API_KEY and GHOST_COORDINATOR_MODEL on the
-server. Both providers share validation and queues. Live provider testing remains.
+server. Both providers share validation and queues. A persistent shared budget
+defaults to 120 provider calls per UTC hour, configurable on the server; exhausted
+work stays queued for the next hour and the dashboard shows the pause. This limits
+calls, not currency spend. Live provider testing remains.
 
 Next: operator approval → owner decisions, allocation and signed assistance returns.
 

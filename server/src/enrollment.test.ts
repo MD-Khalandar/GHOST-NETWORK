@@ -9,6 +9,7 @@ import { buildApp } from "./app.js";
 import { createPacket } from "./protocol.js";
 import { SigningIdentity, tokenHash, verifySignature } from "./security.js";
 import type { Database } from "./database.js";
+import { ENROLLMENT_REQUESTS_PER_IP_MINUTE } from "./enrollment.js";
 
 const pem = () => generateKeyPairSync("ec", { namedCurve: "prime256v1" }).privateKey.export({ type: "pkcs8", format: "pem" }).toString();
 const cloudPem = pem(), cloud = SigningIdentity.fromPem(cloudPem);
@@ -116,11 +117,33 @@ test("handshake endpoints are bounded and report missing storage honestly", asyn
   let now = 1792860000000;
   const app = appFor(new PGlite(), () => now);
   try {
-    for (let i=0;i<30;i++) assert.equal((await app.inject({ method: "POST", url: "/v1/gateway/challenge", payload: {} })).statusCode, 400);
+    for (let i=0;i<ENROLLMENT_REQUESTS_PER_IP_MINUTE;i++) assert.equal((await app.inject({ method: "POST", url: "/v1/gateway/challenge", payload: {} })).statusCode, 400);
     assert.equal((await app.inject({ method: "POST", url: "/v1/gateway/challenge", payload: {} })).statusCode, 429);
     now += 60001;
     await challenge(app);
     const large = await app.inject({ method: "POST", url: "/v1/gateway/enroll", payload: { challenge_bytes: "A".repeat(10000), signature: "AA" } });
     assert.equal(large.statusCode, 413);
+  } finally { await app.close(); }
+});
+
+test("another caller cannot replace a device's pending challenge, and repeated requests stay bounded", async () => {
+  const pg = new PGlite(); const app = appFor(pg, () => 1792860000000);
+  try {
+    const first = await challenge(app);
+    const otherCaller = await app.inject({ method: "POST", url: "/v1/gateway/challenge", remoteAddress: "198.51.100.2",
+      payload: { public_key: phone.publicKey.toString("base64url") } });
+    assert.equal(otherCaller.statusCode, 200);
+    assert.equal(otherCaller.json().signed_bytes, first.signed_bytes);
+    assert.equal((await pg.query("SELECT * FROM gateway_challenges")).rows.length, 1);
+    const proof = { challenge_bytes: first.signed_bytes, signature: phone.sign(bytes(first)).toString("base64url") };
+    assert.equal((await app.inject({ method: "POST", url: "/v1/gateway/enroll", payload: proof })).statusCode, 200);
+    assert.equal((await app.inject({ method: "POST", url: "/v1/gateway/enroll", payload: proof })).statusCode, 401);
+  } finally { await app.close(); }
+});
+
+test("a shared Wi-Fi or carrier IP can enroll many phones without the old fifteen-phone cutoff", async () => {
+  const app = appFor(new PGlite(), () => 1792860000000);
+  try {
+    for (let index = 0; index < 30; index++) await enroll(app, SigningIdentity.fromPem(pem()));
   } finally { await app.close(); }
 });

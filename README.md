@@ -117,15 +117,16 @@ Release builds require HTTPS and a nonempty trusted public key.
 
 Install the same configured APK on participating phones. Tap **Connect to GHOST**,
 allow first-use Android permissions, and keep the app open. Nearby connections
-start automatically; Wi-Fi enables server connection and device enrollment without
-entering URLs or tokens. A local server must be reachable on that Wi-Fi; internet
-alone cannot reach a private LAN address. Provider and server private keys stay
+start automatically; cellular or Wi-Fi enables server connection and device enrollment
+without entering URLs or tokens. Hosted servers use Android's default connection,
+including VPNs. A private LAN server uses available Wi-Fi; internet alone cannot
+reach a private LAN address. Provider and server private keys stay
 server-side. Dashboard/operator authentication remains separate.
 
 The phone checks both enrollment replies against its trusted server key and proves
 possession of its existing Android Keystore identity. An expiring upload-only
 credential is stored encrypted and renewed automatically, including after a 401.
-Disconnection, backgrounding or leaving Wi-Fi pauses online transfers; reconnecting
+Disconnection, backgrounding or losing all usable networks pauses online transfers; reconnecting
 resumes them. Sharing choices are unchanged: only public, online-consented reports
 upload, and **Received by server** requires a verified, saved acknowledgement.
 No connection status creates an SOS or confirms assistance. Manual gateway tokens

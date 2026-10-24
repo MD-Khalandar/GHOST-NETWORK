@@ -7,9 +7,9 @@ import org.ghost.gateway.api.GatewayReachability
 data class AutomaticConnection(val available: Boolean, val active: Boolean = false, val online: Boolean = false,
                                val message: String = "Tap Connect to GHOST to connect nearby and online.")
 
-/** Only a user's foreground connection and Wi-Fi enable enrollment or online transfers. */
+/** Only a user's foreground connection and an available network enable enrollment. */
 class AutomaticGateway(private val scope: CoroutineScope, private val settings: GatewaySettings,
-    private val serverUrl: String, private val client: GatewayEnrollmentClient?, enabled: Flow<Boolean>, wifi: Flow<Boolean>,
+    private val serverUrl: String, private val client: GatewayEnrollmentClient?, enabled: Flow<Boolean>, networkAvailable: Flow<Boolean>,
     private val reachability: (GatewayReachability) -> Unit, private val now: () -> Long = System::currentTimeMillis) {
     private val refresh = MutableStateFlow(0)
     private val available = serverUrl.isNotBlank() && client != null
@@ -20,13 +20,13 @@ class AutomaticGateway(private val scope: CoroutineScope, private val settings: 
             try { settings.load() }
             catch (cancelled: CancellationException) { throw cancelled }
             catch (_: Exception) { /* A new device-bound session can replace unusable saved credentials. */ }
-            combine(enabled, wifi, refresh) { active, connected, _ -> active to connected }
+            combine(enabled, networkAvailable, refresh) { active, connected, _ -> active to connected }
                 .collectLatest { (active, connected) ->
                     reachability(GatewayReachability.UNKNOWN)
                     mutableState.value = AutomaticConnection(available, active = active, message = when {
                         !available -> "Online connection isn't set up for this app build. Nearby sharing still works."
                         !active -> "Tap Connect to GHOST to connect nearby and online."
-                        !connected -> "Waiting for Wi-Fi. Nearby requests can still be shared."
+                        !connected -> "Waiting for a network. Cellular or Wi-Fi can connect; nearby sharing still works."
                         else -> "Connecting to the GHOST server…"
                     })
                     if (!available || !active || !connected) return@collectLatest

@@ -14,8 +14,8 @@ import org.ghost.mesh.DirectExchange
 import org.ghost.mesh.Connectivity
 import org.ghost.mesh.NodeCapabilities
 import org.ghost.mesh.observeInternet
-import org.ghost.mesh.observeWifi
-import org.ghost.mesh.openWifiConnection
+import org.ghost.mesh.observeServerNetwork
+import org.ghost.mesh.openServerConnection
 import org.ghost.gateway.api.GatewayReachability
 import org.ghost.security.AndroidSigningIdentity
 import org.ghost.transport.nearby.NearbyAdapter
@@ -35,15 +35,15 @@ class AppGraph(application: Application) : AndroidViewModel(application) {
     private val cloudKey = runCatching {
         BuildConfig.CLOUD_PUBLIC_KEY.takeIf { it.isNotEmpty() }?.let { WireCodec.unbase64(it, 91).also(SigningIdentity::decodePublicKey) }
     }.getOrNull()
-    private val gatewayClient = HttpGatewayClient(openConnection = { openWifiConnection(application, it) }) { gatewaySettings.config.value }
+    private val gatewayClient = HttpGatewayClient(openConnection = { openServerConnection(application, it) }) { gatewaySettings.config.value }
     private val connectionActive = MutableStateFlow(false)
-    private val wifi = observeWifi(application).stateIn(viewModelScope, SharingStarted.Eagerly, false)
+    private val serverNetwork = observeServerNetwork(application).stateIn(viewModelScope, SharingStarted.Eagerly, false)
     private val automaticGateway = AutomaticGateway(viewModelScope, gatewaySettings, BuildConfig.SERVER_URL,
         cloudKey?.let { GatewayEnrollmentClient(it, { identity }, BuildConfig.DEBUG,
-            openConnection = { url -> openWifiConnection(application, url) }) }, connectionActive, wifi,
+            openConnection = { url -> openServerConnection(application, url) }) }, connectionActive, serverNetwork,
         gatewayClient::recordReachability)
     private val gateway = GatewaySync(viewModelScope, gatewaySettings.config,
-        combine(connectionActive, wifi) { active, connected -> active && connected }, gatewayClient, repository, cloudKey,
+        combine(connectionActive, serverNetwork) { active, connected -> active && connected }, gatewayClient, repository, cloudKey,
         onAuthenticationFailure = { automaticGateway.retry(clearSession = true) })
     private val internet = observeInternet(application).stateIn(viewModelScope, SharingStarted.Eagerly, Connectivity.UNKNOWN)
     private val exchange = DirectExchange(viewModelScope, nearby, repository, { identity }, cloudKey = cloudKey, capabilities = {

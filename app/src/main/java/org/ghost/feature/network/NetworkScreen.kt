@@ -69,7 +69,7 @@ fun NetworkScreen(state: FoundationState, onRetry: () -> Unit, modifier: Modifie
                 item("retry") { TextButton(onClick = { actions?.retrySends?.invoke() }, enabled = actions != null, modifier = Modifier.heightIn(min = 48.dp)) { Text("Try sending again") } }
                 item("sharing") {
                     InfoCard("Online sharing", local.gateway.message.userMessage()) {
-                        Text("GHOST connects to the server automatically over Wi-Fi. Only requests and offers whose owners allowed online sharing are saved online. Help is confirmed separately.")
+                        Text("GHOST connects to the server automatically over cellular or Wi-Fi. Local LAN servers use Wi-Fi. Only requests and offers whose owners allowed online sharing are saved online. Help is confirmed separately.")
                     }
                 }
                 item("technical-toggle") {

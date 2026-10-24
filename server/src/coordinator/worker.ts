@@ -12,9 +12,10 @@ export class CoordinatorWorker {
   private wakeAgain = false;
   readonly store: CoordinatorStore;
   private readonly coordinator: CloudCoordinator;
-  constructor(private readonly database: Database, readonly model: ProposalModel, private readonly now = Date.now) {
+  constructor(private readonly database: Database, readonly model: ProposalModel, private readonly now = Date.now,
+    private readonly maxCallsPerHour = 120) {
     this.store = new CoordinatorStore(database);
-    this.coordinator = new CloudCoordinator(this.store, model, now);
+    this.coordinator = new CloudCoordinator(this.store, model, now, maxCallsPerHour);
   }
   start() {
     this.stopped = false;
@@ -87,6 +88,14 @@ export class CoordinatorWorker {
       heartbeat.unref();
       try {
         const result = await this.coordinator.run(job.request_id, token);
+        if (result.code === "MODEL_BUDGET_EXHAUSTED") {
+          // A budget pause is not a failed delivery or an exhausted retry. Keep
+          // the job durable until the next hourly window.
+          await this.database.query(`UPDATE coordinator_jobs SET queued = TRUE, next_attempt_at_ms = $2
+            WHERE request_id = $1 AND EXISTS (SELECT 1 FROM coordinator_lease WHERE id = 1 AND owner = $3 AND expires_at_ms > $4)`,
+            [job.request_id, Math.floor(this.now() / 3600000) * 3600000 + 3600000, token, this.now()]);
+          continue;
+        }
         const attempts = Number(job.attempts) + 1;
         const retry = attempts < 3 && ["MODEL_ERROR", "STORAGE_UNAVAILABLE", "STALE_SOURCE"].includes(result.code ?? "");
         await this.database.query(`UPDATE coordinator_jobs SET queued = (input_revision > $5 OR $2),
@@ -104,7 +113,7 @@ export class CoordinatorWorker {
     const { rows } = await this.database.query(`SELECT j.request_id, j.attempts, j.next_attempt_at_ms FROM coordinator_jobs j
       JOIN sos_reports s ON s.request_id = j.request_id WHERE j.queued AND s.state = 1 AND s.expires_at_ms > $1
       ORDER BY j.requested_at_ms LIMIT 30`, [this.now()]);
-    return { configured: this.model.available, model: this.model.name, queued: rows.map(row => ({ ...row,
+    return { configured: this.model.available, model: this.model.name, budget: await this.store.modelBudget(this.now(), this.maxCallsPerHour), queued: rows.map(row => ({ ...row,
       next_attempt_at_ms: Number(row.next_attempt_at_ms) })), runs: await this.store.history() };
   }
 }

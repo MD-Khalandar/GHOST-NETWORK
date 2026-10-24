@@ -7,6 +7,7 @@ const CHALLENGE_TTL = 60_000;
 const SESSION_TTL = 24 * 60 * 60_000;
 const CHALLENGE_DOMAIN = "GHOST-GATEWAY-CHALLENGE-V1\n";
 const SESSION_DOMAIN = "GHOST-GATEWAY-SESSION-V1\n";
+export const ENROLLMENT_REQUESTS_PER_IP_MINUTE = 600;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 interface SignedReply { signed_bytes: string; signature: string }
 class EnrollmentError extends Error {
@@ -33,6 +34,7 @@ export async function initializeEnrollment(database: Database): Promise<void> {
       signed_bytes BYTEA NOT NULL, expires_at_ms BIGINT NOT NULL
     )`);
     await connection.query("CREATE INDEX IF NOT EXISTS gateway_challenge_expiry ON gateway_challenges(expires_at_ms)");
+    await connection.query("CREATE INDEX IF NOT EXISTS gateway_challenge_node ON gateway_challenges(node_id)");
   });
 }
 
@@ -48,7 +50,7 @@ export class GatewayEnrollment {
     for (const [key, value] of this.limits) if (now - value.since >= 60_000) this.limits.delete(key);
     if (now - this.window.since >= 60_000) this.window = { since: now, count: 0 };
     const value = this.limits.get(ip) ?? { since: now, count: 0 };
-    if (++this.window.count > 2000 || value.count >= 30 || !this.limits.has(ip) && this.limits.size >= 1024)
+    if (++this.window.count > 2000 || value.count >= ENROLLMENT_REQUESTS_PER_IP_MINUTE || !this.limits.has(ip) && this.limits.size >= 1024)
       throw new EnrollmentError(429, "ENROLLMENT_BUSY");
     value.count++;
     this.limits.set(ip, value);
@@ -70,18 +72,21 @@ export class GatewayEnrollment {
     const expiry = this.now() + CHALLENGE_TTL;
     const bytes = Buffer.from(CHALLENGE_DOMAIN + JSON.stringify({ challenge_id: id, node_id: node,
       nonce: randomBytes(32).toString("base64url"), expires_at_ms: expiry }));
-    await this.database.transaction(async connection => {
+    const challengeBytes = await this.database.transaction(async connection => {
       await connection.query("SELECT pg_advisory_xact_lock(715422703)");
       const device = await connection.query("SELECT revoked FROM gateway_devices WHERE node_id = $1", [node]);
       if (device.rows[0]?.revoked) throw new EnrollmentError(403, "DEVICE_REVOKED");
       await connection.query("DELETE FROM gateway_challenges WHERE expires_at_ms <= $1", [this.now()]);
+      // A public key is not proof of possession. Reuse its unexpired challenge so
+      // another caller cannot revoke an in-progress handshake by submitting it.
+      const existing = await connection.query("SELECT signed_bytes FROM gateway_challenges WHERE node_id = $1 ORDER BY expires_at_ms DESC LIMIT 1", [node]);
+      if (existing.rows.length) return Buffer.from(existing.rows[0].signed_bytes);
       const count = await connection.query("SELECT COUNT(*) AS count FROM gateway_challenges");
       if (Number(count.rows[0].count) >= 1024) throw new EnrollmentError(429, "ENROLLMENT_BUSY");
-      // At most one pending challenge per device. New connections replace abandoned handshakes.
-      await connection.query("DELETE FROM gateway_challenges WHERE node_id = $1", [node]);
       await connection.query(`INSERT INTO gateway_challenges VALUES ($1,$2,$3,$4,$5)`, [id, node, key, bytes, expiry]);
+      return bytes;
     });
-    return this.sign(bytes);
+    return this.sign(challengeBytes);
   }
 
   async enroll(body: unknown, ip: string): Promise<SignedReply> {

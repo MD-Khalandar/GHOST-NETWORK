@@ -24,6 +24,17 @@ test("invalid listen port and environment fail clearly", () => {
   }
 });
 
+test("upload and AI budgets are configurable and reject invalid values without echoing configuration", () => {
+  const config = loadConfig({ GHOST_UPLOAD_PACKETS_PER_DEVICE_MINUTE: "1000", GHOST_UPLOAD_PACKETS_PER_IP_MINUTE: "10000",
+    GHOST_UPLOAD_PACKETS_GLOBAL_MINUTE: "20000", GHOST_AI_MAX_CALLS_PER_HOUR: "60" });
+  assert.deepEqual(config.uploadLimits, { perDevice: 1000, perIp: 10000, global: 20000 });
+  assert.equal(config.aiMaxCallsPerHour, 60);
+  for (const value of ["0", "-1", "1.5", "1000001", "private-bad-value"])
+    assert.throws(() => loadConfig({ GHOST_AI_MAX_CALLS_PER_HOUR: value }), error => {
+      assert.ok(error instanceof ConfigValidationError); assert.doesNotMatch(error.message, /private-bad-value/); return true;
+    });
+});
+
 test("Gemini is explicitly selected with its own key; existing OpenAI configuration still works", () => {
   const gemini = createProposalModel(loadConfig({ GHOST_AI_PROVIDER: "gemini", GEMINI_API_KEY: "google-test-key", GHOST_COORDINATOR_MODEL: "gemini-test-model" }));
   assert.ok(gemini instanceof GeminiProposalModel); assert.equal(gemini.available, true); assert.equal(gemini.name, "gemini-test-model");

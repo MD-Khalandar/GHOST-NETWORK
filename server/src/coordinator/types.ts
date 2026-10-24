@@ -41,7 +41,7 @@ export interface ProposalModel {
 }
 
 export type FailureCode = "MODEL_UNAVAILABLE" | "MODEL_ERROR" | "INVALID_MODEL_OUTPUT" |
-  "REQUEST_UNAVAILABLE" | "STALE_SOURCE" | "STORAGE_UNAVAILABLE";
+  "REQUEST_UNAVAILABLE" | "STALE_SOURCE" | "STORAGE_UNAVAILABLE" | "MODEL_BUDGET_EXHAUSTED";
 export class CoordinatorFailure extends Error {
   constructor(readonly code: FailureCode) { super(code); }
 }

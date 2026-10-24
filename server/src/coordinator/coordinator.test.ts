@@ -24,17 +24,17 @@ const identity = () => SigningIdentity.fromPem(generateKeyPairSync("ec", { named
 const adapter = (pg: PGlite): Database => ({ query: (sql, values) => pg.query(sql, values),
   transaction: work => pg.transaction(connection => work(connection)), close: () => pg.close() });
 
-async function fixture(path?: string) {
+async function fixture(path?: string, lifetime = 60000) {
   const pg = new PGlite(path), database = adapter(pg);
   await initializeDatabase(database); await initializeCoordinator(database);
   const origin = identity(), helper = identity(), supplier = identity();
   const requestId = randomUUID(), offerId = randomUUID();
   const ingest = new SosStore(database, identity(), () => now);
-  const packet = (signer: SigningIdentity, kind: number, payload: Record<string, unknown>, created = now - 1000, expiry = now + 60000) =>
+  const packet = (signer: SigningIdentity, kind: number, payload: Record<string, unknown>, created = now - 1000, expiry = now + lifetime) =>
     createPacket(signer, kind, payload, { packetId: randomUUID(), eventId: randomUUID(), createdAtMs: created, expiresAtMs: expiry });
   const upload = (packets: WirePacket[]) => ingest.upload("test-gateway", randomUUID(),
     packets.map(p => validatePacket(p, { nowMs: now, forCloud: true })));
-  const publishHelper = (signer = helper, availability = 1, created = now - 1000, expiry = now + 60000) =>
+  const publishHelper = (signer = helper, availability = 1, created = now - 1000, expiry = now + lifetime) =>
     upload([packet(signer, 3, { owner_node_id: Buffer.from(signer.nodeId, "hex"), display_name: "Reported helper",
       coarse_area: "Station", help_types: [1, 6], availability, consent }, created, expiry)]);
   const publishOffer = (id = offerId, quantity: number | null = 20, availableUntil = now + 50000, expiry = now + 60000) =>
@@ -58,6 +58,29 @@ const until = async (condition: () => Promise<boolean>) => {
   while (Date.now() < end) { if (await condition()) return; await new Promise(resolve => setTimeout(resolve, 15)); }
   assert.fail("Coordinator did not reach expected state");
 };
+
+test("the shared AI budget is atomic across instances and defers queued work until its next hourly window", async () => {
+  const f = await fixture(undefined, 7200000); let clock = now; let calls = 0;
+  const model = f.model(async () => { calls++; return { matches: [] }; });
+  let worker = new CoordinatorWorker(f.database, model, () => clock, 1);
+  const job = async () => (await f.pg.query<any>("SELECT * FROM coordinator_jobs WHERE request_id=$1", [f.requestId])).rows[0];
+  try {
+    worker.start(); await until(async () => (await job())?.queued === false); await worker.stop();
+    assert.equal(calls, 1);
+    clock += 31000;
+    worker = new CoordinatorWorker(f.database, model, () => clock, 1); // Replacement worker retains the server's consumed budget.
+    await worker.enqueue(f.requestId); worker.start();
+    await until(async () => (await f.store.history()).some(run => run.error_code === "MODEL_BUDGET_EXHAUSTED"));
+    await until(async () => Number((await job()).next_attempt_at_ms) > clock);
+    assert.equal(calls, 1); assert.equal((await job()).queued, true);
+    const status = await worker.status(); assert.equal(status.budget.used, 1); assert.equal(status.budget.limit, 1);
+    clock = status.budget.resets_at_ms; worker.wake();
+    await until(async () => calls === 2 && (await job()).queued === false);
+    const other = new CoordinatorStore(f.database);
+    const claims = await Promise.all(Array.from({ length: 5 }, () => other.reserveModelCall(clock + 3600000, 2)));
+    assert.equal(claims.filter(Boolean).length, 2);
+  } finally { await worker.stop(); await f.pg.close(); }
+});
 
 test("closing an SOS during inference discards suggestions, makes saved proposals stale, and prevents scheduling", async () => {
   const f = await fixture();

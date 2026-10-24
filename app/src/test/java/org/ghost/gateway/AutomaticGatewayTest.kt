@@ -117,7 +117,7 @@ class AutomaticGatewayTest {
         databases.forEach { (name, db) -> db.close(); context.deleteDatabase(name) }
     }
 
-    @Test fun oneConnectEnrollsAndUploadsOnlyConsentedReportsWhileForegroundAndOnWifi() = runTest {
+    @Test fun oneConnectEnrollsAndUploadsOnlyConsentedReportsWhileForegroundAndOnAnAvailableNetwork() = runTest {
         val endpoint = Endpoint(); val settings = Settings()
         val enabled = MutableStateFlow(false); val wifi = MutableStateFlow(false)
         val name = "automatic-${UUID.randomUUID()}.db"

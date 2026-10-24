@@ -10,10 +10,12 @@ export interface AiProposal {
   quantity: number | null; explanation: string; freshness: "current" | "stale" | "not_found"; created_at_ms: number;
 }
 interface AiRun { run_id: string; request_id: string; status: string; error_code: string | null; created_at_ms: number }
-interface AiStatus { configured: boolean; model: string | null; queued: { request_id: string; attempts: number }[]; runs: AiRun[] }
+interface AiStatus { configured: boolean; model: string | null; queued: { request_id: string; attempts: number }[]; runs: AiRun[];
+  budget?: { used: number; limit: number; resets_at_ms: number } }
 const errors: Record<string, string> = {
   MODEL_UNAVAILABLE: "AI is not configured", MODEL_ERROR: "Model request failed", INVALID_MODEL_OUTPUT: "Model suggestion rejected",
   REQUEST_UNAVAILABLE: "Request expired or unavailable", STALE_SOURCE: "Availability changed during the run", STORAGE_UNAVAILABLE: "Storage interrupted",
+  MODEL_BUDGET_EXHAUSTED: "AI call budget reached; request remains queued",
 };
 
 export function ProposalCard({ proposal }: { proposal: AiProposal }) {
@@ -93,6 +95,9 @@ export default function Coordination({ token, onAccessLost }: { token: string; o
       <button className="secondary-button" disabled={busy} onClick={() => void load()}>Refresh AI status</button></div>
     <p className="subtle">Suggestions refresh every five seconds. They do not confirm help. Approval and owner acceptance are the next implementation step.</p>
     {status && !status.configured && <p className="error-banner">The server needs an AI provider, its API key and a model. Saved SOS reports and mesh relay continue to work.</p>}
+    {status?.budget && status.budget.used >= status.budget.limit && <p className="help-note" role="status">
+      AI checks are paused until {time(status.budget.resets_at_ms)}. Requests remain queued; uploads and nearby relay continue.
+    </p>}
     {error && <p className="error error-banner" role="alert">{error} Previously loaded results may be outdated.</p>}
     <div className="resource-grid">{items.map(item => <ProposalCard key={item.proposal_id} proposal={item}/>)}</div>
     {status && !items.length && <div className="empty-state"><h2>No suggestions yet</h2><p>{status.queued.length ? "Requests are queued for the AI coordinator." : "New uploads trigger checks when cloud AI is configured. Operators can also run a check from an SOS."}</p></div>}

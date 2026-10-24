@@ -65,7 +65,7 @@ class GatewayEnrollmentClient(private val cloudKey: ByteArray, private val ident
         val socket = openConnection(URI("$url$path").toURL())
         try {
             withTimeout(20000) {
-                async(Dispatchers.IO) {
+                val transfer = async(Dispatchers.IO) {
                     socket.apply {
                         requestMethod = if (body == null) "GET" else "POST"
                         instanceFollowRedirects = false; connectTimeout = 10000; readTimeout = 10000
@@ -85,7 +85,9 @@ class GatewayEnrollmentClient(private val cloudKey: ByteArray, private val ident
                         throw GatewayFailure(error, status >= 500 || status == 429 || status == 408, status == 401 || status == 403)
                     }
                     socket.inputStream.use { it.readNBytesCompat(8192) }
-                }.await()
+                }
+                // Close immediately when await is cancelled, before waiting for blocked IO.
+                try { transfer.await() } finally { socket.disconnect() }
             }
         } finally { socket.disconnect() }
     }
