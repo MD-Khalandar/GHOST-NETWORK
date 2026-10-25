@@ -29,20 +29,37 @@ class LocalAssistanceRepository(private val db:GhostDatabase,private val identit
     }.flowOn(Dispatchers.IO)
     private fun envelope(row:AssistanceRow)=ImmutableEnvelopeV1.parseFrom(WireCodec.unbase64(WireCodec.decode(row.wire).immutableEnvelopeBytesBase64,PacketValidator.MAX_ENVELOPE))
     suspend fun store(packet:WirePacket,cloudKey:ByteArray)=withContext(Dispatchers.IO) {
-        val v=PacketValidator(cloudKey).verify(packet,now());require(v.envelope.kindValue in 16..17)
+        val v=PacketValidator(cloudKey).verify(packet,now());require(v.envelope.kindValue in 16..18)
         db.withTransaction {
             val e=v.envelope
             require(db.sos().packet(e.packetId)==null && db.sos().event(e.eventId)==null &&
                 db.resources().packet(e.packetId)==null && db.resources().event(e.eventId)==null &&
                 db.closures().packet(e.packetId)==null && db.closures().event(e.eventId)==null &&
                 db.sos().cloudReturn(e.packetId)==null && db.sos().cloudReturnEvent(e.eventId)==null){"Conflicting coordination identifier."}
-            val id=if(v.payload is AssistanceStatusV1)v.payload.proposalId else (v.payload as AssistanceDecisionV1).proposalId
-            val version=if(v.payload is AssistanceStatusV1)v.payload.version else (v.payload as AssistanceDecisionV1).version
+            val id=when(val p=v.payload){is AssistanceStatusV1->p.proposalId;is AssistanceDecisionV1->p.proposalId;else->(p as PrivateChatV1).proposalId}
+            val version=when(val p=v.payload){is AssistanceStatusV1->p.version;is AssistanceDecisionV1->p.version;else->AssistanceStatusV1.parseFrom(ImmutableEnvelopeV1.parseFrom((p as PrivateChatV1).statusEnvelope).payloadBytes).version}
             val previous=dao.packet(e.packetId) ?: dao.event(e.eventId)
             if(previous!=null){
                 require(envelope(previous)==e)
                 if(packet.relay.hopCount<WireCodec.decode(previous.wire).relay.hopCount) dao.relay(e.packetId,WireCodec.encode(packet))
             } else {
+                if(e.kindValue==18) {
+                    if(dao.chatCount()>=350) {
+                        val local=identity().nodeId.value
+                        val messages=dao.observe().first().filter{it.kind==18}
+                        val retained=messages.filter { row->
+                            val original=envelope(row)
+                            PrivateChatV1.parseFrom(original.payloadBytes).type==2 &&
+                                (row.destination==local || SigningIdentity.hex(original.senderNodeId.toByteArray())==local)
+                        }.sortedByDescending{envelope(it).createdAtMs}.take(100).map{it.eventId}.toSet()
+                        val obsolete=messages.filter{it.expiresAt<=now()}.filter{row->
+                            val chat=PrivateChatV1.parseFrom(envelope(row).payloadBytes)
+                            when(chat.type){2->row.eventId !in retained;3->chat.messageId !in retained;else->true}
+                        }.map{it.eventId}
+                        if(obsolete.isNotEmpty())dao.deleteOldChat(obsolete)
+                    }
+                    require(dao.chatCount()<400){"Chat queue is full. Wait for pending messages to expire or be delivered."}
+                }
                 dao.prune(now(),identity().nodeId.value);require(dao.count()<1000){"Coordination queue is full."}
                 dao.insert(AssistanceRow(e.eventId,e.packetId,id,version,e.kindValue,
                     if(e.destination.kindValue==2)SigningIdentity.hex(e.destination.nodeId.toByteArray()) else "",
@@ -97,7 +114,7 @@ class LocalAssistanceRepository(private val db:GhostDatabase,private val identit
             require(page.cursor == cursor(server) && page.nextCursor.toLong() >= page.cursor.toLong())
             for (packet in page.packets) {
                 val e = ImmutableEnvelopeV1.parseFrom(WireCodec.unbase64(packet.immutableEnvelopeBytesBase64, PacketValidator.MAX_ENVELOPE))
-                require(e.kindValue == 16)
+                require(e.kindValue in setOf(16,18))
                 if (e.expiresAtMs <= now()) {
                     // Authenticate before skipping; invalid signatures must never advance a checkpoint.
                     PacketValidator(cloudKey).verify(packet, e.expiresAtMs - 1)

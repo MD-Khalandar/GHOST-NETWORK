@@ -210,6 +210,26 @@ acceptance reserves known stock or one volunteer commitment. Two acceptances
 cannot allocate the same remaining stock. A conflicting acceptance produces a
 signed cancellation. Current server commitments subtract from AI availability.
 
+Private chat uses participant-signed `PRIVATE_CHAT` (18): type 1 RSA public key,
+type 2 encrypted text, type 3 recipient persisted receipt. Packets carry a pinned
+server-signed committed status addressed to the signing participant (or the original
+sender for a return receipt). The server rechecks current membership/version and
+state for new keys/messages; receipts can return after closure. Message text stays
+encrypted; no dashboard/API route exposes decrypted chat. Keys/messages expire by
+the commitment deadline, receipts within 24 hours. Active chat outbox entries are
+bounded to 400 per arrangement and covered by existing upload rate limits.
+
+Capable gateways add `private_chat=1` to `GET /v1/sync/download`. Without it the
+existing download stream contains status packets only, protecting older apps from
+unsupported chat packets. Chat shares durable delivery cursors, deduplication,
+transaction rollback and cloud acknowledgements; gateway persistence never means
+recipient delivery. The existing outbox gains a `kind` column in place; Android's
+encrypted chat history uses the existing coordination table without a Room migration.
+Phone encryption keys stay in Android Keystore. This basic protocol uses AES-256-GCM
+with fresh keys/nonces and RSA-2048 OAEP (SHA-256, MGF1 SHA-1 for Android compatibility),
+binding ciphertext to arrangement/message/sender/recipient IDs. It has no forward
+secrecy; participant and timing metadata are visible to the server and relays.
+
 Invitations expire within one hour/source expiry. New resource versions invalidate
 pending invitations; withdrawal stops new matches but retains existing commitments.
 Edits below committed/used stock or with changed units return 409

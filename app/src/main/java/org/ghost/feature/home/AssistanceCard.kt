@@ -11,6 +11,8 @@ import org.ghost.feature.foundation.fixtureTime
 @Composable fun AssistanceCard(item:AssistanceSummary,actions:LocalActions?,busy:Boolean,closedLocally:Boolean=false,
     modifier:Modifier=Modifier,grouped:Boolean=false) {
     var deciding by remember {mutableStateOf<Int?>(null)}
+    var chatOpen by remember {mutableStateOf(false)}
+    if(chatOpen && actions?.observeChat!=null && actions.sendChat!=null)ChatDialog(item.id,item.owner,actions){chatOpen=false}
     val expired=item.deadline<=System.currentTimeMillis() && item.state in 1..2
     val resource=if(item.resourceKind==1)"Volunteer assistance" else "${item.quantity ?: "Unknown"} ${item.unit}"
     InfoCard(if(grouped) { if(item.resourceKind==1)"Volunteer response" else "Supply response" }
@@ -32,6 +34,8 @@ import org.ghost.feature.foundation.fixtureTime
         Text("Decision/commitment deadline: ${fixtureTime(item.deadline)}")
         if(item.reason.isNotBlank())Text(item.reason)
         item.error?.let {Text("Server rejected the decision ($it). Waiting for current coordination status.",color=MaterialTheme.colorScheme.error)}
+        if(item.state in 2..7 && item.state!=3 && actions?.observeChat!=null && actions.sendChat!=null)
+            TextButton({chatOpen=true}){Text(if(item.state!=2)"View messages" else if(item.owner)"Message requester" else "Message helper")}
         if(item.owner && !expired && !item.pending && actions?.decideAssistance!=null) {
             if(item.state==1){
                 Button({deciding=1},enabled=!busy){Text("Accept request")}

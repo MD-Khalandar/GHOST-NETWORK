@@ -41,6 +41,7 @@ class DirectExchange(private val scope: CoroutineScope, private val transport: G
         var flushAgain = false
         var sendingReports = false
         var supportsAssistance = false
+        var supportsChat = false
         var supportsTopology = false
         var supportsResources = false
         var supportsOfferUpdates = false
@@ -180,7 +181,7 @@ class DirectExchange(private val scope: CoroutineScope, private val transport: G
     private suspend fun sendHello(peer: PeerHandle, session: Session, replyTo: ByteString = ByteString.EMPTY) {
         val packet = withContext(Dispatchers.IO) {
             SignedPackets.create(identity(), 13, PeerHelloV1.newBuilder().setChallenge(ByteString.copyFrom(session.challenge))
-                .setReplyTo(replyTo).setSupportsTopology(true).setSupportsResources(true).setSupportsOfferUpdates(true).setSupportsSosClosures(true).setSupportsAssistance(true).build().toByteString(), now(), ttl = 300000)
+                .setReplyTo(replyTo).setSupportsTopology(true).setSupportsResources(true).setSupportsOfferUpdates(true).setSupportsSosClosures(true).setSupportsAssistance(true).setSupportsPrivateChat(true).build().toByteString(), now(), ttl = 300000)
         }
         control(peer, session, packet)
     }
@@ -196,6 +197,7 @@ class DirectExchange(private val scope: CoroutineScope, private val transport: G
             require(session.helloNode == null || session.helloNode == node)
             session.helloNode = node
             session.supportsAssistance = hello.supportsAssistance
+            session.supportsChat = hello.supportsPrivateChat
             session.supportsTopology = hello.supportsTopology
             session.supportsResources = hello.supportsResources
             session.supportsOfferUpdates = hello.supportsOfferUpdates
@@ -241,8 +243,9 @@ class DirectExchange(private val scope: CoroutineScope, private val transport: G
                 mutableMessage.value = "Helper or supply offer saved from a nearby phone."
                 flush()
             }
-            16,17 -> {
+            16,17,18 -> {
                 if(!session.supportsAssistance || cloudKey==null)return
+                if(envelope.kindValue==18 && !session.supportsChat)return
                 val receipt=repository.assistance.receive(packet,node,cloudKey)
                 if(!current(peer,session))return
                 session.confirmed.add(envelope.packetId)
@@ -369,7 +372,7 @@ class DirectExchange(private val scope: CoroutineScope, private val transport: G
                                 reports.getOrNull(index)?.let(::add)
                                 returns.getOrNull(index)?.let(::add)
                             }
-                            if(session.supportsAssistance && cloudKey!=null) addAll(repository.assistance.outgoing(session.nodeId!!,excluded).map {Outgoing(it.packetId,it.wire,false)})
+                            if(session.supportsAssistance && cloudKey!=null) addAll(repository.assistance.outgoing(session.nodeId!!,excluded).filter { it.kind!=18 || session.supportsChat }.map {Outgoing(it.packetId,it.wire,false)})
                             addAll(resources)
                         }
                         if (candidates.isNotEmpty()) { session.sendingReports = true; session.topologySending?.cancel() }

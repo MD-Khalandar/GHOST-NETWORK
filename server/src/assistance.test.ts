@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { PGlite } from "@electric-sql/pglite";
-import { generateKeyPairSync,randomUUID } from "node:crypto";
+import { generateKeyPairSync,randomUUID,randomBytes } from "node:crypto";
 import { buildApp } from "./app.js";
 import { SigningIdentity,tokenHash } from "./security.js";
 import { createPacket,decode,validatePacket,type WirePacket } from "./protocol.js";
@@ -49,7 +49,7 @@ async function fixture(path?: string,manualReview=true) {
   const review=(id:string,action="approve",role:keyof typeof tokens="operator")=>app.inject({method:"POST",url:`/v1/dashboard/proposals/${id}/${action}`,headers:headers(role)});
   async function status(id:string,state=1,destination=supplier.nodeId) {
     const rows=(await pg.query<any>("SELECT packet FROM assistance_events WHERE proposal_id=$1 AND destination=$2 ORDER BY revision DESC",[id,destination])).rows;
-    const found=rows.map(r=>r.packet as WirePacket).find(p=>decode("AssistanceStatusV1",decode("ImmutableEnvelopeV1",Buffer.from(p.immutable_envelope_bytes,"base64url")).payload_bytes).state===state);
+    const found=rows.map(r=>r.packet as WirePacket).find(p=>{const e=decode("ImmutableEnvelopeV1",Buffer.from(p.immutable_envelope_bytes,"base64url"));return e.kind===16 && decode("AssistanceStatusV1",e.payload_bytes).state===state;});
     assert.ok(found);validatePacket(found,{nowMs:clock,trustedCloudNodeId:cloud.nodeId});return found;
   }
   const decision=(proof:WirePacket,choice=1,owner=supplier)=>{
@@ -252,6 +252,48 @@ test("specialists follow signed decisions through alternatives, commitments, rec
     await f.upload(f.closure(6));await store.closeTasks(f.clock());
     assert.equal((await team.run(f.requestId)).code,"REQUEST_UNAVAILABLE");assert.equal(inputs.length,4);
     assert.ok((await store.followups(f.clock())).every(p=>p.status==="closed"));
+  }finally{await f.app.close();}
+});
+
+test("private chat validates participants, stores ciphertext once and keeps legacy downloads compatible",async()=>{
+  const f=await fixture();try{
+    const id=await f.proposal();await f.review(id);await f.upload(f.decision(await f.status(id)));
+    const proofA=await f.status(id,2),proofB=await f.status(id,2,f.requester.nodeId);
+    const rsa=generateKeyPairSync("rsa",{modulusLength:2048}).publicKey.export({type:"spki",format:"der"});
+    const base=(proof:WirePacket,type:number)=>({proposal_id:id,type,status_envelope:Buffer.from(proof.immutable_envelope_bytes,"base64url"),status_signature:Buffer.from(proof.signature,"base64url")});
+    const chat=(actor:SigningIdentity,destination:string,payload:Record<string,unknown>,messageId=randomUUID(),expiry=f.clock()+3600000)=>
+      createPacket(actor,18,payload,{packetId:randomUUID(),eventId:messageId,createdAtMs:f.clock(),expiresAtMs:expiry,destinationNodeId:destination});
+    const key=chat(f.requester,f.supplier.nodeId,{...base(proofB,1),rsa_public_key:rsa});
+    const wrong=chat(f.other,f.supplier.nodeId,{...base(proofB,1),rsa_public_key:rsa});
+    assert.equal((await f.upload(wrong)).statusCode,400);
+    assert.equal((await f.upload(key)).statusCode,200);
+    const messageId=randomUUID();
+    const payload={...base(proofA,2),message_id:messageId,recipient_key_envelope:Buffer.from(key.immutable_envelope_bytes,"base64url"),recipient_key_signature:Buffer.from(key.signature,"base64url"),
+      nonce:randomBytes(12),ciphertext:randomBytes(50),wrapped_key:randomBytes(256),sender_wrapped_key:randomBytes(256)};
+    const message=chat(f.supplier,f.requester.nodeId,payload,messageId);
+    f.failStatus(true);
+    assert.equal((await f.upload(message,"chat-retry")).statusCode,503);
+    assert.equal((await f.pg.query("SELECT * FROM assistance_decisions WHERE event_id=$1",[messageId])).rows.length,0);
+    f.failStatus(false);
+    assert.equal((await f.upload(message,"chat-retry")).statusCode,200);
+    assert.equal((await f.upload(message)).statusCode,200);
+    assert.equal((await f.pg.query("SELECT * FROM assistance_events WHERE kind=18")).rows.length,2);
+    const legacy=(await f.app.inject({url:"/v1/sync/download?cursor=0&limit=50",headers:f.headers()})).json();
+    assert.ok(legacy.packets.every((p:WirePacket)=>decode("ImmutableEnvelopeV1",Buffer.from(p.immutable_envelope_bytes,"base64url")).kind===16));
+    const modern=await f.app.inject({url:"/v1/sync/download?cursor=0&limit=50&private_chat=1",headers:f.headers()});
+    assert.equal(modern.statusCode,200);assert.equal(modern.json().packets.length,legacy.packets.length+2);
+    assert.equal((await f.app.inject({url:"/v1/sync/download?private_chat=1",headers:f.headers("viewer")})).statusCode,403);
+    const outsiderRecipient=chat(f.supplier,f.other.nodeId,payload,messageId);
+    assert.equal((await f.upload(outsiderRecipient)).statusCode,400);
+    const inventedKey=chat(f.supplier,f.requester.nodeId,{...payload,recipient_key_signature:Buffer.alloc(70,1)},messageId);
+    assert.equal((await f.upload(inventedKey)).statusCode,400);
+    f.advance();await f.upload(f.closure(5));
+    const lateId=randomUUID();assert.equal((await f.upload(chat(f.supplier,f.requester.nodeId,{...payload,message_id:lateId},lateId,
+      decode("ImmutableEnvelopeV1",Buffer.from(key.immutable_envelope_bytes,"base64url")).expires_at_ms))).statusCode,409);
+    // A receipt can return after closure without reopening chat or an SOS.
+    const receipt=chat(f.requester,f.supplier.nodeId,{...base(proofA,3),message_id:messageId},randomUUID(),f.clock()+86400000);
+    assert.equal((await f.upload(receipt)).statusCode,200);
+    assert.equal((await f.pg.query<any>("SELECT state FROM assistance_cases WHERE proposal_id=$1",[id])).rows[0].state,4);
   }finally{await f.app.close();}
 });
 

@@ -30,6 +30,28 @@ import org.robolectric.annotation.GraphicsMode
 @Config(sdk = [35], qualifiers = "w360dp-h800dp-mdpi")
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class GhostAppUiTest {
+    @Test fun acceptedArrangementOpensPrivateChatAndKeepsTextUntilSuccessfullySaved() {
+        val message=org.ghost.data.local.ChatMessage("m","chat",true,"Where should we meet?",System.currentTimeMillis(),"Waiting for delivery")
+        val conversation=kotlinx.coroutines.flow.MutableStateFlow<org.ghost.data.local.ChatConversation?>(
+            org.ghost.data.local.ChatConversation("chat",false,"Waiting to exchange private chat keys",listOf(message)))
+        var sent:String?=null
+        val actions=LocalActions({}, {_,done->done()}, {_,_->}, {}, {}, {},observeChat={conversation},sendChat={_,text->sent=text})
+        val item=org.ghost.data.local.AssistanceSummary("chat",2,"request","supply",false,2,"Need water","",2,"litres",System.currentTimeMillis()+3600000,"",false,null,2)
+        compose.setContent { GhostTheme { org.ghost.feature.home.AssistanceCard(item,actions,false) } }
+        compose.onNodeWithText("Message helper").performClick()
+        compose.onNodeWithText("Where should we meet?").assertIsDisplayed()
+        compose.onNodeWithText("Waiting for delivery",substring=true).assertExists()
+        compose.onNodeWithText("Send message").assertIsNotEnabled()
+        compose.runOnIdle {conversation.value=conversation.value!!.copy(canSend=true,status="Encrypted text")}
+        compose.onNodeWithText("Message").performTextInput("At the east entrance")
+        compose.onNodeWithText("Send message").performClick()
+        compose.runOnIdle {assertEquals("At the east entrance",sent)}
+        compose.onNodeWithText("Message").assertTextContains("")
+        compose.runOnIdle {conversation.value=conversation.value!!.copy(canSend=false,status="This arrangement has ended")}
+        compose.onNodeWithText("Send message").assertIsNotEnabled()
+        compose.onNodeWithText("Close chat").performClick()
+    }
+
     @Test fun connectionsSavesNameAndDisplaysNamedPhonesInTheGraph() {
         val node="a".repeat(64)
         val local=mutableStateOf(LocalUiState(network=NearbyState(active=true),peerIdentities=mapOf("A" to node),

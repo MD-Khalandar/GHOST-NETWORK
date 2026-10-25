@@ -131,11 +131,11 @@ export function buildApp(security: AppSecurity = {}): FastifyInstance {
       }
       if (route.url === "/v1/sync/download") {
         const query=request.query as Record<string,string>;
-        if(Object.keys(query).some(k=>!["cursor","limit"].includes(k)) || !/^(0|[1-9][0-9]{0,14})$/.test(query.cursor??"0") ||
+        if(Object.keys(query).some(k=>!["cursor","limit","private_chat"].includes(k)) || query.private_chat!==undefined && query.private_chat!=="1" || !/^(0|[1-9][0-9]{0,14})$/.test(query.cursor??"0") ||
           !/^[1-9][0-9]?$/.test(query.limit??"30") || Number(query.limit??30)>50)
           return reply.code(400).send({code:"INVALID_QUERY",retryable:false});
         if(!assistance) return reply.code(503).send({code:"STORAGE_UNAVAILABLE",retryable:true});
-        try { return await assistance.download(Number(query.cursor??0),Number(query.limit??30)); }
+        try { return await assistance.download(Number(query.cursor??0),Number(query.limit??30),query.private_chat==="1"); }
         catch { return reply.code(503).send({code:"STORAGE_UNAVAILABLE",retryable:true}); }
       }
       if (route.url === "/v1/sync/download-ack") {
@@ -222,7 +222,7 @@ export function buildApp(security: AppSecurity = {}): FastifyInstance {
             const verified = validatePacket(packet as WirePacket, {
               nowMs: (security.now ?? Date.now)(), forCloud: true, lookup: security.lookup, trustedCloudNodeId:signer?.nodeId,
             });
-            if (![1, 2, 3, 5, 6, 17].includes(verified.envelope.kind)) throw new PacketError("UNSUPPORTED_KIND");
+            if (![1, 2, 3, 5, 6, 17,18].includes(verified.envelope.kind)) throw new PacketError("UNSUPPORTED_KIND");
             if (verified.envelope.kind === 2 && (![5, 6].includes(verified.payload.state) || !verified.payload.original_sos_envelope?.length)) throw new PacketError("INVALID_PAYLOAD");
             return verified;
           });

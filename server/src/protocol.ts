@@ -1,4 +1,5 @@
 import protobuf from "protobufjs";
+import { validateChat } from "./chat-protocol.js";
 import { fileURLToPath } from "node:url";
 import { nodeId, publicKey, SigningIdentity, verifySignature } from "./security.js";
 
@@ -12,7 +13,7 @@ export const MAX_TTL_MS = 86400000;
 export const CLOCK_SKEW_MS = 300000;
 export const payloadTypes = ["", "SosCreateV1", "SosUpdateV1", "HelperProfilePublishV1", "HelperProfileUpdateV1",
   "OfferPublishV1", "OfferUpdateV1", "CloudAckV1", "MatchProposedV1", "MatchDeclinedV1", "MatchAcceptedV1",
-  "MatchConfirmedV1", "DeliveryReceiptV1", "", "", "", "AssistanceStatusV1", "AssistanceDecisionV1"];
+  "MatchConfirmedV1", "DeliveryReceiptV1", "", "", "", "AssistanceStatusV1", "AssistanceDecisionV1","PrivateChatV1"];
 export const REJECTION_CODES = ["MALFORMED_PACKET", "TOO_LARGE", "UNSUPPORTED_VERSION", "UNSUPPORTED_KIND",
   "INVALID_TIME", "EXPIRED", "INVALID_HOPS", "INVALID_KEY", "SIGNER_MISMATCH", "BAD_SIGNATURE",
   "INVALID_PAYLOAD", "INVALID_ACTOR", "UNKNOWN_AUTHORITY", "UNTRUSTED_CLOUD", "CONSENT_REQUIRED"] as const;
@@ -83,7 +84,7 @@ function validate(packet: WirePacket, options: ValidationOptions): VerifiedPacke
     (relay.hop_count === 0 ? !relay.previous_node_id : /^[a-f0-9]{64}$/.test(relay.previous_node_id ?? "")), "INVALID_HOPS");
   const e = decode("ImmutableEnvelopeV1", bytes);
   check(e.version === 1, "UNSUPPORTED_VERSION");
-  check((integer(e.kind, 1, 12) || [16, 17].includes(e.kind)), "UNSUPPORTED_KIND");
+  check((integer(e.kind, 1, 12) || [16, 17,18].includes(e.kind)), "UNSUPPORTED_KIND");
   check(uuid(e.packet_id) && uuid(e.event_id) && [1, 2, 3].includes(e.priority) && e.payload_format === 1, "INVALID_PAYLOAD");
   check(integer(options.nowMs, 1) && integer(e.created_at_ms, 1) && integer(e.expires_at_ms, 1) &&
     e.expires_at_ms > e.created_at_ms && e.expires_at_ms - e.created_at_ms <= MAX_TTL_MS && e.created_at_ms <= options.nowMs + CLOCK_SKEW_MS, "INVALID_TIME");
@@ -109,6 +110,8 @@ function validate(packet: WirePacket, options: ValidationOptions): VerifiedPacke
   };
   const payloadCheck = (condition: unknown): void => check(condition, "INVALID_PAYLOAD");
   switch (e.kind) {
+    case 18:
+      validateChat(e,p,options);authority={ownerNodeId:sender,cloudProcessingAllowed:true};break;
     case 1:
       payloadCheck(uuid(p.request_id) && integer(p.category, 1, 6) && text(p.description, 2000, true) &&
         (p.people_count === undefined || integer(p.people_count, 1, 1000)) && text(p.coarse_area, 120) && text(p.landmark, 120) &&

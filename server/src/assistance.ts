@@ -25,6 +25,7 @@ export async function initializeAssistance(c: SqlConnection) {
     revision BIGSERIAL PRIMARY KEY, packet_id UUID UNIQUE NOT NULL, proposal_id UUID NOT NULL,
     destination TEXT NOT NULL, expires_at_ms BIGINT NOT NULL, packet JSONB NOT NULL)`);
   await c.query("CREATE INDEX IF NOT EXISTS assistance_event_expiry ON assistance_events(expires_at_ms)");
+  await c.query("ALTER TABLE assistance_events ADD COLUMN IF NOT EXISTS kind INTEGER NOT NULL DEFAULT 16");
   await c.query(`CREATE TABLE IF NOT EXISTS assistance_decisions (
     event_id UUID PRIMARY KEY, packet_id UUID UNIQUE NOT NULL, envelope BYTEA NOT NULL,
     cloud_revision BIGINT NOT NULL, cloud_ack JSONB NOT NULL)`);
@@ -206,10 +207,10 @@ export class AssistanceService {
     await this.database.query(`INSERT INTO assistance_downloads(principal_id,cursor) VALUES($1,$2)
       ON CONFLICT(principal_id) DO UPDATE SET cursor=GREATEST(assistance_downloads.cursor,EXCLUDED.cursor)`,[principal,cursor]);
   }
-  async download(cursor:number,limit:number) {
+  async download(cursor:number,limit:number,privateChat=false) {
     await this.sweep();
-    const {rows}=await this.database.query(`SELECT * FROM assistance_events WHERE revision>$1 AND expires_at_ms>$2
-      ORDER BY revision LIMIT $3`,[cursor,this.now(),limit]);
+    const {rows}=await this.database.query(`SELECT * FROM assistance_events WHERE revision>$1 AND expires_at_ms>$2 AND (kind=16 OR $4)
+      ORDER BY revision LIMIT $3`,[cursor,this.now(),limit,privateChat]);
     return {cursor:String(cursor),next_cursor:String(rows.length?rows.at(-1)!.revision:cursor),packets:rows.map(r=>r.packet)};
   }
 }

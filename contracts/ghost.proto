@@ -76,6 +76,7 @@ enum EventKindV1 {
   NETWORK_ANNOUNCEMENT = 15; // short-lived graph metadata, never cloud-uploaded
   ASSISTANCE_STATUS = 16; // server-signed, destination-specific lifecycle snapshot
   ASSISTANCE_DECISION = 17; // owner-signed, includes server invitation proof
+  PRIVATE_CHAT = 18; // participant-signed key, encrypted message or recipient receipt
 }
 
 message ConsentV1 {
@@ -92,6 +93,7 @@ message PeerHelloV1 {
   bool supports_offer_updates = 5;
   bool supports_sos_closures = 6;
   bool supports_assistance = 7;
+  bool supports_private_chat = 8;
 }
 
 enum ConnectivityStatusV1 {
@@ -318,4 +320,22 @@ message AssistanceDecisionV1 {
   uint32 decision = 3; // 1 accept, 2 decline, 3 cancel own commitment, 4 requester confirms received
   bytes status_envelope = 4;
   bytes status_signature = 5;
+}
+
+// Metadata is public to relays. Message text is AES-256-GCM ciphertext; the AES
+// key is wrapped separately for recipient and sender with RSA-2048 OAEP SHA-256,
+// MGF1 SHA-1 (Android Keystore compatible). Keys remain on the phones.
+message PrivateChatV1 {
+  string proposal_id = 1;
+  uint32 type = 2; // 1 encryption public key, 2 encrypted text, 3 recipient persisted receipt
+  bytes status_envelope = 3;
+  bytes status_signature = 4;
+  bytes rsa_public_key = 5;
+  string message_id = 6;
+  bytes recipient_key_envelope = 7;
+  bytes recipient_key_signature = 8;
+  bytes nonce = 9;
+  bytes ciphertext = 10;
+  bytes wrapped_key = 11;
+  bytes sender_wrapped_key = 12;
 }

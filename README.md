@@ -1,291 +1,252 @@
 # GHOST
 
-Offline SOS over nearby Android phones, with cloud-assisted help coordination.
-Read [PROJECT.md](PROJECT.md) for the short product brief and current state.
+**Ask for help when the network goes quiet.**
 
-## Android
+GHOST is an Android SOS network for outages. A phone saves a request, nearby
+phones carry it forward, and a phone with internet access delivers it to the
+server. Cloud AI matches requests with available volunteers and supplies;
+signed invitations and updates travel back through the same network.
 
-Use JDK 21, Android SDK 36 and Build Tools 36.0.0. Set `JAVA_HOME` and
-`ANDROID_HOME`, or use the local installers:
+The local relay works without internet. Cloud coordination resumes when a
+gateway can reach the server.
+
+[How it works](#how-it-works) · [Try it locally](#try-it-locally) ·
+[Server setup](#run-the-server-and-dashboard) · [Project status](#project-status)
+
+## How it works
+
+```mermaid
+flowchart LR
+    A[Phone with an SOS] -->|Nearby relay| B[Nearby phone]
+    B -->|Carry and forward| C[Phone with internet]
+    C -->|Signed upload| D[GHOST server]
+    D --> E[AI coordination]
+    D --> F[Operator dashboard]
+    D -.->|Signed receipts and invitations| C
+    C -.->|Nearby relay back| B
+    B -.-> A
+```
+
+1. **Ask.** Send an SOS with a message. Category, area, people count and GPS are optional.
+2. **Relay.** Connected phones save and forward signed reports as they meet other phones, up to four transfers or expiry.
+3. **Coordinate.** An online gateway uploads shared reports. The server looks for relevant volunteers and supplies.
+4. **Agree.** Eligible AI suggestions invite resource owners automatically, or wait for operator approval. Owners accept or decline; the server checks availability before committing help.
+5. **Follow up.** Signed updates return to participants. Requesters can confirm receipt of an arrangement, cancel an SOS or mark it resolved.
+
+**Saved locally, received by a neighbor, received by the server and help received
+are separate states.** A network connection or server receipt never means help
+has arrived. Confirmation records the requester's report of receipt.
+
+## What GHOST includes
+
+| Component | Capabilities |
+| --- | --- |
+| Android app | SOS drafts and requests, optional GPS, automatic nearby connections, durable relay queues and signed receipts |
+| Network view | Interactive graph of direct and recently reported links, hop filters and public display names |
+| Volunteers and supplies | Publish availability, edit or withdraw offers, respond to invitations and track commitments |
+| Cloud service | Authenticated device enrollment, verified uploads, durable acknowledgements and atomic resource reservations |
+| AI coordinator | Separate people/transport and supply searches, alternatives after declined or expired arrangements, shared call budget |
+| Operator dashboard | SOS desk and location map, helpers and supplies, AI suggestions, approval controls and request follow-up |
+
+After **Connect to GHOST**, a foreground service keeps relay and online sync
+active while the app is in the background. Disconnect stops the session;
+process termination, force-stop or reboot requires another Connect tap.
+
+## Try it locally
+
+### Build the Android app
+
+Use **JDK 21**, **Android SDK 36** and **Build Tools 36.0.0**. The app supports
+**Android 7.0+ (API 24)**; nearby relay requires Google Play services.
+
+Install the toolchain through Android Studio, or use the included setup scripts:
 
 - Windows: `powershell -ExecutionPolicy Bypass -File scripts/setup-windows.ps1`
-- Apple Silicon Mac: `./scripts/setup-macos.sh` (optional `--with-studio` / `--with-emulator`)
-- Linux / Intel Mac: install the prerequisites through Android Studio.
+- Apple Silicon macOS: `./scripts/setup-macos.sh` (optional `--with-studio` or `--with-emulator`)
 
-Windows PowerShell:
+From the repository root, build and run the Android unit tests:
+
+**Windows PowerShell**
 
 ```powershell
 . .\scripts\env.ps1
 .\gradlew.bat assembleDebug testDebugUnitTest
 ```
 
-macOS / Linux:
+**macOS / Linux**
 
 ```sh
 source scripts/env.sh
 ./gradlew assembleDebug testDebugUnitTest
 ```
 
-APK: `app/build/outputs/apk/debug/app-debug.apk`. With a phone connected, use
-`installDebug` and launch GHOST. SOS drafts, reports and queued packets are saved
-locally. After Connect, a foreground service keeps nearby relay and gateway sync active when the app is backgrounded or the screen locks.
-Configured gateway phones can upload reports with cloud consent.
+The APK is written to `app/build/outputs/apk/debug/app-debug.apk`.
+With a phone connected over ADB, use `installDebug` in place of `assembleDebug`
+to install it. A server is optional for trying nearby SOS relay.
 
-For two phones with Google Play services:
+### Try a two-phone relay
 
-1. Keep Bluetooth/Wi-Fi on. Open both apps to connect. Tap **Connect to GHOST** on each and allow Android's required permissions. Discovery, connections and reconnection are automatic; no phone selection or pairing approval.
-2. Tap **Send SOS**, describe the help needed, then **Send SOS**. Category, area and a +/− people counter are under **Optional details**. There is no review screen.
-3. Check Requests on the other phone. The sender shows receipt only after the receiver saves the report and returns a valid signature.
+1. Install GHOST on two phones with Bluetooth and Wi-Fi enabled.
+2. Tap **Connect to GHOST** on each and grant the requested Android permissions. Discovery, connection and reconnection are automatic.
+3. On the first phone, tap **Send SOS**, enter a message and send it.
+4. Open **Requests** on the second phone. The sender records neighbor receipt only after that phone saves the report and returns a valid signed receipt.
 
-New SOS requests always enable nearby sharing and online help coordination; there
-are no sharing checkboxes. The form explains that nearby people can read/relay the
-request and a gateway can upload it. **Share GPS location if available** remains
-optional and remembered. With permission, sending tries a current GPS/network fix
-for up to five seconds, then falls back to a saved fix no older than five minutes.
-If neither is available, the SOS sends without location. Turning GPS sharing off
-skips collection. Pending location requests stop on completion, timeout or cancellation.
+To try carrying a message onward, let A send to B, disconnect A, then let B meet C.
+C should receive A's unchanged report. Queues and saved receipts survive restarts;
+missing receipts leave reports eligible for retry.
 
-Under **Connections → Your name**, enter up to 40 characters and tap **Save name**.
-The name stays saved after restarting the app and appears in other updated phones'
-graph and connected-phone list, including relayed graph nodes. Updates arrive while
-connected; clear and save to return to the short device ID. Names are self-chosen
-public labels and do not change signing keys, existing SOS requests or ownership.
-Older unfinished drafts use the same sharing policy when sent. Existing signed
-reports keep their original consent. Joining alone never creates a new SOS;
-previously queued public reports resume automatically.
+New SOS requests, volunteer publications and supply offers enable nearby sharing
+and online coordination. The forms explain this audience. **Share GPS location if
+available** is optional and remembered: sending tries a current fix for up to five
+seconds, then a valid cached fix no older than five minutes. Missing location or
+permission never blocks sending. Connecting alone does not create an SOS.
 
-In **Requests**, your own unexpired SOS has **Cancel SOS** and **Mark resolved**.
-Confirm either action to end the request; send a new SOS if you need help again.
-The signed closure keeps the original sharing choices and expiry, and can reach
-other phones/server before the original SOS. Once received, it stops forwarding
-the open request and excludes it from new cloud AI matching. The dashboard marks
-older suggestions stale and removes the request from the active map.
-The closure has its own delivery queue and verified server receipt. Local-only
-requests stay local. Phones need the updated app to exchange closures; older or
-offline copies may remain open until delivery or expiry. Marking resolved is the
-requester's report, not independent confirmation that assistance was delivered.
+## Run the server and dashboard
 
-To try a relay, send A's SOS to B, leave the mesh on A, then let B meet C. C should
-receive A's unchanged report. Forwarding stops after four transfers or expiry.
-Receipts confirm saving by the immediate neighbor. Each phone remembers which
-neighbors already hold a report across restarts and reconnects; unacknowledged
-sends remain eligible for retry. Duplicates are saved only once. Existing local
-data upgrades in place. The user reports the mesh works on physical phones.
+Use **Node.js 22.12+** and a **PostgreSQL database** owned by the GHOST service.
+Run commands from the repository root.
 
-The mesh is open to nearby GHOST phones; connections have no manual code check.
-Signing verifies report integrity and key possession, not a person's identity.
-After **Connect to GHOST**, a connected-device foreground service keeps relay and
-online sync active when switching apps, locking the screen or closing the activity.
-The **GHOST is active** notification opens the app and has **Disconnect**; the app's
-Disconnect button stops the same session. Android 13+ asks for notification
-permission when connecting; denial does not block the service, but Android can hide
-its notification from the drawer (use the app or Android's active-app controls).
-Explicit disconnect, force-stop or process termination requires another Connect tap;
-there is no automatic reboot startup. Manufacturer battery policies and deep idle
-can still interrupt radios/network work; verify lock-screen behavior on real phones.
-Connections' **Known network** graph shows direct neighbors and fresh connections
-reported by other phones. Use the **1–4 hop slider** to see farther; it only filters
-the display, or choose **All known** for the bounded discovered graph. **Full screen**
-expands the graph; closing it keeps your selection, hop filter and view. Drag nodes,
-pinch to zoom, tap for details or reset the view. Solid
-lines are direct, ready connections; dashed lines are reported links or phones
-still getting connected. This is a partial view, not proof of a route or delivery.
-
-Green nodes report internet access, amber means internet was not detected, and
-grey means unknown. **G** marks a configured gateway. Tap it to see whether that
-phone recently reached the server; internet alone does not imply gateway access.
-Statuses are reported by the originating phone, not independently verified here.
-Topology reports expire after one minute, are kept only in memory, and stop after
-four transfers. The view is capped at 64 phones. Joining advertises connection IDs
-and connectivity status; it does not expose names, contacts, IP addresses or SOS text.
-Older app versions still connect/relay SOS but do not share topology. For A–B–C,
-update all three phones, connect them, and select 2 hops on A to see C.
-
-Each phone has independent bounded queues. A report waits for its neighbor's
-signed receipt before the next report goes out on that link. Missing receipts
-trigger up to three attempts per connection; **Try sending again** resumes them
-without forgetting saved receipts. Requests shows relay acknowledgements and
-the remaining transfer budget. Expired reports are never queued for another send.
-The relay also returns cloud-signed acknowledgements toward the original phone,
-using a separate four-transfer budget and the acknowledgement's own expiry.
-Phones can carry a return even without the original SOS. Signed bytes, hop
-receipts and queued returns survive restarts; forwarding stops at the destination.
-
-For one-click online connection, the server operator prepares the APK once. With
-`server/.env` configured, run from the project root:
+1. Copy [`server/.env.example`](server/.env.example) to `server/.env`.
+2. Set `GHOST_DATABASE_URL` and `GHOST_CLOUD_SIGNING_KEY_PEM` to your database URL and a private P-256 PEM signing key. Literal `\n` escapes are supported in the key value. Generate your own key; fixture keys are for tests only.
+3. Install dependencies and build both components:
 
 ```sh
-node scripts/configure-client.mjs
-source scripts/env.sh
-./gradlew assembleDebug
-```
-
-The script derives only the public key from the existing server key and picks the
-Mac's current LAN address. It writes ignored `.local/phone-server-test/client.properties`;
-it never changes server credentials or exports private keys. Re-run after a LAN
-address change and rebuild. For a hosted deployment pass its stable HTTPS address:
-`node scripts/configure-client.mjs https://your-ghost-server.example`.
-Build properties `ghostServerUrl` and `ghostCloudPublicKey` (or environment variables
-`GHOST_SERVER_URL` / `GHOST_CLOUD_PUBLIC_KEY`) override these local public settings.
-Release builds require HTTPS and a nonempty trusted public key.
-
-Install the same configured APK on participating phones. Tap **Connect to GHOST**,
-allow first-use Android permissions. Connection work then continues through the foreground service. Nearby connections
-start automatically; cellular or Wi-Fi enables server connection and device enrollment
-without entering URLs or tokens. Hosted servers use Android's default connection,
-including VPNs. A private LAN server uses available Wi-Fi; internet alone cannot
-reach a private LAN address. Provider and server private keys stay
-server-side. Dashboard/operator authentication remains separate.
-
-The phone checks both enrollment replies against its trusted server key and proves
-possession of its existing Android Keystore identity. An expiring gateway-only
-credential is stored encrypted and renewed automatically, including after a 401.
-Disconnecting or losing all usable networks pauses online transfers; reconnecting
-resumes them. New publications enable both sharing flags; uploads still require those signed flags, and **Received by server** requires a verified, saved acknowledgement.
-No connection status creates an SOS or confirms assistance. Manual gateway tokens
-remain available only under **Connections → Technical details** in legacy builds
-without bundled automatic connection settings. Wire definitions remain in
-`contracts/ghost.proto`; fixtures contain test-only keys.
-
-## Helpers and supplies
-
-From Home, tap **Offer help**. Choose **Volunteer** (help type, optional name and
-area, available/unavailable) or **Supplies** (resource type, optional quantity,
-unit and area). Save before sharing; availability expires after six hours.
-New volunteer publications and supply offers always share nearby and allow online
-coordination. There are no sharing checkboxes. Saving alone does not assign help or
-reserve stock. Volunteers can mark themselves unavailable; supply owners can
-withdraw offers. Updates wait for delivery to other phones/server, with a separate
-verified receipt. Existing signed offers retain their original audience when edited;
-create a new offer to broaden an older offer's sharing.
-
-Updated phones relay publications with the same four-transfer limit, signed
-neighbor receipts and gateway upload/return path as SOS. Older phones continue
-handling SOS; helper/supply relay requires updated peers. The form lists your
-saved help and shows **Received by server** only after verifying the receipt.
-Supply offers also appear in Requests. Existing Room data upgrades without reset.
-
-The dashboard's **Helpers** and **Supplies** tabs show uploaded owner-reported
-availability with expiry and pagination. A newer shared volunteer report replaces
-the previous profile, including marking yourself unavailable. Each supply save is
-a separate offer. Under your saved supplies, **Edit offer** changes quantity,
-unit or area and **Withdraw offer** marks it unavailable. Edits keep the original
-offer ID, type, expiry and sharing choices. Latest changes relay and upload with
-their own verified receipts; a local withdrawal is still waiting until it reaches
-other phones/server. Updates carry the original ownership proof, so arrival order
-doesn't revive withdrawn stock. All phones carrying edits need the updated app;
-offline/older copies may remain stale until updated or expired. Approval and owner decisions use the assistance flow below.
-
-## Server
-
-See [server/README.md](server/README.md). Temporary tools/caches belong in ignored
-`.tmp/` or `.local/`; credentials and build outputs stay out of Git.
-
-## SOS dashboard
-
-With Node.js 22.12+ and the server configured:
-
-```sh
+npm --prefix server ci
 npm --prefix dashboard ci
 npm --prefix dashboard run build
 npm --prefix server run build
-npm --prefix server start
 ```
 
-Create a dashboard account once with `server/.env` configured:
+Create an operator account; the command prompts for a hidden password of at least
+15 characters. Use `--role viewer` for read-only access.
 
 ```sh
 npm --prefix server run account -- --username admin --role operator
 ```
 
-Enter a password of at least 15 characters when prompted; it stays hidden. Use
-`--role viewer` for read-only access. Running the command again resets that account
-and signs out its existing sessions. Production also needs
-`GHOST_DASHBOARD_ORIGIN=https://<your-host>` on the server.
+Start the server with the environment file loaded:
 
-Open `http://127.0.0.1:3000/dashboard/` and sign in with your username and password.
-It lists uploaded SOS reports and plots
-reports with shared GPS coordinates on the built-in server map. Select a marker
-to open its request details; reports without coordinates remain in the list but
-are not plotted. Leaflet provides pan/zoom and clickable markers over OpenStreetMap
-tiles. The basemap needs internet; tile requests reveal the viewed map area to
-OpenStreetMap but do not send SOS text or access tokens. Refresh checks for new arrivals;
-older reports load in pages. Expiry does not mean help was provided. A protected
-cookie keeps you signed in across refreshes and browser restarts for up to seven
-days; 24 hours of inactivity ends the session. **Sign out** revokes access on the
-server. Use HTTPS in deployment. Phone enrollment remains automatic and separate.
-
-For UI development, run `npm --prefix dashboard run dev` alongside the server;
-open `http://127.0.0.1:5173/dashboard/`. Vite proxies `/v1` to port 3000. If setting
-`GHOST_DASHBOARD_ORIGIN` for this mode, use `http://127.0.0.1:5173`, the browser origin.
-Checks: `npm --prefix dashboard test` and `npm --prefix dashboard run build`.
-
-## Cloud AI matching
-
-For OpenAI (default), set `OPENAI_API_KEY` and `GHOST_COORDINATOR_MODEL` in the
-server environment. For Gemini, use:
-
-```dotenv
-GHOST_AI_PROVIDER=gemini
-GEMINI_API_KEY=<your Google AI Studio API key>
-GHOST_COORDINATOR_MODEL=<Gemini model ID available to your project>
+```sh
+node --env-file=server/.env server/dist/index.js
 ```
 
-Restart the server after configuration. Both providers use the same validated
-suggestion tool; OpenAI uses Responses and Gemini uses Google's Chat Completions
-compatibility endpoint. Keys stay server-side. No Android rebuild is needed.
-New SOS and relevant availability changes trigger matching automatically. **AI suggestions**
-shows model suggestions, run progress/failures and outdated results. You can
-page through older suggestions or filter by SOS ID; the selected page keeps
-refreshing. Run results distinguish missing candidates from no suitable matches
-and saved suggestions. Relevant candidate changes and expiry trigger automatic
-rechecks; unrelated uploads and delayed originals do not rerun unchanged inputs.
-Operators can use **Find help with AI** on an SOS to request another run. Without model settings,
-the dashboard reports AI unavailable and the existing SOS/relay flow still works.
+Open **<http://127.0.0.1:3000/dashboard/>** and sign in. The server creates its
+database tables on startup. `GET /v1/health` is a public health check; a healthy
+process alone does not mean upload storage is configured.
 
-The coordinator uses two AI specialists: **People and transport** and **Supplies**.
-Each can suggest one next option, using its own candidates and the request's
-assistance history. **Request follow-up** tracks invitations, commitments, receipts
-and searches for alternatives after declined or expired arrangements. It waits while
-help is pending and does not assume a receipt fulfilled the entire SOS. Progress
-and no-match results survive server restarts; unchanged inputs do not keep spending
-AI calls. Each specialist call uses the existing shared hourly budget. No extra
-services, dependencies or provider configuration are needed.
+For dashboard development, run `npm --prefix dashboard run dev` alongside the
+server and open <http://127.0.0.1:5173/dashboard/>. Vite proxies API requests to
+port 3000. Production requires HTTPS and `GHOST_DASHBOARD_ORIGIN` set to the
+browser-facing origin, without `/dashboard/`.
 
-Only currently available helpers/supplies are candidates. Signed supply edits and
-withdrawals invalidate older proposals. Eligible suggestions send signed invitations
-automatically by default. Under **AI suggestions**, operators can turn on **Require
-operator approval** to use manual **Approve invitation** / **Reject suggestion**.
-The mode applies to the whole server and survives redeploys. Turning manual review
-off processes eligible pending suggestions too. Existing arrangements continue;
-changing mode does not undo invitations or commitments. Invitations do not reserve stock.
-A known supply quantity is required before approval (edit and republish unknown stock).
+See the [server guide](server/README.md) for authentication, configuration,
+rate limits, API behavior and deployment requirements.
 
-Owners receive invitations under **Offer help** and can **Accept request** or
-**Decline request** after confirmation. Offline decisions remain queued until an
-online gateway reaches the server. The server rechecks sources and reserves supplies
-atomically, or rejects an outdated/conflicting acceptance. Volunteer commitments
-prevent double booking. Invites expire within an hour, bounded by source availability.
+### Connect phones to your server
 
-Signed updates return directly or through supporting mesh peers. Requesters see
-invitations and commitments in **Requests**; owners can **Cancel commitment** under
-**Offer help**. All participating relay phones need this app version. Gateways poll
-while the connection service is active; download cursors and signed packets persist in Room.
-An owner tap, a server commitment and physical assistance are separate states.
+With `server/.env` configured, prepare the public Android connection settings:
 
-After receiving the agreed help, the requester can tap **Confirm help received**
-on that commitment under **Requests** and confirm. This completes only that
-arrangement; the SOS stays open until cancelled or marked resolved. The signed
-confirmation queues offline, and both phones/dashboard show **Help received
-(confirmed by requester)** after the server records it. Supplies count as used;
-volunteers become available again. All participating relay phones need this version.
-This records the requester's report, not independent evidence of delivery.
+```sh
+node scripts/configure-client.mjs https://your-ghost-server.example
+```
 
-Supply cards show last-known available/reserved/used quantities. Edits preserve
-committed amounts and units; offline phones may learn newer reservations later, so
-the server checks again. **Withdraw offer** stops new matching once delivered and
-keeps existing commitments; cancel those separately if you cannot fulfil them.
-Cancelling an SOS releases active reservations. Marking it resolved records its
-committed supplies as used and frees volunteers; it is a requester report, not
-independent proof of physical delivery. Expired/cancelled invitations cannot reopen
-an arrangement when an old packet arrives.
+Rebuild and install the configured APK on participating phones. The script writes
+the server URL and derived public signing key to ignored
+`.local/phone-server-test/client.properties`; private keys and tokens stay out of
+the APK. Release builds require HTTPS and a trusted public key.
+
+For debug LAN testing, pass a reachable address such as `http://192.168.1.10:3000`,
+bind the server to the LAN with `GHOST_HOST=0.0.0.0`, and allow the port through your
+firewall. Phones must be able to reach that LAN. Reconfigure and rebuild if the
+address changes.
+
+**Connect to GHOST** starts both nearby relay and automatic online enrollment.
+Phones prove possession of their Android Keystore identity and receive renewable,
+encrypted gateway credentials. Hosted servers use the phone's default network;
+private LAN servers use available Wi-Fi. Dashboard accounts are separate.
+
+### Enable cloud AI coordination
+
+AI is optional. Set these values in `server/.env` and restart the server:
+
+```dotenv
+GHOST_AI_PROVIDER=openai
+OPENAI_API_KEY=<your API key>
+GHOST_COORDINATOR_MODEL=<model ID available to your project>
+```
+
+For Gemini, set `GHOST_AI_PROVIDER=gemini` and `GEMINI_API_KEY` instead.
+Provider credentials stay on the server; no Android rebuild is needed.
+
+Active SOS requests and relevant availability changes trigger matching. The
+dashboard shows suggestions, progress and failures. Operators can request a rerun
+or enable **Require operator approval** for the whole server. Owners still have
+to accept invitations before resources are reserved.
+
+`GHOST_AI_MAX_CALLS_PER_HOUR` defaults to **120 provider calls per UTC hour**, shared
+across server instances. At the limit, work waits for the next hour. This bounds
+call volume, not currency spend. SOS relay and uploads work without AI settings.
+
+### Private messages during assistance
+
+Once an owner accepts and the server confirms the commitment, open **Message helper**
+under Requests or **Message requester** under Offer help. Both phones must stay
+connected to GHOST long enough to exchange their encryption keys. Text messages
+then queue offline and travel through the server or supporting nearby relays.
+
+**Waiting for delivery**, **Saved on server** and **Delivered to the other phone**
+are separate states. Delivery means that phone decrypted and saved the message;
+it does not mean the person read it. New messages stop when the arrangement ends
+or its deadline passes. Recent encrypted history stays on the phone.
+
+This first version supports text up to 1,000 characters, with 100 messages per
+arrangement and bounded local queues. There are no attachments or chat notifications.
+Deploy the updated server and update both participants and relay phones used for
+chat. Older phones continue their existing SOS/coordination flow.
+
+## Trust and privacy
+
+- **Signed events and ownership checks.** Phone keys live in Android Keystore. Server signatures are checked against the app's trusted public key. Signatures establish key possession and integrity, not human identity.
+- **Public nearby sharing.** Nearby connections have no manual pairing approval. Shared reports and coordination packets can be read and relayed by participating phones; they are not encrypted private messages. Display names are public, self-chosen labels.
+- **Private chat contents.** Chat text is end-to-end encrypted with AES-GCM; a separate Android Keystore RSA key protects its per-message encryption keys. The server and relays can see participants, timing and arrangement metadata. This basic version has no forward secrecy; it does not claim protection if a participant's phone or private key is compromised.
+- **Consent stays attached.** Uploads require signed sharing and cloud consent. Existing signed records retain their original audience; older local-only records stay local.
+- **Limited network knowledge.** The graph shows a partial, short-lived view of reported links and connectivity. It does not prove a working route or delivery.
+- **Location has an audience.** Shared GPS can appear on the authenticated dashboard. Its OpenStreetMap basemap needs internet and reveals the viewed area to the tile provider, without sending SOS text or credentials.
+
+## Repository
+
+| Path | Purpose |
+| --- | --- |
+| [`app/`](app/) | Kotlin / Jetpack Compose app, Room storage and Nearby Connections relay |
+| [`server/`](server/) | TypeScript / Fastify API, PostgreSQL storage and AI worker in one service |
+| [`dashboard/`](dashboard/) | React / Vite operator dashboard with a Leaflet map |
+| [`contracts/ghost.proto`](contracts/ghost.proto) | Shared Protobuf wire definitions |
+| [`scripts/`](scripts/) | Toolchain setup and public client configuration |
+| [`PROJECT.md`](PROJECT.md) | Detailed implementation state and next work |
+
+Server and dashboard checks:
+
+```sh
+npm --prefix server test
+npm --prefix server run build
+npm --prefix dashboard test
+npm --prefix dashboard run build
+```
+
+Keep credentials, generated builds and local tooling out of Git. Use ignored
+`.local/` or `.tmp/` for machine-specific files.
+
+## Project status
+
+GHOST is under active development. Nearby relay has been reported working on
+physical phones, and local automated tests cover storage, signing, relay,
+enrollment, coordination and assistance state changes.
+
+Field testing remains for the complete assistance round trip, background and
+lock-screen behavior, GPS acquisition, and one-tap enrollment and credential
+persistence on devices. External PostgreSQL deployment and live AI provider
+operation still need verification. Offline copies can remain stale until updates
+arrive or expire; GHOST does not guarantee emergency delivery or assistance.
+
+Private messaging, local AI and LoRa are future work. See
+[`PROJECT.md`](PROJECT.md) for the current implementation notes.

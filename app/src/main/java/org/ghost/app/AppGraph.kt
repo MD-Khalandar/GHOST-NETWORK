@@ -32,6 +32,8 @@ class AppGraph(application: Application) : AndroidViewModel(application) {
     private val identity by lazy { AndroidSigningIdentity().loadOrCreate() }
     val nearby = NearbyAdapter(application, viewModelScope)
     val repository = LocalSosRepository(db, { identity })
+    private val chatCrypto by lazy { org.ghost.security.ChatCrypto.load() }
+    private val chat = org.ghost.data.local.LocalChatRepository(db,repository.assistance,{identity},{chatCrypto},System::currentTimeMillis)
     private val gatewaySettings = GatewayConfigStore(application, BuildConfig.DEBUG)
     private val cloudKey = runCatching {
         BuildConfig.CLOUD_PUBLIC_KEY.takeIf { it.isNotEmpty() }?.let { WireCodec.unbase64(it, 91).also(SigningIdentity::decodePublicKey) }
@@ -79,6 +81,13 @@ class AppGraph(application: Application) : AndroidViewModel(application) {
         .stateIn(viewModelScope, SharingStarted.Eagerly, LocalUiState())
 
     init {
+        viewModelScope.launch {
+            repository.assistance.observeRows().collect {
+                try { cloudKey?.let { chat.process(it) } }
+                catch(cancelled:CancellationException){throw cancelled}
+                catch(_:Exception){ /* A chat key/storage failure never blocks SOS relay. Opening chat exposes its pending state. */ }
+            }
+        }
         viewModelScope.launch {
             try { cloudKey?.let { repository.restoreCloudReturns(it) } }
             catch (cancelled: CancellationException) { throw cancelled }
@@ -203,7 +212,9 @@ class AppGraph(application: Application) : AndroidViewModel(application) {
                 catch(error:Exception){operation.update{it.copy(saving=false,error=if(error is IllegalArgumentException)error.message else "Could not save the decision. Refresh and retry.")}}
             }
         },
-        requestLocation = requestLocation, closeSos = ::closeSos, saveDisplayName = ::saveDisplayName)
+        requestLocation = requestLocation, closeSos = ::closeSos, saveDisplayName = ::saveDisplayName,
+        observeChat = {id->chat.observe().map { items->items.firstOrNull { it.proposalId==id } }},
+        sendChat = {id,text-> chat.send(id,text,requireNotNull(cloudKey){"Server verification key is unavailable."});exchange.flush()})
 
     private fun saveDisplayName(name: String) {
         if (operation.value.saving) return

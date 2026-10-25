@@ -178,9 +178,23 @@ Android may hide the drawer notification. Process death/force-stop/reboot needs 
 new Connect tap. Service/activity/notification lifecycle tests pass locally; handset
 battery/lock-screen behavior still needs testing.
 
+Accepted assistance arrangements have text-only private chat: **Message helper**
+in Requests and **Message requester** in Offer help. Signed participant-bound public
+key exchange authorizes AES-256-GCM text, with per-message keys wrapped using a
+separate RSA-2048 Android Keystore key. Server/relay phones see metadata/ciphertext,
+not message text. Local history stores ciphertext and decrypts only for the UI.
+Keys, messages and recipient-signed persisted receipts reuse durable mesh/upload/
+download queues, with a separate capability flag to protect older clients.
+Waiting/server-stored/delivered states are distinct; only the recipient's signature
+marks delivery. New messages stop at arrangement closure/deadline; recent history
+remains. Text is limited to 1,000 characters and conversations to 100 messages;
+bounded queues preserve recent history. No attachments, read receipts or chat
+notifications. There is no forward secrecy or protection for public routing metadata.
+Updated server and participating phones are required; handset Keystore testing remains.
+
 Next: field-test assistance/background connections and GPS acquisition. Server
 commitment, requester-reported resolution and receipt do not independently prove delivery.
 
 Validate signed sharing consent, preserve signed bytes, reject forged/duplicate
 events, and keep cloud/provider secrets server-side. Queued, received and confirmed are distinct.
-Private messaging comes last. Local AI and LoRa wait.
+Local AI and LoRa wait.

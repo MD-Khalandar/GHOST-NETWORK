@@ -40,7 +40,7 @@ class PacketValidator(
             (if (r.hopCount == 0) r.previousNodeId == null else r.previousNodeId?.value?.matches(NODE) == true), Rejection.INVALID_HOPS)
         val e = ImmutableEnvelopeV1.parseFrom(raw)
         check(e.version == 1, Rejection.UNSUPPORTED_VERSION)
-        check((e.kindValue in 1..13 || e.kindValue in 15..17) && !(forCloud && e.kindValue in setOf(13, 15)), Rejection.UNSUPPORTED_KIND)
+        check((e.kindValue in 1..13 || e.kindValue in 15..18) && !(forCloud && e.kindValue in setOf(13, 15)), Rejection.UNSUPPORTED_KIND)
         check(uuid(e.packetId) && uuid(e.eventId) && e.priorityValue in 1..3 && e.payloadFormatValue == 1)
         check(now in 1..MAX_SAFE && e.createdAtMs in 1..MAX_SAFE && e.expiresAtMs in 1..MAX_SAFE &&
             e.expiresAtMs > e.createdAtMs && e.expiresAtMs - e.createdAtMs <= MAX_TTL && e.createdAtMs <= now + CLOCK_SKEW, Rejection.INVALID_TIME)
@@ -63,6 +63,10 @@ class PacketValidator(
         }
         val data = e.payloadBytes
         val payload: MessageLite = when (e.kindValue) {
+            18 -> PrivateChatV1.parseFrom(data).also { p ->
+                ChatProtocol.validate(e,p,trustedCloudPublicKey,now)
+                authority=Authority(sender,true)
+            }
             1 -> SosCreateV1.parseFrom(data).also { p ->
                 check(uuid(p.requestId) && p.categoryValue in 1..6 && text(p.description, 2000, true) &&
                     (!p.hasPeopleCount() || p.peopleCount in 1..1000) && text(p.coarseArea, 120) && text(p.landmark, 120))

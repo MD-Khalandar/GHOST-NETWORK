@@ -19,12 +19,14 @@ data class AssistanceCursor(@PrimaryKey val id:Int=1,val server:String,val curso
     @Insert(onConflict=OnConflictStrategy.ABORT) suspend fun insert(row:AssistanceRow)
     @Query("UPDATE assistance_packets SET wire=:wire WHERE packetId=:id") suspend fun relay(id:String,wire:ByteArray)
     @Query("SELECT COUNT(*) FROM assistance_packets") suspend fun count():Int
+    @Query("SELECT COUNT(*) FROM assistance_packets WHERE kind=18") suspend fun chatCount():Int
+    @Query("DELETE FROM assistance_packets WHERE kind=18 AND eventId IN(:ids)") suspend fun deleteOldChat(ids:List<String>)
     // Keep the latest status addressed to this phone after packet expiry. It is
     // durable local history and prevents late older snapshots reviving an offer.
-    @Query("DELETE FROM assistance_packets WHERE expiresAt<=:now AND NOT (kind=16 AND destination=:local AND NOT EXISTS (SELECT 1 FROM assistance_packets newer WHERE newer.kind=16 AND newer.destination=:local AND newer.proposalId=assistance_packets.proposalId AND newer.version>assistance_packets.version))")
+    @Query("DELETE FROM assistance_packets WHERE expiresAt<=:now AND NOT (kind=18 AND EXISTS(SELECT 1 FROM assistance_packets s WHERE s.kind=16 AND s.proposalId=assistance_packets.proposalId AND s.destination=:local)) AND NOT (kind=16 AND destination=:local AND NOT EXISTS (SELECT 1 FROM assistance_packets newer WHERE newer.kind=16 AND newer.destination=:local AND newer.proposalId=assistance_packets.proposalId AND newer.version>assistance_packets.version))")
     suspend fun prune(now:Long,local:String)
     @Query("SELECT * FROM assistance_packets WHERE expiresAt>:now AND NOT EXISTS(SELECT 1 FROM assistance_deliveries d WHERE d.packetId=assistance_packets.packetId AND d.peer=:peer) ORDER BY kind,version DESC LIMIT 1000") suspend fun outgoing(now:Long,peer:String):List<AssistanceRow>
-    @Query("SELECT * FROM assistance_packets WHERE kind=17 AND cloudAck IS NULL AND cloudError IS NULL AND expiresAt>:now LIMIT 20") suspend fun uploads(now:Long):List<AssistanceRow>
+    @Query("SELECT * FROM assistance_packets WHERE kind IN(17,18) AND cloudAck IS NULL AND cloudError IS NULL AND expiresAt>:now ORDER BY kind,eventId LIMIT 20") suspend fun uploads(now:Long):List<AssistanceRow>
     @Query("UPDATE assistance_packets SET cloudAck=:ack,cloudError=NULL WHERE eventId=:id") suspend fun acknowledge(id:String,ack:ByteArray)
     @Query("UPDATE assistance_packets SET cloudError=:code WHERE eventId=:id AND cloudAck IS NULL") suspend fun reject(id:String,code:String)
     @Query("UPDATE assistance_packets SET cloudError=NULL WHERE expiresAt>:now") suspend fun retry(now:Long)

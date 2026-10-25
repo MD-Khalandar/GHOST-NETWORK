@@ -173,7 +173,7 @@ class LocalSosRepository(
             db.resources().uploads(now()).map { UploadCandidate(it.eventId, it.packetId, it.wire) }
     }
     suspend fun prepareCloudUpload(eventId: String): UploadCandidate? = withContext(Dispatchers.IO) {
-        db.assistance().event(eventId)?.takeIf{it.kind==17 && it.cloudAck==null && it.cloudError==null && it.expiresAt>now()}
+        db.assistance().event(eventId)?.takeIf{it.kind in 17..18 && it.cloudAck==null && it.cloudError==null && it.expiresAt>now()}
             ?.let{UploadCandidate(it.eventId,it.packetId,it.wire)} ?: db.closures().event(eventId)?.takeIf { it.publicSharing && it.cloudConsent && it.cloudAck == null && it.cloudError == null && it.expiresAt > now() }
             ?.let { UploadCandidate(it.eventId, it.packetId, it.wire) }
             ?: dao.event(eventId)?.takeIf { it.publicSharing && it.cloudConsent && it.cloudAck == null && it.cloudError == null && it.expiresAt > now() && db.closures().latest(it.requestId) == null }
@@ -200,7 +200,7 @@ class LocalSosRepository(
             val row = dao.event(eventId)
             val resource = db.resources().event(eventId)
             val closure = db.closures().event(eventId)
-            val decision = db.assistance().event(eventId)?.takeIf{it.kind==17}
+            val decision = db.assistance().event(eventId)?.takeIf{it.kind in 17..18}
             require(row != null || resource != null || closure != null || decision!=null) { "Unknown report" }
             require(if (row != null) row.publicSharing && row.cloudConsent else if (resource != null) resource.publicSharing && resource.cloudConsent else if(closure!=null) closure.publicSharing && closure.cloudConsent else true)
             require(verified.envelope.destination.kindValue == 2 &&
@@ -293,7 +293,7 @@ class LocalSosRepository(
         if (report != null) dao.saveCloudAck(ack.originEventId, stored.wire)
         if (resource != null) db.resources().acknowledge(ack.originEventId, stored.wire)
         if (closure != null) db.closures().acknowledge(ack.originEventId, stored.wire)
-        db.assistance().event(ack.originEventId)?.let { require(it.kind==17); val original=org.ghost.contracts.v1.ImmutableEnvelopeV1.parseFrom(WireCodec.unbase64(WireCodec.decode(it.wire).immutableEnvelopeBytesBase64,PacketValidator.MAX_ENVELOPE));require(SigningIdentity.hex(original.senderNodeId.toByteArray())==destination);db.assistance().acknowledge(ack.originEventId,stored.wire) }
+        db.assistance().event(ack.originEventId)?.let { require(it.kind in 17..18); val original=org.ghost.contracts.v1.ImmutableEnvelopeV1.parseFrom(WireCodec.unbase64(WireCodec.decode(it.wire).immutableEnvelopeBytesBase64,PacketValidator.MAX_ENVELOPE));require(SigningIdentity.hex(original.senderNodeId.toByteArray())==destination);db.assistance().acknowledge(ack.originEventId,stored.wire) }
         return stored
     }
 

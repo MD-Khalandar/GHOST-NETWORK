@@ -49,4 +49,6 @@ data class LocalActions(
     val requestLocation: (() -> Unit)? = null,
     val closeSos: ((String, SosState) -> Unit)? = null,
     val saveDisplayName: ((String) -> Unit)? = null,
+    val observeChat: ((String) -> kotlinx.coroutines.flow.Flow<org.ghost.data.local.ChatConversation?>)? = null,
+    val sendChat: (suspend (String,String) -> Unit)? = null,
 )

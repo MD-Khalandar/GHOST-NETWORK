@@ -50,7 +50,7 @@ class HttpGatewayClient(private val openConnection: (java.net.URL) -> HttpURLCon
     }
     override suspend fun download(cursor: String?, limit: Int): Result<SyncDownloadResponse> = transferResult {
         require(limit in 1..50 && (cursor ?: "0").matches(Regex("[0-9]{1,15}")))
-        val response=exchange("/v1/sync/download?cursor=${cursor ?: "0"}&limit=$limit","GET")
+        val response=exchange("/v1/sync/download?cursor=${cursor ?: "0"}&limit=$limit&private_chat=1","GET")
         json.decodeFromString<SyncDownloadResponse>(response.decodeToString()).also {
             require(it.cursor == (cursor ?: "0") && it.packets.size<=limit && it.nextCursor.matches(Regex("[0-9]{1,15}")) && it.nextCursor.toLong()>=(cursor?:"0").toLong())
         }

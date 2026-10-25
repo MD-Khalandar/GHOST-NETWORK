@@ -105,6 +105,36 @@ class DirectExchangeTest {
 
     @After fun close() { databases.forEach { it.close() }; names.forEach { context.deleteDatabase(it) } }
 
+    @Test fun encryptedChatUsesTheExchangeAndReturnsRecipientReceipts()=runTest {
+        val conscrypt=java.security.Security.getProvider("Conscrypt")
+        java.security.Security.removeProvider("Conscrypt")
+        try {
+            val cloud=newKey();val pin=cloud.publicKey.encoded
+            val a=phone("A",cloudKey=pin);phone("B",cloudKey=pin);val c=phone("C",cloudKey=pin)
+            fun crypto()=org.ghost.security.ChatCrypto(KeyPairGenerator.getInstance("RSA").apply{initialize(2048)}.generateKeyPair())
+            val first=crypto();val second=crypto()
+            fun chat(p:Phone,k:org.ghost.security.ChatCrypto)=org.ghost.data.local.LocalChatRepository(p.db,p.repo.assistance,{p.key},{k},{baseTime+testScheduler.currentTime})
+            val chatA=chat(a,first);val chatC=chat(c,second)
+            val id=UUID.randomUUID().toString()
+            fun status(to:Phone)=SignedPackets.create(cloud,16,org.ghost.contracts.v1.AssistanceStatusV1.newBuilder()
+                .setProposalId(id).setVersion(2).setRequestId(UUID.randomUUID().toString()).setResourceId(UUID.randomUUID().toString())
+                .setResourceKind(2).setOwnerNodeId(com.google.protobuf.ByteString.copyFrom(WireCodec.bytes(c.key.nodeId.value)))
+                .setRequesterNodeId(com.google.protobuf.ByteString.copyFrom(WireCodec.bytes(a.key.nodeId.value)))
+                .setState(2).setDescription("Need water").setDeadlineMs(baseTime+3600000).build().toByteString(),baseTime,ttl=3600000,destination=to.key.nodeId.value)
+            a.repo.assistance.store(status(a),pin);c.repo.assistance.store(status(c),pin)
+            chatA.process(pin);chatC.process(pin)
+            connect("A","B");connect("B","C")
+            until{chatA.observe().first().single().canSend && chatC.observe().first().single().canSend}
+            chatA.send(id,"Meet beside the station",pin)
+            until{chatC.observe().first().single().messages.isNotEmpty()}
+            assertEquals("Meet beside the station",chatC.observe().first().single().messages.single().text)
+            assertEquals("Waiting for delivery",chatA.observe().first().single().messages.single().status)
+            chatC.process(pin)
+            until{chatA.observe().first().single().messages.single().status=="Delivered to the other phone"}
+            assertTrue(sends("A","B",18)>0);assertTrue(sends("B","C",18)>0);assertTrue(sends("C","B",18)>0)
+        }finally{conscrypt?.let{java.security.Security.insertProviderAt(it,1)}}
+    }
+
     @Test fun assistanceInvitationsDecisionsAndConfirmationsCrossThreePhonesWithSignedReceipts()=runTest {
         val cloud=newKey();val pin=cloud.publicKey.encoded
         val a=phone("A",cloudKey=pin);phone("B",cloudKey=pin);val c=phone("C",cloudKey=pin)

@@ -1,4 +1,5 @@
 import { applyAssistanceDecision, reconcileAssistance, checkCommittedEdit } from "./assistance.js";
+import { saveChat } from "./chat-store.js";
 import { createHash, randomUUID } from "node:crypto";
 import type { Database, SqlConnection } from "./database.js";
 import { PacketError, signCloudPacket, validatePacket, decode, type VerifiedPacket, type WirePacket } from "./protocol.js";
@@ -87,8 +88,8 @@ export class SosStore {
         const bytes = Buffer.from(packet.immutable_envelope_bytes, "base64url");
         // Serialize cross-family ID checks too: IDs cannot describe both SOS and resources.
         const decisionIds=await connection.query("SELECT event_id FROM assistance_decisions WHERE event_id=$1 OR packet_id=$2",[e.event_id,e.packet_id]);
-        if(e.kind!==17 && decisionIds.rows.length)throw new UploadConflict("REPORT_ID_CONFLICT");
-        if(e.kind===17 && (await connection.query("SELECT event_id FROM resource_events WHERE event_id=$1 OR packet_id=$2",[e.event_id,e.packet_id])).rows.length)
+        if(![17,18].includes(e.kind) && decisionIds.rows.length)throw new UploadConflict("REPORT_ID_CONFLICT");
+        if([17,18].includes(e.kind) && (await connection.query("SELECT event_id FROM resource_events WHERE event_id=$1 OR packet_id=$2",[e.event_id,e.packet_id])).rows.length)
           throw new UploadConflict("REPORT_ID_CONFLICT");
         const other = await connection.query([1, 2].includes(e.kind)
           ? "SELECT event_id FROM resource_events WHERE event_id = $1 OR packet_id = $2"
@@ -104,8 +105,8 @@ export class SosStore {
           packetId: randomUUID(), eventId: randomUUID(), createdAtMs: received,
           expiresAtMs: received + 86400000, destinationNodeId: e.sender_node_id.toString("hex"),
         });
-        if (e.kind === 17) {
-          const saved = await applyAssistanceDecision(connection,this.signer,verified,revision,ack,received);
+        if (e.kind === 17 || e.kind===18) {
+          const saved = await (e.kind===18?saveChat:applyAssistanceDecision)(connection,this.signer,verified,revision,ack,received);
           response.results[index] = {event_id:e.event_id,status:saved.duplicate?"DUPLICATE":"ACCEPTED",cloud_revision:Number(saved.row.cloud_revision)};
           response.packets[index] = saved.row.cloud_ack;
           continue;
