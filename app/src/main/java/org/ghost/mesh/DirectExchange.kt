@@ -22,7 +22,7 @@ import org.ghost.transport.api.*
 class DirectExchange(private val scope: CoroutineScope, private val transport: GhostTransport,
     private val repository: LocalSosRepository, private val identity: () -> SigningIdentity,
     private val now: () -> Long = System::currentTimeMillis, private val cloudKey: ByteArray? = null,
-    private val capabilities: () -> NodeCapabilities = { NodeCapabilities() }) {
+    private val capabilities: () -> NodeCapabilities = { NodeCapabilities() },private val displayName: () -> String = { "" }) {
     private data class Outgoing(val packetId: String, val wire: ByteArray, val cloudReturn: Boolean)
     private class Session(val scope: CoroutineScope, val startedAt: Long) {
         val challenge = ByteArray(32).also { SecureRandom().nextBytes(it) }
@@ -61,6 +61,7 @@ class DirectExchange(private val scope: CoroutineScope, private val transport: G
     private var localAnnouncement: WirePacket? = null
     private var localNeighbors = emptyList<String>()
     private var localCapabilities = NodeCapabilities()
+    private var localName = ""
     private var localAnnouncedAt = 0L
 
     init {
@@ -302,19 +303,20 @@ class DirectExchange(private val scope: CoroutineScope, private val transport: G
         val own = withContext(Dispatchers.IO) { identity() }
         val direct = mutableIdentities.value.values.distinct().sorted()
         val status = capabilities()
+        val name = displayName()
         topologyCache.prune(now())
-        if (localAnnouncement == null || direct != localNeighbors || status != localCapabilities || now() - localAnnouncedAt >= 20000) {
+        if (localAnnouncement == null || direct != localNeighbors || status != localCapabilities || name != localName || now() - localAnnouncedAt >= 20000) {
             val timestamp = maxOf(now(), localAnnouncedAt + 1)
             val packet = withContext(Dispatchers.IO) {
                 SignedPackets.create(own, 15, NetworkAnnouncementV1.newBuilder()
                     .addAllNeighborNodeIds(direct.map { ByteString.copyFrom(WireCodec.bytes(it)) })
                     .setInternetValue(status.internet.ordinal).setGatewayConfigured(status.gatewayConfigured)
-                    .setServerValue(status.server.ordinal).build().toByteString(), timestamp, ttl = MeshTopology.TTL)
+                    .setServerValue(status.server.ordinal).setDisplayName(name).build().toByteString(), timestamp, ttl = MeshTopology.TTL)
             }
             if (sessions.isEmpty()) return
-            localNeighbors = direct; localCapabilities = status; localAnnouncedAt = timestamp; localAnnouncement = packet
+            localNeighbors = direct; localCapabilities = status; localName = name; localAnnouncedAt = timestamp; localAnnouncement = packet
         }
-        mutableTopology.value = TopologySnapshot(own.nodeId.value, status, topologyCache.reports())
+        mutableTopology.value = TopologySnapshot(own.nodeId.value, status, topologyCache.reports(), name)
         sessions.toMap().forEach { (endpoint, session) ->
             val peer = PeerHandle(transport.id, endpoint)
             val target = session.nodeId ?: return@forEach

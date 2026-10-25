@@ -173,6 +173,7 @@ class PacketValidator(
             }
             15 -> NetworkAnnouncementV1.parseFrom(data).also { p ->
                 check(e.destination.kindValue == 1 && e.expiresAtMs - e.createdAtMs <= 60000 &&
+                    text(p.displayName,40) && p.displayName.none { it.isISOControl() || Character.getType(it)==Character.FORMAT.toInt() } &&
                     p.neighborNodeIdsCount <= 4 && p.neighborNodeIdsList.distinct().size == p.neighborNodeIdsCount &&
                     p.neighborNodeIdsList.all { it.size() == 32 && it != e.senderNodeId } &&
                     p.internetValue in 0..2 && p.serverValue in 0..2 && (p.gatewayConfigured || p.serverValue == 0))

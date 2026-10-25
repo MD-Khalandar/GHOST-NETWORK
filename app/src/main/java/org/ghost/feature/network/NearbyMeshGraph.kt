@@ -276,11 +276,11 @@ private fun GraphContent(peers: List<PeerHandle>, identities: Map<String, String
                             style = Stroke(1.dp.toPx()))
                         drawCircle(GraphForeground, radius = 6.dp.toPx(), center = origin)
                     }
-                    Text("You", color = GraphForeground, style = MaterialTheme.typography.labelMedium,
+                    Text(topology.localDisplayName.takeIf { it.isNotBlank() }?.let { "$it (you)" } ?: "You", color = GraphForeground, style = MaterialTheme.typography.labelMedium,
                         modifier = Modifier.offset {
                             val point = project(Offset.Zero)
                             IntOffset((point.x - labelWidth / 2).roundToInt(), (point.y + 15.dp.toPx()).roundToInt())
-                        }.width(88.dp), textAlign = TextAlign.Center)
+                        }.width(88.dp), textAlign = TextAlign.Center, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                     motions.forEach { motion ->
                         key(motion.id) {
                             val phone = phones.first { it.key == motion.id }
@@ -291,7 +291,7 @@ private fun GraphContent(peers: List<PeerHandle>, identities: Map<String, String
                             }.size(88.dp, 56.dp)
                                 .testTag("mesh-node-${phone.peer?.endpointId ?: phone.key}")
                                 .semantics {
-                                    contentDescription = if (nodeId == null) "Nearby phone, getting connected" else "Phone ${nodeId.take(8)}, ${phone.hops} hops away. ${phone.capabilities.internet.internetLabel()}"
+                                    contentDescription = if (nodeId == null) "Nearby phone, getting connected" else "${phone.displayName.ifBlank { "Phone ${nodeId.take(8)}" }}, ${phone.hops} hops away. ${phone.capabilities.internet.internetLabel()}"
                                     this.selected = selected?.key == motion.id
                                 }
                                 .clickable(role = Role.Button) { selectedPeer = motion.id }
@@ -323,8 +323,8 @@ private fun GraphContent(peers: List<PeerHandle>, identities: Map<String, String
                                         } finally { motion.dragging = false }
                                     }
                                 }, contentAlignment = Alignment.BottomCenter) {
-                                Text((nodeId?.take(8) ?: "Connecting") + if (phone.capabilities.gatewayConfigured) " · G" else "", color = if (nodeId == null) GraphMuted else GraphForeground,
-                                    style = MaterialTheme.typography.labelSmall, maxLines = 1)
+                                Text((phone.displayName.ifBlank { nodeId?.take(8) ?: "Connecting" }) + if (phone.capabilities.gatewayConfigured) " · G" else "", color = if (nodeId == null) GraphMuted else GraphForeground,
+                                    style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                             }
                         }
                     }
@@ -344,7 +344,7 @@ private fun GraphContent(peers: List<PeerHandle>, identities: Map<String, String
                     Surface(Modifier.fillMaxWidth().testTag("mesh-connection-details"),
                         color = Color(0xFF20262F), shape = RoundedCornerShape(12.dp), contentColor = GraphForeground) {
                         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text(nodeId?.let { "Phone ${it.take(8)}" } ?: "Nearby phone", style = MaterialTheme.typography.titleSmall)
+                            Text(selected.displayName.ifBlank { nodeId?.let { "Phone ${it.take(8)}" } ?: "Nearby phone" }, style = MaterialTheme.typography.titleSmall)
                             Text(if (nodeId == null) "Getting connected. Requests can be shared once this finishes." else if (selected.peer == null)
                                 "Known through recent reports. Direct connection not observed here." else "Ready to pass along requests.",
                                 color = if (nodeId == null) GraphMuted else GraphTeal, style = MaterialTheme.typography.bodySmall)
@@ -365,7 +365,7 @@ private fun GraphContent(peers: List<PeerHandle>, identities: Map<String, String
                     phones.forEach { phone ->
                         val nodeId = phone.nodeId
                         TextButton(onClick = { selectedPeer = phone.key }, modifier = Modifier.heightIn(min = 48.dp)) {
-                            Text(if (nodeId == null) "Getting connected…" else "Phone ${nodeId.take(8)} · ${if (phone.peer != null) "ready to share" else "${phone.hops} hops away"}",
+                            Text(if (nodeId == null) "Getting connected…" else "${phone.displayName.ifBlank { "Phone ${nodeId.take(8)}" }} · ${if (phone.peer != null) "ready to share" else "${phone.hops} hops away"}",
                                 color = if (nodeId == null) GraphMuted else GraphTeal,
                                 style = MaterialTheme.typography.labelMedium)
                         }

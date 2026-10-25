@@ -30,6 +30,25 @@ import org.robolectric.annotation.GraphicsMode
 @Config(sdk = [35], qualifiers = "w360dp-h800dp-mdpi")
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class GhostAppUiTest {
+    @Test fun connectionsSavesNameAndDisplaysNamedPhonesInTheGraph() {
+        val node="a".repeat(64)
+        val local=mutableStateOf(LocalUiState(network=NearbyState(active=true),peerIdentities=mapOf("A" to node),
+            topology=org.ghost.mesh.TopologySnapshot(announcements=listOf(org.ghost.mesh.NodeAnnouncement(node,emptyList(),org.ghost.mesh.NodeCapabilities(),1,Long.MAX_VALUE,"Ravi")))))
+        val actions=LocalActions({}, {_,done->done()}, {_,_->}, {}, {}, {},saveDisplayName={name->
+            local.value=local.value.copy(displayName=name.trim(),topology=local.value.topology.copy(localDisplayName=name.trim()))
+        })
+        compose.setContent { GhostTheme { GhostApp(FoundationPreviewFixtures.loaded.copy(simulated=false,peers=listOf(PeerHandle("nearby","A"))),{},local=local.value,actions=actions) } }
+        compose.onNodeWithText("Connections").performClick()
+        compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("Display name"))
+        compose.onNodeWithText("Display name").performTextInput("Alex")
+        compose.onNodeWithText("Save name").performScrollTo().performClick()
+        compose.runOnIdle { assertEquals("Alex",local.value.displayName) }
+        compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("Ravi · ready to share"))
+        compose.onNodeWithText("Ravi · ready to share").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Ravi, 1 hops away.",substring=true).assertExists()
+        compose.onNodeWithText("Alex (you)").assertExists()
+    }
+
     @Test fun requesterConfirmsReceiptOnlyAfterReviewAndPendingDoesNotClaimDelivery() {
         val item=mutableStateOf(org.ghost.data.local.AssistanceSummary("arrangement",2,"request","supply",false,
             2,"Need drinking water","Station",7,"litres",System.currentTimeMillis()+3600000,"",false,null,2))

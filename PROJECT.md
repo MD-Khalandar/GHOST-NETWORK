@@ -20,6 +20,11 @@ Signed topology updates expire after one minute, stay in memory, and are bounded
 to four transfers and 64 known reports. Node colours show reported internet state;
 G marks a configured gateway, with recent server reachability shown separately.
 This is a partial known-network view, never proof of a working route or delivery.
+Connections has a **Your name** field (up to 40 characters), saved locally across
+restarts. Signed short-lived graph announcements carry the name to direct and
+reported remote nodes; edits/clearing update while connected. Graph/list labels use
+names with short-ID fallback, while details keep the full node ID. Names are public,
+self-chosen labels; signing keys, routing and ownership do not change.
 Signed neighbor receipts and delivery knowledge survive restarts. Local-only
 reports stay private to the device; original signatures and expiry are preserved.
 Verified duplicate SOS arriving by a shorter route improve the stored forwarding

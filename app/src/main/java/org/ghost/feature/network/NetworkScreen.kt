@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
@@ -40,6 +41,7 @@ fun NetworkScreen(state: FoundationState, onRetry: () -> Unit, modifier: Modifie
         onSave = { url, token -> actions?.saveGateway?.invoke(url, token) { setup = false } },
         onRemove = { actions?.clearGateway?.invoke(); setup = false })
     var showTechnicalDetails by rememberSaveable { mutableStateOf(false) }
+    var name by rememberSaveable(local.displayName) { mutableStateOf(local.displayName) }
     GhostScreen("Connections", "Connect with nearby phones to pass along requests for help.", modifier, contentPadding, state.simulated) {
         when {
             state.loading -> item { LoadingCard() }
@@ -55,6 +57,15 @@ fun NetworkScreen(state: FoundationState, onRetry: () -> Unit, modifier: Modifie
                 }
                 item("mesh-graph") {
                     NearbyMeshGraph(state.peers, local.peerIdentities, local.network.active, local.network.starting, topology = local.topology)
+                }
+                item("display-name") {
+                    InfoCard("Your name", "A self-chosen name shown to nearby phones in the graph. Leave blank to use your short device ID.") {
+                        OutlinedTextField(name, { if (it.length <= 40) name = it }, label = { Text("Display name") },
+                            singleLine = true, enabled = !local.saving && actions?.saveDisplayName != null, modifier = Modifier.fillMaxWidth())
+                        TextButton({ actions?.saveDisplayName?.invoke(name) },
+                            enabled = !local.saving && actions?.saveDisplayName != null && name.trim() != local.displayName,
+                            modifier = Modifier.heightIn(min = 48.dp)) { Text(if (local.saving) "Saving name…" else "Save name") }
+                    }
                 }
                 item("radio-details") {
                     InfoCard("Connecting nearby", "Keep Bluetooth and Wi-Fi on.") {

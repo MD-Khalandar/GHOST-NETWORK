@@ -26,6 +26,7 @@ import org.ghost.security.SigningIdentity
 
 class AppGraph(application: Application) : AndroidViewModel(application) {
     val location = LastKnownLocationProvider(application)
+    private val profile = DisplayNameStore(application)
     private val db = Room.databaseBuilder(application, GhostDatabase::class.java, "ghost.db")
         .addMigrations(GhostDatabase.MIGRATION_1_2, GhostDatabase.MIGRATION_2_3, GhostDatabase.MIGRATION_3_4, GhostDatabase.MIGRATION_4_5).build()
     private val identity by lazy { AndroidSigningIdentity().loadOrCreate() }
@@ -55,7 +56,7 @@ class AppGraph(application: Application) : AndroidViewModel(application) {
             GatewayReachability.OFFLINE, GatewayReachability.AUTHENTICATION_FAILED -> Connectivity.UNAVAILABLE
             GatewayReachability.UNKNOWN -> Connectivity.UNKNOWN
         })
-    })
+    }, displayName = { profile.name.value })
     val dependencies = GhostAppDependencies(nearby, gatewayClient, repository, repository.resources, UploadCoordinationState(repository))
     private val operation = MutableStateFlow(LocalUiState())
     private data class DraftWrite(val draft: SosDraft, val complete: (() -> Unit)? = null)
@@ -73,6 +74,7 @@ class AppGraph(application: Application) : AndroidViewModel(application) {
         .combine(exchange.topology) { state, topology -> state.copy(topology = topology) }
         .combine(internet) { state, status -> state.copy(topology = state.topology.copy(
             localCapabilities = state.topology.localCapabilities.copy(internet = status))) }
+        .combine(profile.name) { state, name -> state.copy(displayName = name, topology = state.topology.copy(localDisplayName = name)) }
         .catch { emit(LocalUiState(error = "Local storage could not be opened.")) }
         .stateIn(viewModelScope, SharingStarted.Eagerly, LocalUiState())
 
@@ -201,7 +203,19 @@ class AppGraph(application: Application) : AndroidViewModel(application) {
                 catch(error:Exception){operation.update{it.copy(saving=false,error=if(error is IllegalArgumentException)error.message else "Could not save the decision. Refresh and retry.")}}
             }
         },
-        requestLocation = requestLocation, closeSos = ::closeSos)
+        requestLocation = requestLocation, closeSos = ::closeSos, saveDisplayName = ::saveDisplayName)
+
+    private fun saveDisplayName(name: String) {
+        if (operation.value.saving) return
+        operation.update { it.copy(saving = true, error = null, notice = null) }
+        viewModelScope.launch {
+            try {
+                profile.save(name)
+                operation.update { it.copy(saving = false, notice = "Name saved. Nearby phones update while connected.") }
+            } catch (cancelled: CancellationException) { throw cancelled }
+              catch (error: Exception) { operation.update { it.copy(saving = false, error = if (error is IllegalArgumentException) error.message else "Could not save your name. Try again.") } }
+        }
+    }
 
     private fun closeSos(requestId: String, state: SosState) {
         if (operation.value.saving) return

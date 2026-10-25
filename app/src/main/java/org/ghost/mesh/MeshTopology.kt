@@ -11,9 +11,9 @@ enum class Connectivity { UNKNOWN, AVAILABLE, UNAVAILABLE }
 data class NodeCapabilities(val internet: Connectivity = Connectivity.UNKNOWN, val gatewayConfigured: Boolean = false,
                             val server: Connectivity = Connectivity.UNKNOWN)
 data class NodeAnnouncement(val nodeId: String, val neighbors: List<String>, val capabilities: NodeCapabilities,
-                            val reportedAtMs: Long, val expiresAtMs: Long)
+                            val reportedAtMs: Long, val expiresAtMs: Long, val displayName: String = "")
 data class TopologySnapshot(val localNodeId: String? = null, val localCapabilities: NodeCapabilities = NodeCapabilities(),
-                            val announcements: List<NodeAnnouncement> = emptyList())
+                            val announcements: List<NodeAnnouncement> = emptyList(), val localDisplayName: String = "")
 
 /** Ephemeral, bounded graph knowledge. Never stored in Room or used to route SOS. */
 class MeshTopology {
@@ -39,7 +39,7 @@ class MeshTopology {
         val p = verified.payload as NetworkAnnouncementV1
         entries[sender] = Entry(NodeAnnouncement(sender, p.neighborNodeIdsList.map { SigningIdentity.hex(it.toByteArray()) },
             NodeCapabilities(Connectivity.entries[p.internetValue], p.gatewayConfigured, Connectivity.entries[p.serverValue]),
-            e.createdAtMs, minOf(e.expiresAtMs, now + TTL)), verified.packet, e.packetId)
+            e.createdAtMs, minOf(e.expiresAtMs, now + TTL), p.displayName), verified.packet, e.packetId)
         return true
     }
     fun reports(): List<NodeAnnouncement> = entries.values.map { it.report }
@@ -56,7 +56,7 @@ class MeshTopology {
 }
 
 data class GraphPhone(val key: String, val nodeId: String?, val peer: PeerHandle?, val hops: Int,
-                      val capabilities: NodeCapabilities = NodeCapabilities())
+                      val capabilities: NodeCapabilities = NodeCapabilities(), val displayName: String = "")
 data class GraphLink(val from: String, val to: String, val direct: Boolean)
 data class KnownMesh(val phones: List<GraphPhone>, val links: List<GraphLink>, val limited: Boolean)
 
@@ -96,7 +96,7 @@ fun knownMesh(peers: List<PeerHandle>, identities: Map<String, String>, snapshot
         }
     }
     val phones = distances.filterKeys { it != SELF }.map { (node, hops) ->
-        GraphPhone(direct[node]?.let { "direct:${it.endpointId}" } ?: node, node, direct[node], hops, reports[node]?.capabilities ?: NodeCapabilities())
+        GraphPhone(direct[node]?.let { "direct:${it.endpointId}" } ?: node, node, direct[node], hops, reports[node]?.capabilities ?: NodeCapabilities(),reports[node]?.displayName.orEmpty())
     } + pendingPeers.map { GraphPhone("direct:${it.endpointId}", null, it, 1) }
     val graphKeys = phones.filter { it.nodeId != null }.associate { it.nodeId to it.key } + (SELF to SELF)
     val links = edges.filter { it.first in distances && it.second in distances }.map {

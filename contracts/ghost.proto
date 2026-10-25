@@ -106,6 +106,7 @@ message NetworkAnnouncementV1 {
   ConnectivityStatusV1 internet = 2; // Android-validated internet, not server access
   bool gateway_configured = 3;
   ConnectivityStatusV1 server = 4; // recent gateway HTTP observation, otherwise unknown
+  string display_name = 5; // optional self-chosen public label, at most 40 characters
 }
 
 message SosCreateV1 {

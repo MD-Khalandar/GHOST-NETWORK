@@ -44,6 +44,12 @@ optional and remembered. With permission, sending tries a current GPS/network fi
 for up to five seconds, then falls back to a saved fix no older than five minutes.
 If neither is available, the SOS sends without location. Turning GPS sharing off
 skips collection. Pending location requests stop on completion, timeout or cancellation.
+
+Under **Connections → Your name**, enter up to 40 characters and tap **Save name**.
+The name stays saved after restarting the app and appears in other updated phones'
+graph and connected-phone list, including relayed graph nodes. Updates arrive while
+connected; clear and save to return to the short device ID. Names are self-chosen
+public labels and do not change signing keys, existing SOS requests or ownership.
 Older unfinished drafts use the same sharing policy when sent. Existing signed
 reports keep their original consent. Joining alone never creates a new SOS;
 previously queued public reports resume automatically.

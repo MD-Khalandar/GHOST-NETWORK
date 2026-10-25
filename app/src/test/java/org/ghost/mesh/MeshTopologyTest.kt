@@ -14,15 +14,17 @@ class MeshTopologyTest {
     private val now = 1792860000000L
     private fun key() = KeyPairGenerator.getInstance("EC").apply { initialize(ECGenParameterSpec("secp256r1")) }
         .generateKeyPair().let { SigningIdentity(it.private, it.public) }
-    private fun announcement(origin: SigningIdentity, neighbors: List<String>, time: Long = now, ttl: Long = MeshTopology.TTL) =
+    private fun announcement(origin: SigningIdentity, neighbors: List<String>, time: Long = now, ttl: Long = MeshTopology.TTL,name:String="") =
         SignedPackets.create(origin, 15, NetworkAnnouncementV1.newBuilder()
             .addAllNeighborNodeIds(neighbors.map { ByteString.copyFrom(WireCodec.bytes(it)) })
-            .setInternetValue(1).build().toByteString(), time, ttl = ttl)
+            .setInternetValue(1).setDisplayName(name).build().toByteString(), time, ttl = ttl)
 
     @Test fun topologyPreservesSignaturesStopsAtFourTransfersRejectsReplayAndExpires() {
         val a = key(); val b = key(); val c = key()
         val original = announcement(c, listOf(b.nodeId.value))
         val validator = PacketValidator()
+        for (name in listOf("x".repeat(41),"Forged\nName","Fake\u202eName"))
+            assertEquals(Rejection.INVALID_PAYLOAD,assertThrows(ProtocolException::class.java){validator.verify(announcement(c,emptyList(),name=name),now)}.code)
         val cache = MeshTopology()
         var packet = MeshTopology.forward(original, c.nodeId.value)
         assertTrue(cache.accept(validator.verify(packet, now), c.nodeId.value, a.nodeId.value, now))

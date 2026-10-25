@@ -21,6 +21,7 @@ data class LocalUiState(
     val resources: List<ResourceSummary> = emptyList(),
     val resourcesLoaded: Boolean = false,
     val assistance: List<org.ghost.data.local.AssistanceSummary> = emptyList(),
+    val displayName: String = "",
 )
 
 fun LocalUiState.meshStatus(): String = when {
@@ -47,4 +48,5 @@ data class LocalActions(
     val decideAssistance: ((String, Int, Int) -> Unit)? = null,
     val requestLocation: (() -> Unit)? = null,
     val closeSos: ((String, SosState) -> Unit)? = null,
+    val saveDisplayName: ((String) -> Unit)? = null,
 )
