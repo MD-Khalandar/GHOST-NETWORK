@@ -2,6 +2,12 @@
 
 Video: https://www.youtube.com/watch?v=dDsuvHzaNGA
 
+Deployed server link - https://ghost-network-9qfb.onrender.com/dashboard/
+
+credentials:-
+    username: admin
+    password: pleaseletussleep
+
 **Ask for help when the network goes quiet.**
 
 GHOST is an Android SOS network for outages. A phone saves a request, nearby
