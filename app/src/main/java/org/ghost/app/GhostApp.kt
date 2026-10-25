@@ -11,6 +11,7 @@ import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
@@ -50,6 +51,8 @@ fun GhostApp(state: FoundationState, onRetry: () -> Unit, trust: DeviceTrustStat
                 Row(Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.statusBars)
                     .padding(horizontal = 24.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Icon(painterResource(org.ghost.R.drawable.ic_ghost), contentDescription = null,
+                        modifier = Modifier.size(28.dp), tint = MaterialTheme.colorScheme.primary)
                     Text("GHOST", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
                     Text(if (state.simulated) "Preview" else "Nearby help", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelLarge)
                 }

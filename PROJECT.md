@@ -8,6 +8,8 @@ Operators can switch the shared server to manual approval from AI suggestions.
 
 Stack: one Kotlin/Compose app with Room/Nearby, one Fastify server with
 PostgreSQL with OpenAI or Gemini, and a React/Vite dashboard. API and worker share one service.
+Android uses a mint mesh mark on dark green for its launcher icon, with adaptive
+and Android 13 themed variants and a vector fallback for older supported phones.
 
 Built: SOS forms/drafts and signed reports in Room, local-only saves, and one-tap
 mesh join with automatic Nearby connections/reconnection. SOS relay
