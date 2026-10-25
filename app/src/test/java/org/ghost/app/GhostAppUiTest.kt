@@ -30,6 +30,48 @@ import org.robolectric.annotation.GraphicsMode
 @Config(sdk = [35], qualifiers = "w360dp-h800dp-mdpi")
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class GhostAppUiTest {
+    @Test fun offerHelpGroupsResponsesBySosAndKeepsActionsAndChatsOnTheirArrangement() {
+        val supply=org.ghost.data.local.AssistanceSummary("water-a",2,"sos-a","supply",true,2,
+            "Need drinking water","Station",2,"litres",System.currentTimeMillis()+3600000,"",false,null,2)
+        val volunteer=supply.copy(id="volunteer-a",version=1,resourceKind=1,state=1,quantity=null,unit="")
+        val other=supply.copy(id="water-b",requestId="sos-b") // Same text must not merge two SOS requests.
+        val local=mutableStateOf(LocalUiState(resourcesLoaded=true,
+            assistance=listOf(supply,volunteer,other,supply.copy(id="requester-only",owner=false))))
+        var decision:Triple<String,Int,Int>?=null
+        var opened:String?=null
+        var sent:Pair<String,String>?=null
+        val actions=LocalActions({}, {_,done->done()}, {_,_->}, {}, {}, {},
+            decideAssistance={id,version,value->decision=Triple(id,version,value)},
+            observeChat={id->opened=id;kotlinx.coroutines.flow.flowOf(
+                org.ghost.data.local.ChatConversation(id,true,"Encrypted text",emptyList()))},
+            sendChat={id,text->sent=id to text})
+        compose.setContent { GhostTheme { org.ghost.feature.home.OfferHelpScreen(local.value,actions) } }
+        fun show(id:String)=compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasTestTag("assistance-$id"))
+        fun action(id:String,text:String)=compose.onNode(hasText(text) and hasAnyAncestor(hasTestTag("assistance-$id")))
+        show("volunteer-a")
+        compose.onNode(hasText("Responses (2)") and hasAnyAncestor(hasTestTag("help-request-sos-a"))).assertExists()
+        compose.onNode(hasTestTag("assistance-water-a") and hasAnyAncestor(hasTestTag("help-request-sos-a"))).assertExists()
+        compose.onNode(hasTestTag("assistance-volunteer-a") and hasAnyAncestor(hasTestTag("help-request-sos-a"))).assertExists()
+        compose.onNodeWithTag("assistance-requester-only").assertDoesNotExist()
+        action("volunteer-a","Accept request").performScrollTo().performClick()
+        assertNull(decision)
+        compose.onNodeWithText("Confirm").performClick()
+        compose.runOnIdle {assertEquals(Triple("volunteer-a",1,1),decision)}
+        show("water-b")
+        compose.onNode(hasText("Responses (1)") and hasAnyAncestor(hasTestTag("help-request-sos-b"))).assertExists()
+        compose.onNode(hasTestTag("assistance-water-b") and hasAnyAncestor(hasTestTag("help-request-sos-b"))).assertExists()
+        show("water-a")
+        action("water-a","Message requester").performScrollTo().performClick()
+        compose.runOnIdle {
+            assertEquals("water-a",opened)
+            local.value=local.value.copy(assistance=listOf(other,volunteer,supply))
+        }
+        compose.onNodeWithText("Message").performTextInput("Where should I deliver the water?")
+        compose.onNodeWithText("Send message").performClick()
+        compose.runOnIdle {assertEquals("water-a" to "Where should I deliver the water?",sent)}
+        compose.onNodeWithText("Close chat").performClick()
+    }
+
     @Test fun notificationTargetOpensSupplierConversationWithoutNavigatingTabs() {
         val conversation=kotlinx.coroutines.flow.MutableStateFlow<org.ghost.data.local.ChatConversation?>(
             org.ghost.data.local.ChatConversation("supply-chat",true,"Encrypted text",emptyList()))

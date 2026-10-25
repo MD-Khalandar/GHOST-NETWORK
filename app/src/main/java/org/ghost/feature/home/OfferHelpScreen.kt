@@ -6,6 +6,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import kotlinx.serialization.json.Json
 import org.ghost.app.LocalActions
@@ -24,6 +25,7 @@ fun OfferHelpScreen(local: LocalUiState, actions: LocalActions?, modifier: Modif
     val owned = local.resources.filter { it.owned }
     val volunteer = owned.firstOrNull { it.helper }
     val supplies = owned.filterNot { it.helper }
+    val requests = local.assistance.filter { it.owner }.groupBy { it.requestId }.toList()
     val ready = local.resourcesLoaded || simulated
     val canSave = ready && !local.saving && actions?.publishResource != null
 
@@ -36,7 +38,20 @@ fun OfferHelpScreen(local: LocalUiState, actions: LocalActions?, modifier: Modif
                 LinearProgressIndicator(Modifier.fillMaxWidth())
             }
         } else {
-            items(local.assistance.filter{it.owner},key={"assistance-${it.id}"}) { AssistanceCard(it,actions,local.saving) }
+            items(requests,key={"help-request-${it.first}"}) { (requestId,responses) ->
+                InfoCard("Request for your help",responses.first().description,
+                    Modifier.testTag("help-request-$requestId")) {
+                    responses.firstOrNull { it.area.isNotBlank() }?.let { Text("Reported area: ${it.area}") }
+                    HorizontalDivider()
+                    Text("Responses (${responses.size})",style=MaterialTheme.typography.titleSmall)
+                    responses.forEach { response ->
+                        key(response.id) {
+                            AssistanceCard(response,actions,local.saving,
+                                modifier=Modifier.testTag("assistance-${response.id}"),grouped=true)
+                        }
+                    }
+                }
+            }
             item("volunteer") {
                 InfoCard("Your volunteer availability", volunteer?.title ?: "Tell nearby people what you can help with.") {
                     if (volunteer != null) {

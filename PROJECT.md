@@ -97,6 +97,8 @@ Older/offline phones may retain open copies until delivery or expiry. Host tests
 cover these paths; physical closure/gateway testing remains.
 Offer help lists owned volunteer availability and supplies separately from forms,
 and loads the saved volunteer name, skill and area when updating.
+Incoming volunteer and supply arrangements are grouped by SOS ID, with the request
+description/area shown once and separate decisions and chats for each arrangement.
 It saves signed volunteer profiles and supply offers in Room.
 Publications relay to supporting phones and upload with separate online consent;
 verified server receipts return through the mesh. Help types, area, quantity/unit
