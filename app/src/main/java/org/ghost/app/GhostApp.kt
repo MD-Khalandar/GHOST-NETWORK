@@ -37,7 +37,8 @@ private val AppRoute.displayTitle: String get() = when (this) {
 /** Navigation and the SOS composer. Sample content is restricted to previews. */
 @Composable
 fun GhostApp(state: FoundationState, onRetry: () -> Unit, trust: DeviceTrustState = DeviceTrustState(), onRetryIdentity: (() -> Unit)? = null,
-             local: LocalUiState = LocalUiState(), actions: LocalActions? = null) {
+             local: LocalUiState = LocalUiState(), actions: LocalActions? = null,
+             chatTarget:String?=null,onChatDismiss:()->Unit={}) {
     var route by rememberSaveable { mutableStateOf(AppRoute.HOME) }
     var showSosPreview by rememberSaveable { mutableStateOf(false) }
     val savedScreens = rememberSaveableStateHolder()
@@ -108,6 +109,8 @@ fun GhostApp(state: FoundationState, onRetry: () -> Unit, trust: DeviceTrustStat
             }
         }
     }
+    if(chatTarget!=null && actions?.observeChat!=null && actions.sendChat!=null)
+        org.ghost.feature.home.ChatDialog(chatTarget,local.assistance.firstOrNull{it.id==chatTarget}?.owner==true,actions,onChatDismiss)
     if (showSosPreview) {
         val draft = local.draft ?: if (actions == null) previewDraft else null
         if (draft == null) AlertDialog(onDismissRequest = { showSosPreview = false }, title = { Text("Opening your request…") },

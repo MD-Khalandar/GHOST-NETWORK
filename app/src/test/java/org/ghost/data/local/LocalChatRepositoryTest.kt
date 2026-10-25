@@ -58,6 +58,75 @@ class LocalChatRepositoryTest {
     }
     @After fun close(){dbs.forEach{it.close()};names.distinct().forEach{context.deleteDatabase(it)};hostConscrypt?.let{Security.insertProviderAt(it,1)}}
 
+    @Test @Config(sdk=[24,35]) fun confirmedSupplyNotifiesOnceAndOpensTheMatchingChat()=runBlocking {
+        if(android.os.Build.VERSION.SDK_INT>=33)org.robolectric.Shadows.shadowOf(context).grantPermissions(android.Manifest.permission.POST_NOTIFICATIONS)
+        val a=phone(owner)
+        val manager=context.getSystemService(android.app.NotificationManager::class.java)
+        fun notifications()=org.ghost.app.ChatNotifications(context){time}
+        a.assist.store(status(owner,1,1),pin)
+        notifications().process(a.db.assistance().observe().first(),owner.nodeId.value)
+        assertTrue(manager.activeNotifications.isEmpty())
+        a.assist.store(status(owner),pin)
+        notifications().process(a.db.assistance().observe().first(),owner.nodeId.value)
+        val notification=manager.activeNotifications.single().notification
+        assertEquals("Help confirmed",notification.extras.getString(android.app.Notification.EXTRA_TITLE))
+        assertTrue(notification.extras.getString(android.app.Notification.EXTRA_TEXT)!!.contains("message the requester"))
+        assertEquals(android.app.Notification.VISIBILITY_PRIVATE,notification.visibility)
+        notification.contentIntent.send()
+        val opened=org.robolectric.Shadows.shadowOf(context).nextStartedActivity
+        assertEquals(org.ghost.app.MainActivity::class.java.name,opened.component!!.className)
+        assertEquals(id,org.ghost.app.ChatNotifications.chatId(opened))
+        manager.cancelAll()
+        notifications().process(a.db.assistance().observe().first(),owner.nodeId.value)
+        assertTrue(manager.activeNotifications.isEmpty()) // A new observer/process cannot repeat the alert.
+        notifications().process(a.db.assistance().observe().first(),requester.nodeId.value)
+        assertTrue(manager.activeNotifications.isEmpty()) // A relay is not a participant on this phone.
+        if(android.os.Build.VERSION.SDK_INT>=26)
+            assertEquals(android.app.NotificationManager.IMPORTANCE_DEFAULT,manager.getNotificationChannel(org.ghost.app.ChatNotifications.CHANNEL).importance)
+    }
+
+    @Test fun incomingTextNotifiesAfterDecryptionWithoutLeakingTextOrRepeatingOnReplay()=runBlocking {
+        org.robolectric.Shadows.shadowOf(context).grantPermissions(android.Manifest.permission.POST_NOTIFICATIONS)
+        val a=phone(owner);val b=phone(requester);connect(a,b)
+        val manager=context.getSystemService(android.app.NotificationManager::class.java)
+        fun notifications()=org.ghost.app.ChatNotifications(context){time}
+        notifications().process(b.db.assistance().observe().first(),requester.nodeId.value)
+        assertTrue(manager.activeNotifications.single().notification.extras.getString(android.app.Notification.EXTRA_TEXT)!!.contains("supplier accepted"))
+        manager.cancelAll()
+        a.chat.send(id,"Private meeting place",pin);transfer(a,b)
+        notifications().process(b.db.assistance().observe().first(),requester.nodeId.value)
+        assertTrue(manager.activeNotifications.isEmpty()) // Ciphertext alone does not prove readable delivery.
+        b.chat.process(pin)
+        notifications().process(b.db.assistance().observe().first(),requester.nodeId.value)
+        val notification=manager.activeNotifications.single().notification
+        assertEquals("New private message",notification.extras.getString(android.app.Notification.EXTRA_TITLE))
+        assertFalse(notification.extras.getString(android.app.Notification.EXTRA_TEXT)!!.contains("Private meeting place"))
+        manager.cancelAll();transfer(a,b)
+        notifications().process(b.db.assistance().observe().first(),requester.nodeId.value)
+        notifications().process(a.db.assistance().observe().first(),owner.nodeId.value)
+        assertTrue(manager.activeNotifications.isEmpty())
+        b.assist.store(status(requester,7,3),pin)
+        notifications().process(b.db.assistance().observe().first(),requester.nodeId.value)
+        assertTrue(manager.activeNotifications.isEmpty())
+    }
+
+    @Test fun notificationPermissionDenialAndClosedRequestsDoNotPreventChat()=runBlocking {
+        org.robolectric.Shadows.shadowOf(context).denyPermissions(android.Manifest.permission.POST_NOTIFICATIONS)
+        val a=phone(owner);val b=phone(requester);connect(a,b)
+        val notifications=org.ghost.app.ChatNotifications(context){time}
+        val rows=a.db.assistance().observe().first()
+        notifications.process(rows,owner.nodeId.value)
+        val manager=context.getSystemService(android.app.NotificationManager::class.java)
+        assertTrue(manager.activeNotifications.isEmpty())
+        assertTrue(a.chat.observe().first().single().canSend)
+        org.robolectric.Shadows.shadowOf(context).grantPermissions(android.Manifest.permission.POST_NOTIFICATIONS)
+        notifications.process(rows,owner.nodeId.value,setOf("b16e3248-e46b-4b53-a049-14c03c90ce9c"))
+        assertTrue(manager.activeNotifications.isEmpty())
+        time+=3600001
+        notifications.process(rows,owner.nodeId.value)
+        assertTrue(manager.activeNotifications.isEmpty())
+    }
+
     @Test fun privateTextRelaysOfflineAndOnlyRecipientReceiptMeansDelivered()=runBlocking {
         val a=phone(owner);val b=phone(requester);val carrier=phone(signer())
         connect(a,b)

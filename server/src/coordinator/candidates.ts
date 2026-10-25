@@ -1,4 +1,5 @@
 import { CANDIDATES_PER_KIND } from "./types.js";
+import { deliveryRoundSql } from "./delivery-round.js";
 
 // Both inference and scheduling use this selection. s is the SOS row; $1 is now.
 // Transport and unspecified help remain candidates for human/model assessment.
@@ -9,15 +10,17 @@ const supplies = `(CASE s.category WHEN 1 THEN ARRAY[4,5,6] WHEN 2 THEN ARRAY[3,
 const area = (field: string) => `NULLIF(lower(regexp_replace(btrim(${field}), '[[:space:]]+', ' ', 'g')), '')`;
 
 const selectCandidates = (source: string, followThrough=false) => `SELECT * FROM (
-  SELECT r.*, ROW_NUMBER() OVER (PARTITION BY CASE WHEN r.kind = 3 THEN 3 ELSE 5 END
+  SELECT r.*, ${deliveryRoundSql("s.request_id","r.entity_id")} AS delivery_round,
+    ROW_NUMBER() OVER (PARTITION BY CASE WHEN r.kind = 3 THEN 3 ELSE 5 END
     ORDER BY CASE WHEN ${area("r.data->>'coarse_area'")} = ${area("s.coarse_area")} THEN 0
       WHEN ${area("r.data->>'coarse_area'")} IS NULL THEN 1 ELSE 2 END,
       r.created_at_ms DESC, r.event_id DESC) AS candidate_rank
   FROM ${source} r
   WHERE r.expires_at_ms > $1 AND r.owner_node_id <> s.sender_node_id
-    ${followThrough ? `AND NOT EXISTS(SELECT 1 FROM coordinator_proposals p WHERE p.request_event_id=s.event_id AND p.resource_event_id=r.event_id)
+    ${followThrough ? `AND NOT EXISTS(SELECT 1 FROM coordinator_proposals p WHERE p.request_event_id=s.event_id AND p.resource_event_id=r.event_id
+      AND p.delivery_round=${deliveryRoundSql("s.request_id","r.entity_id")})
     AND NOT EXISTS(SELECT 1 FROM assistance_cases a WHERE a.request_id=s.request_id AND a.resource_id=r.entity_id
-      AND (a.state IN(1,2) OR a.resource_event_id=r.event_id))` : ""}
+      AND (a.state IN(1,2) OR (a.resource_event_id=r.event_id AND a.state<>7)))` : ""}
     AND (CASE WHEN r.kind = 3 THEN r.data->>'availability' = '1'
       AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(r.data->'help_types') h(value) WHERE h.value::integer = ANY(${helpers}))
     ELSE COALESCE(r.data->>'state', '1') = '1'

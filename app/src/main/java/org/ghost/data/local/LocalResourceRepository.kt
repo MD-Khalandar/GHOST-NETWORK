@@ -31,7 +31,7 @@ class LocalResourceRepository(private val db: GhostDatabase, private val identit
             }
             val commitments=statuses.filter{it.resourceId==row.entityId}
             val reserved=commitments.filter{it.state==2}.sumOf{it.quantity}
-            val used=commitments.filter{it.state in setOf(6,7)}.sumOf{it.quantity}
+            val used=commitments.filter{it.state==7}.sumOf{it.quantity}
             val area = helper?.coarseArea ?: offer!!.coarseArea
             val available = !withdrawn && row.expiresAt > time && (helper == null || helper.availabilityValue == 1)
             val editor = when {
@@ -95,7 +95,7 @@ class LocalResourceRepository(private val db: GhostDatabase, private val identit
             if(!withdraw) {
                 val commitments=db.assistance().observe().first().filter{it.kind==16 && it.destination==row.owner}.distinctBy{it.proposalId}
                     .map{AssistanceStatusV1.parseFrom(ImmutableEnvelopeV1.parseFrom(WireCodec.unbase64(WireCodec.decode(it.wire).immutableEnvelopeBytesBase64,PacketValidator.MAX_ENVELOPE)).payloadBytes)}
-                    .filter{it.resourceId==row.entityId && it.state in setOf(2,6,7)}
+                    .filter{it.resourceId==row.entityId && it.state in setOf(2,7)}
                 val committed=commitments.sumOf{it.quantity}
                 require(committed==0 || draft.quantity.toIntOrNull()?.let{it>=committed}==true && commitments.all{it.unit==draft.unit.trim()}) {
                     "Keep at least $committed committed units and their original unit. Cancel a commitment before reducing it."

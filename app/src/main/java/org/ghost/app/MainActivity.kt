@@ -2,6 +2,7 @@ package org.ghost.app
 
 import android.os.Build
 import android.os.Bundle
+import android.content.Intent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -10,12 +11,15 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
 import org.ghost.design.GhostTheme
 import org.ghost.feature.foundation.FoundationViewModel
 import org.ghost.feature.foundation.DeviceTrustViewModel
 
 class MainActivity : ComponentActivity() {
     private lateinit var graph: AppGraph
+    private var notificationChatId by mutableStateOf<String?>(null)
     private val locationPermissionRequest = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { }
     private val permissionRequest = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
         if (::graph.isInitialized) {
@@ -24,6 +28,7 @@ class MainActivity : ComponentActivity() {
     }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        notificationChatId=savedInstanceState?.getString(ChatNotifications.CHAT_ID) ?: ChatNotifications.chatId(intent)
         enableEdgeToEdge()
         if (Build.VERSION.SDK_INT >= 29) window.isNavigationBarContrastEnforced = false
         graph = (application as GhostApplication).graph
@@ -49,7 +54,19 @@ class MainActivity : ComponentActivity() {
                 if (missing.isEmpty()) graph.startNearby() else permissionRequest.launch(missing.toTypedArray())
             }, {
                 locationPermissionRequest.launch(arrayOf(android.Manifest.permission.ACCESS_FINE_LOCATION, android.Manifest.permission.ACCESS_COARSE_LOCATION))
-            })) }
+            }), chatTarget=notificationChatId, onChatDismiss={
+                notificationChatId=null
+                intent.removeExtra(ChatNotifications.CHAT_ID)
+            }) }
         }
+    }
+    override fun onNewIntent(intent:Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        notificationChatId=ChatNotifications.chatId(intent)
+    }
+    override fun onSaveInstanceState(outState:Bundle) {
+        outState.putString(ChatNotifications.CHAT_ID,notificationChatId)
+        super.onSaveInstanceState(outState)
     }
 }

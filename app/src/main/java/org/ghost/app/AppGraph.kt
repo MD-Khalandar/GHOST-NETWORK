@@ -34,6 +34,7 @@ class AppGraph(application: Application) : AndroidViewModel(application) {
     val repository = LocalSosRepository(db, { identity })
     private val chatCrypto by lazy { org.ghost.security.ChatCrypto.load() }
     private val chat = org.ghost.data.local.LocalChatRepository(db,repository.assistance,{identity},{chatCrypto},System::currentTimeMillis)
+    private val chatNotifications = ChatNotifications(application)
     private val gatewaySettings = GatewayConfigStore(application, BuildConfig.DEBUG)
     private val cloudKey = runCatching {
         BuildConfig.CLOUD_PUBLIC_KEY.takeIf { it.isNotEmpty() }?.let { WireCodec.unbase64(it, 91).also(SigningIdentity::decodePublicKey) }
@@ -81,11 +82,14 @@ class AppGraph(application: Application) : AndroidViewModel(application) {
         .stateIn(viewModelScope, SharingStarted.Eagerly, LocalUiState())
 
     init {
-        viewModelScope.launch {
-            repository.assistance.observeRows().collect {
+        viewModelScope.launch(Dispatchers.IO) {
+            combine(repository.assistance.observeRows(),repository.closures.observe()){rows,closures->rows to closures}.collect { (rows,closures)->
                 try { cloudKey?.let { chat.process(it) } }
                 catch(cancelled:CancellationException){throw cancelled}
                 catch(_:Exception){ /* A chat key/storage failure never blocks SOS relay. Opening chat exposes its pending state. */ }
+                try { if(rows.any{it.kind==16})chatNotifications.process(repository.assistance.observeRows().first(),identity.nodeId.value,closures.map{it.requestId}.toSet()) }
+                catch(cancelled:CancellationException){throw cancelled}
+                catch(_:Exception){ /* Notification failures never interrupt relay or chat storage. */ }
             }
         }
         viewModelScope.launch {

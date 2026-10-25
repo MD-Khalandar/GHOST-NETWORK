@@ -136,6 +136,9 @@ Each proposes at most one next option; eligible calls run in parallel and each c
 against the same hourly budget. PostgreSQL tasks remember no-match inputs and track
 review, invitations, commitments and receipt. Declines/cancellations/timeouts requeue
 alternative searches, excluding tried source versions before candidate limits.
+After requester-confirmed supply receipt, the same offer's remaining stock can be
+proposed in a new delivery round. Each round requires fresh approval/invitation,
+owner acceptance and stock checks; receipt history includes supply type and units.
 Active arrangements pause that specialist; unchanged inputs avoid repeat calls.
 Dashboard **Request follow-up** shows both tracks and receipts without assuming the
 whole SOS is fulfilled. Closing/expiry stops follow-up; progress survives restarts.
@@ -156,8 +159,10 @@ the same durable mesh/upload path. Room upgrades in place. Conflicting acceptanc
 cannot overbook supplies or volunteers; AI uses remaining availability. Supply
 cards show last-known available/reserved/used amounts. Edits preserve committed
 stock and units. Withdrawal stops new matching without cancelling commitments.
-SOS cancellation releases active reservations; requester-reported resolution counts
-supplies as used and frees volunteers. Invitations expire within an hour/source
+SOS cancellation and resolution release outstanding reservations and free volunteers.
+Only individual requester-confirmed receipts count supplies as used; existing receipts
+survive resolution. Server and phone stock/edit checks also release older resolved
+arrangements without changing signed history. Invitations expire within an hour/source
 expiry. Local signatures, Room/mesh/HTTP, concurrency, rollback and restart tests
 cover the loop. Physical three-phone and deployed PostgreSQL testing remain.
 
@@ -188,8 +193,12 @@ download queues, with a separate capability flag to protect older clients.
 Waiting/server-stored/delivered states are distinct; only the recipient's signature
 marks delivery. New messages stop at arrangement closure/deadline; recent history
 remains. Text is limited to 1,000 characters and conversations to 100 messages;
-bounded queues preserve recent history. No attachments, read receipts or chat
-notifications. There is no forward secrecy or protection for public routing metadata.
+bounded queues preserve recent history. Local notifications announce confirmed
+acceptance and decrypted incoming messages for volunteers and suppliers; tapping
+opens that conversation. Alerts omit message text, deduplicate across restarts,
+and use the existing Android notification permission. They arrive when connected
+sync/mesh receives the update; no push service is added. No attachments or read
+receipts. There is no forward secrecy or protection for public routing metadata.
 Updated server and participating phones are required; handset Keystore testing remains.
 
 Next: field-test assistance/background connections and GPS acquisition. Server

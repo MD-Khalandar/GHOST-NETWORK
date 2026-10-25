@@ -114,6 +114,30 @@ class LocalAssistanceRepositoryTest {
         assertTrue(ownerRepo.resources.updateOffer(stock.editDraft!!.copy(quantity="6")).isFailure)
     }
 
+    @Test fun resolutionReleasesLocalStockAndEditRestrictionsWithoutConsumingSupplies()=runBlocking {
+        val cloud=key();val owner=key();val requester=key();val pin=cloud.publicKey.encoded
+        val repo=LocalSosRepository(open(),{owner},{time+1000});val id=UUID.randomUUID().toString()
+        repo.resources.publish(ResourceDraft(id="d9db115d-a859-476a-9b26-dcf783c69729",supply=true,
+            resourceType=ResourceType.WATER,quantity="10",unit="litres")).getOrThrow()
+        val committed=status(cloud,owner,requester,id,owner.nodeId.value,2,2)
+        repo.assistance.store(committed,pin)
+        val reserved=repo.resources.observeSummaries().first().single()
+        assertEquals(7,reserved.reservedQuantity);assertEquals(0,reserved.usedQuantity);assertEquals(3,reserved.remainingQuantity)
+        assertTrue(repo.resources.updateOffer(reserved.editDraft!!.copy(quantity="1",unit="bottles")).isFailure)
+        repo.assistance.store(status(cloud,owner,requester,id,owner.nodeId.value,6,3),pin)
+        repo.assistance.store(committed,pin) // An old commitment cannot restore the reservation.
+        val released=repo.resources.observeSummaries().first().single()
+        assertEquals(0,released.reservedQuantity);assertEquals(0,released.usedQuantity);assertEquals(10,released.remainingQuantity)
+        assertTrue(repo.resources.updateOffer(released.editDraft!!.copy(quantity="6",unit="bottles")).isSuccess)
+        assertTrue(repo.resources.updateOffer(repo.resources.observeSummaries().first().single().editDraft!!.copy(quantity="10",unit="litres")).isSuccess)
+        // A different arrangement's confirmed receipt still consumes stock.
+        repo.assistance.store(status(cloud,owner,requester,UUID.randomUUID().toString(),owner.nodeId.value,7,3),pin)
+        val remaining=repo.resources.observeSummaries().first().single()
+        assertEquals(0,remaining.reservedQuantity);assertEquals(7,remaining.usedQuantity);assertEquals(3,remaining.remainingQuantity)
+        assertTrue(repo.resources.updateOffer(remaining.editDraft!!.copy(quantity="6")).isFailure)
+        assertTrue(repo.resources.updateOffer(remaining.editDraft!!.copy(quantity="7")).isSuccess)
+    }
+
     @Test fun invalidDownloadPagesRollBackAndAuthenticatedExpiryDoesNotBlockLaterPages()=runBlocking {
         val cloud=key();val owner=key();val requester=key();val pin=cloud.publicKey.encoded
         val db=open();val repo=LocalAssistanceRepository(db,{owner},{time+1000})

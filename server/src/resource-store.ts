@@ -47,7 +47,7 @@ export async function listResources(database: Database, kind: 3 | 5, limit: numb
     FROM resource_events WHERE kind = $1 OR ($1 = 5 AND kind = 6) ORDER BY entity_id, created_at_ms DESC, event_id DESC
     ) latest WHERE ($2::bigint IS NULL OR cloud_revision < $2) ORDER BY cloud_revision DESC LIMIT $3`, [kind, before ?? null, limit + 1]);
   const balances = await database.query(`SELECT resource_id, SUM(quantity) FILTER(WHERE state=2) AS reserved,
-    SUM(quantity) FILTER(WHERE state IN(6,7)) AS consumed,COUNT(*) FILTER(WHERE state=2) AS commitments FROM assistance_cases WHERE state IN(2,6,7) GROUP BY resource_id`);
+    SUM(quantity) FILTER(WHERE state=7) AS consumed,COUNT(*) FILTER(WHERE state=2) AS commitments FROM assistance_cases WHERE state IN(2,7) GROUP BY resource_id`);
   const items = result.rows.slice(0, limit).map(row => ({ ...row.data, ...(kind === 5 ? { offer_id: row.entity_id } : {}),
     ...(kind===5 ? (()=>{const b=balances.rows.find(b=>b.resource_id===row.entity_id);const reserved=Number(b?.reserved??0),consumed=Number(b?.consumed??0);
       return {reserved_quantity:reserved,consumed_quantity:consumed,available_quantity:(row.data.state??1)!==1 || Number(row.expires_at_ms)<=now?0:row.data.quantity===null?null:Math.max(0,Number(row.data.quantity)-reserved-consumed)};})() : {}),

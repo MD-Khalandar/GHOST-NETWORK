@@ -45,7 +45,11 @@ without recalling a specialist that already completed unchanged inputs.
 `coordinator_tasks` persists each track and its last processed input. Waiting for
 review, an invitation or a commitment pauses that track. Signed declines, owner
 cancellation, expiry and receipts affect scheduling; previously tried resource
-versions are excluded before the 50-item cap. No-match results wait for changed
+versions are excluded before the 50-item cap. A requester-confirmed supply receipt
+opens a new delivery round for that offer's remaining stock. Proposals deduplicate
+within each round; fresh invitations, acceptance and stock checks still apply.
+Declines, cancellations and active deliveries do not open another round.
+No-match results wait for changed
 inputs or an explicit operator rerun. Receipt history is supplied to the specialist
 so it can consider explicitly unmet needs without inventing a target quantity.
 Neither receipt nor absence of candidates automatically resolves an SOS.
@@ -80,8 +84,9 @@ The server rechecks open SOS, current resources, remaining stock and deadlines u
 one transaction lock shared with source uploads. Requests can share remaining supply;
 volunteers have one active commitment. Supply edits preserve committed/used stock
 and units. Withdrawal stops future matching without silently cancelling commitments.
-Owner cancellation and SOS cancellation release active reservations; requester
-resolution records supply as used and frees volunteers. The desk lists arrangements
+Owner cancellation, SOS cancellation and requester resolution release active reservations
+and free volunteers. Only individual requester-confirmed receipts consume supplies;
+resolution preserves those receipts. The desk lists arrangements
 separately from pending proposals. See server README for routes and status values.
 Local tests do not prove live providers, physical handset delivery or deployed
 PostgreSQL behavior.

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { Database, SqlConnection } from "./database.js";
 import { decode, signCloudPacket, type VerifiedPacket, type WirePacket } from "./protocol.js";
 import { SigningIdentity } from "./security.js";
+import { deliveryRoundSql } from "./coordinator/delivery-round.js";
 
 export class AssistanceConflict extends Error { constructor(readonly code: string) { super(code); } }
 export async function initializeAssistance(c: SqlConnection) {
@@ -59,7 +60,7 @@ export async function reconcileAssistance(c: SqlConnection, signer: SigningIdent
     WHERE a.state IN(1,2)`);
   for (const row of rows) {
     if (row.sos_state !== 1) await transition(c,signer,row,row.sos_state===6 && row.state===2 ? 6 : 4,now,
-      row.sos_state===6 ? "Requester marked the SOS resolved" : "Requester cancelled the SOS");
+      row.sos_state===6 ? "Requester marked the SOS resolved; outstanding assistance released without confirming receipt" : "Requester cancelled the SOS");
     else if (number(row.deadline_ms)<=now || number(row.sos_expiry)<=now)
       await transition(c,signer,row,5,now,"Assistance deadline expired");
     else if (row.state===1) {
@@ -72,7 +73,7 @@ export async function reconcileAssistance(c: SqlConnection, signer: SigningIdent
 }
 export async function checkCommittedEdit(c: SqlConnection, resourceId: string, quantity: number | null, unit: string) {
   const {rows} = await c.query(`SELECT COALESCE(SUM(quantity),0) AS used,
-    COUNT(*) FILTER(WHERE unit<>$2) AS other_units FROM assistance_cases WHERE resource_id=$1 AND state IN(2,6,7)`,[resourceId,unit]);
+    COUNT(*) FILTER(WHERE unit<>$2) AS other_units FROM assistance_cases WHERE resource_id=$1 AND state IN(2,7)`,[resourceId,unit]);
   if (number(rows[0].used)>0 && (quantity===null || quantity<number(rows[0].used) || number(rows[0].other_units)>0))
     throw new AssistanceConflict("SUPPLIES_ALREADY_COMMITTED");
 }
@@ -98,7 +99,7 @@ export async function applyAssistanceDecision(c: SqlConnection, signer: SigningI
     const current = (await c.query(`SELECT * FROM resource_events WHERE entity_id=$1 ORDER BY created_at_ms DESC,event_id DESC LIMIT 1`,[row.resource_id])).rows[0];
     const data=current?.data;
     const committed=(await c.query(`SELECT COALESCE(SUM(quantity),0) AS used,COUNT(*) FILTER(WHERE state=2) AS count FROM assistance_cases
-      WHERE resource_id=$1 AND state IN(2,6,7)`,[row.resource_id])).rows[0];
+      WHERE resource_id=$1 AND state IN(2,7)`,[row.resource_id])).rows[0];
     const usable=current && current.event_id===row.resource_event_id && number(current.expires_at_ms)>now &&
       (row.resource_kind===1 ? data.availability===1 && number(committed.count)===0 :
         (data.state??1)===1 && data.quantity!==null && data.unit===row.unit &&
@@ -135,6 +136,7 @@ export class AssistanceService {
       JOIN sos_reports s ON s.request_id=p.request_id
       JOIN coordinator_resource_available r ON r.entity_id=p.resource_id
       WHERE p.status='pending_review' AND s.state=1 AND s.event_id=p.request_event_id AND s.expires_at_ms>$1
+        AND p.delivery_round=${deliveryRoundSql("p.request_id","p.resource_id")}
         AND r.event_id=p.resource_event_id AND r.expires_at_ms>$1
         AND COALESCE((r.data->>'available_until_ms')::bigint,r.expires_at_ms)>$1
         AND ((p.resource_kind='helper' AND r.data->>'availability'='1') OR
@@ -142,7 +144,7 @@ export class AssistanceService {
            AND (r.data->>'quantity')::bigint>=p.quantity))
         AND NOT EXISTS(SELECT 1 FROM assistance_cases a WHERE a.proposal_id=p.proposal_id OR
           (a.request_id=p.request_id AND a.resource_id=p.resource_id AND
-            (a.state IN(1,2) OR (a.request_event_id=p.request_event_id AND a.resource_event_id=p.resource_event_id))))
+            (a.state IN(1,2) OR (a.request_event_id=p.request_event_id AND a.resource_event_id=p.resource_event_id AND a.state<>7))))
       ORDER BY p.created_at_ms,p.proposal_id LIMIT 20`,[this.now()]);
     let progressed=false;
     for(const row of rows) {
@@ -165,15 +167,17 @@ export class AssistanceService {
         WHERE proposal_id=$1`,[proposalId])).rows[0];
       if(!p) throw new AssistanceConflict("PROPOSAL_NOT_FOUND");
       if(automatic && (await c.query(`SELECT 1 FROM assistance_cases WHERE request_id=$1 AND resource_id=$2
-        AND (state IN(1,2) OR (request_event_id=$3 AND resource_event_id=$4)) LIMIT 1`,
+        AND (state IN(1,2) OR (request_event_id=$3 AND resource_event_id=$4 AND state<>7)) LIMIT 1`,
         [p.request_id,p.resource_id,p.request_event_id,p.resource_event_id])).rows.length)return null;
       const data=p.resource_data;
+      const round=Number((await c.query(`SELECT ${deliveryRoundSql("$1","$2")} AS round`,[p.request_id,p.resource_id])).rows[0].round);
+      if(approve && round!==Number(p.delivery_round))throw new AssistanceConflict("PROPOSAL_STALE_OR_QUANTITY_UNKNOWN");
       const deadline=Math.min(number(p.sos_expiry),number(p.resource_expiry),number(data?.available_until_ms??p.resource_expiry),this.now()+3600000);
       if(approve && (p.sos_state!==1 || p.sos_event!==p.request_event_id || p.latest_event!==p.resource_event_id || deadline<=this.now() ||
         (p.resource_kind==="helper" ? data.availability!==1 : (data.state??1)!==1 || data.quantity===null || p.quantity===null)))
         throw new AssistanceConflict("PROPOSAL_STALE_OR_QUANTITY_UNKNOWN");
       const used=(await c.query(`SELECT COALESCE(SUM(quantity),0) AS used,COUNT(*) FILTER(WHERE state=2) AS count FROM assistance_cases
-        WHERE resource_id=$1 AND state IN(2,6,7)`,[p.resource_id])).rows[0];
+        WHERE resource_id=$1 AND state IN(2,7)`,[p.resource_id])).rows[0];
       if(approve && (p.resource_kind==="helper" ? number(used.count)>0 : number(p.quantity)>number(data.quantity)-number(used.used)))
         throw new AssistanceConflict("RESOURCE_ALREADY_COMMITTED");
       const payload={request_id:p.request_id,resource_id:p.resource_id,resource_kind:p.resource_kind==="helper"?1:2,

@@ -239,8 +239,9 @@ committed status addressed to the requester and records state 7. Other choices s
 require the resource owner. Confirmation consumes reserved supplies or frees a
 volunteer; duplicate decisions do not consume twice. Confirmed receipt survives SOS
 closure and expiry. The startup migration extends existing state constraints in place.
-Requester resolution records supplies as used rather than
-returning them to available stock, and frees volunteers. Signed lifecycle updates
+Requester resolution releases outstanding supply reservations and frees volunteers;
+only requester-confirmed receipt (state 7) counts supplies as used. Earlier receipts
+remain consumed after closure, while state 6 never implies delivery. Signed lifecycle updates
 are stored atomically with the change for later download/mesh delivery. Cleanup
 runs on uploads and coordination polling; there is no independent fulfilment proof.
 See [PROJECT.md](../PROJECT.md).

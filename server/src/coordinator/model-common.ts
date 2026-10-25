@@ -21,9 +21,11 @@ export function specialistInstructions(context:MatchContext):string {
   return `${instructions}\nYou are the ${context.specialist==="helper"?"helper and transport":"supply"} specialist.
 Your scoped candidates are your only search tool results. Choose at most ONE next suitable option, or none.
 Use the supplied follow_up facts: states 1 invited, 2 committed, 3 declined, 4 cancelled, 5 expired,
-6 whole SOS reported resolved, 7 this arrangement confirmed received by requester.
+6 whole SOS reported resolved (reservation released, receipt not confirmed), 7 this arrangement confirmed received by requester.
 Do not repeat failed invitations or replace pending/committed help. Receipt of one arrangement does not close the SOS.
 After a receipt, suggest more only when the SOS explicitly still has an unmet need considering the recorded quantities and units.
+A received supply offer may appear again with its REMAINING stock. A new delivery_round permits a new invitation, not reuse of an old one.
+Use resource_type and matching units to count previous receipts toward that need; suggest only the unmet amount, bounded by remaining stock.
 Never infer a missing target quantity, subtract incompatible units, or assume one receipt met every need.
 When fulfillment is uncertain, return no matches so the operator/requester can clarify.\n`;
 }

@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { SqlConnection } from "../database.js";
 import type { FollowUp, MatchContext, Specialist } from "./types.js";
+import { deliveryRoundSql } from "./delivery-round.js";
 
 export async function initializeFollowUp(c:SqlConnection) {
   await c.query(`CREATE TABLE IF NOT EXISTS coordinator_tasks (
@@ -12,12 +13,14 @@ export async function initializeFollowUp(c:SqlConnection) {
 
 export async function readFollowUp(c:SqlConnection,requestId:string,specialist:Specialist,now:number):Promise<FollowUp> {
   const kind=specialist==="helper"?1:2;
-  const {rows}=await c.query(`SELECT proposal_id,resource_id,state,version,quantity,unit FROM assistance_cases
-    WHERE request_id=$1 AND resource_kind=$2 ORDER BY CASE WHEN state IN(1,2) THEN 0 ELSE 1 END,updated_at_ms DESC,proposal_id LIMIT 50`,[requestId,kind]);
+  const {rows}=await c.query(`SELECT a.proposal_id,a.resource_id,a.state,a.version,a.quantity,a.unit,r.data->>'resource_type' AS resource_type FROM assistance_cases a
+    LEFT JOIN resource_events r ON r.event_id=a.resource_event_id
+    WHERE a.request_id=$1 AND a.resource_kind=$2 ORDER BY CASE WHEN a.state IN(1,2) THEN 0 ELSE 1 END,a.updated_at_ms DESC,a.proposal_id LIMIT 50`,[requestId,kind]);
   const pending=await c.query(`SELECT COUNT(*) AS count FROM coordinator_proposals p
     JOIN sos_reports s ON s.event_id=p.request_event_id
     JOIN coordinator_resource_available r ON r.entity_id=p.resource_id AND r.event_id=p.resource_event_id
     WHERE p.request_id=$1 AND p.resource_kind=$2 AND s.state=1 AND s.expires_at_ms>$3 AND r.expires_at_ms>$3
+      AND p.delivery_round=${deliveryRoundSql("p.request_id","p.resource_id")}
       AND NOT EXISTS(SELECT 1 FROM assistance_cases a WHERE a.proposal_id=p.proposal_id)
       AND (p.resource_kind='helper' AND r.data->>'availability'='1' OR p.resource_kind='offer'
         AND COALESCE(r.data->>'state','1')='1' AND COALESCE((r.data->>'available_until_ms')::bigint,r.expires_at_ms)>$3
@@ -25,7 +28,7 @@ export async function readFollowUp(c:SqlConnection,requestId:string,specialist:S
     [requestId,specialist==="helper"?"helper":"offer",now]);
   return {awaiting_review:Number(pending.rows[0].count),arrangements:rows.map(r=>({
     proposal_id:r.proposal_id,resource_id:r.resource_id,state:Number(r.state),version:Number(r.version),
-    quantity:r.quantity===null?null:Number(r.quantity),unit:r.unit}))};
+    quantity:r.quantity===null?null:Number(r.quantity),unit:r.unit,resource_type:r.resource_type===null?null:Number(r.resource_type)}))};
 }
 
 export function fingerprint(context:MatchContext) {

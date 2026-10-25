@@ -117,7 +117,7 @@ fun RequestsScreen(state: FoundationState, onRetry: () -> Unit, modifier: Modifi
     }
     closingId?.let { id ->
         AlertDialog(onDismissRequest = { closingId = null }, title = { Text(if (resolving) "Mark this SOS resolved?" else "Cancel this SOS?") },
-            text = { Text("This ends this request. Send a new SOS if you need help again. Other phones and the server update after delivery; offline copies can remain until expiry.") },
+            text = { Text("This ends this request and releases outstanding help when the server receives the update. It does not confirm delivery. Confirm any help you received before closing; recorded receipts stay recorded. Send a new SOS if you need help again. Offline copies can remain until expiry.") },
             confirmButton = { TextButton({ actions?.closeSos?.invoke(id, if (resolving) SosState.RESOLVED else SosState.CANCELLED); closingId = null }, enabled = !local.saving) { Text(if (resolving) "Mark resolved" else "Cancel SOS") } },
             dismissButton = { TextButton({ closingId = null }) { Text("Keep request open") } })
     }

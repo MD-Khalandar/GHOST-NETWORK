@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { candidateSql,teamCandidateSql } from "./candidates.js";
 import { initializeFollowUp,readFollowUp,recordTask,fingerprint,taskLabels } from "./followup.js";
+import { deliveryRoundSql } from "./delivery-round.js";
 import type { Database, SqlConnection } from "../database.js";
 import { CANDIDATES_PER_KIND, CoordinatorFailure, UUID, type MatchContext, type MatchDraft,
   type ResourceSource, type ReviewProposal, type RunResult, type SosSource, type SourceVersion, type Specialist } from "./types.js";
@@ -24,9 +25,11 @@ export async function initializeCoordinator(database: Database): Promise<void> {
       explanation TEXT NOT NULL CHECK (length(explanation) BETWEEN 1 AND 1000),
       status TEXT NOT NULL DEFAULT 'pending_review' CHECK (status = 'pending_review'),
       created_at_ms BIGINT NOT NULL,
-      CHECK (resource_kind <> 'helper' OR quantity IS NULL),
-      UNIQUE (request_event_id, resource_event_id)
+      CHECK (resource_kind <> 'helper' OR quantity IS NULL)
     )`);
+    await connection.query("ALTER TABLE coordinator_proposals ADD COLUMN IF NOT EXISTS delivery_round INTEGER NOT NULL DEFAULT 0");
+    await connection.query("ALTER TABLE coordinator_proposals DROP CONSTRAINT IF EXISTS coordinator_proposals_request_event_id_resource_event_id_key");
+    await connection.query("CREATE UNIQUE INDEX IF NOT EXISTS coordinator_proposal_delivery_round ON coordinator_proposals(request_event_id,resource_event_id,delivery_round)");
     await connection.query("CREATE INDEX IF NOT EXISTS coordinator_review ON coordinator_proposals(created_at_ms DESC, proposal_id)");
     await connection.query(`CREATE TABLE IF NOT EXISTS coordinator_jobs (
       request_id UUID PRIMARY KEY REFERENCES sos_reports(request_id), input_revision BIGINT NOT NULL,
@@ -53,7 +56,7 @@ export async function initializeCoordinator(database: Database): Promise<void> {
           GREATEST(0,(r.data->>'quantity')::integer-COALESCE(a.used,0))) ELSE r.data END AS data,
         r.created_at_ms,r.expires_at_ms,r.received_at_ms,r.cloud_revision,r.cloud_ack
       FROM coordinator_resource_latest r LEFT JOIN (
-        SELECT resource_id,COUNT(*) FILTER(WHERE state=2) AS busy,SUM(quantity)::integer AS used FROM assistance_cases WHERE state IN(2,6,7)
+        SELECT resource_id,COUNT(*) FILTER(WHERE state=2) AS busy,SUM(quantity)::integer AS used FROM assistance_cases WHERE state IN(2,7)
         GROUP BY resource_id) a ON a.resource_id=r.entity_id`);
     await connection.query(`CREATE TABLE IF NOT EXISTS coordinator_model_budget (
       window_start_ms BIGINT PRIMARY KEY, calls INTEGER NOT NULL CHECK (calls > 0)
@@ -88,7 +91,7 @@ function resource(row: Record<string, any>, now: number): ResourceSource | undef
   return { kind: helper ? "helper" : "offer", resource_id: row.entity_id, owner_node_id: row.owner_node_id,
     source: source(row), coarse_area: data.coarse_area ?? null, help_types: helper ? data.help_types : [],
     resource_type: helper ? null : data.resource_type, quantity: helper ? null : quantity,
-    unit: helper ? null : data.unit ?? null, expires_at_ms: expires };
+    unit: helper ? null : data.unit ?? null, expires_at_ms: expires,delivery_round:Number(row.delivery_round??0) };
 }
 
 async function readResources(connection: SqlConnection, now: number, ids?: string[], area?: string | null): Promise<ResourceSource[]> {
@@ -230,16 +233,18 @@ export class CoordinatorStore {
         const latest = current.find(r => r.kind === draft.resource_kind && r.resource_id === draft.resource_id);
         if (!original || !latest || !sameSource(original.source, latest.source) || !validQuantity(draft, latest))
           throw new CoordinatorFailure("STALE_SOURCE");
+        const round=Number((await connection.query(`SELECT ${deliveryRoundSql("$1","$2")} AS round`,[request.request_id,latest.resource_id])).rows[0].round);
+        if(round!==(original.delivery_round??0))throw new CoordinatorFailure("STALE_SOURCE");
         const result = await connection.query(`INSERT INTO coordinator_proposals (
           proposal_id, run_id, request_id, resource_kind, resource_id, owner_node_id,
-          request_event_id, request_revision, resource_event_id, resource_revision, quantity, explanation, created_at_ms
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
-        ON CONFLICT (request_event_id, resource_event_id) DO NOTHING RETURNING proposal_id`, [
+          request_event_id, request_revision, resource_event_id, resource_revision, quantity, explanation, created_at_ms,delivery_round
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+        ON CONFLICT (request_event_id, resource_event_id,delivery_round) DO NOTHING RETURNING proposal_id`, [
           randomUUID(), runId, request.request_id, latest.kind, latest.resource_id, latest.owner_node_id,
           request.source.event_id, request.source.cloud_revision, latest.source.event_id, latest.source.cloud_revision,
-          draft.quantity, draft.explanation, now]);
+          draft.quantity, draft.explanation, now,round]);
         const existing = result.rows.length ? result : await connection.query(`SELECT proposal_id FROM coordinator_proposals
-          WHERE request_event_id = $1 AND resource_event_id = $2`, [request.source.event_id, latest.source.event_id]);
+          WHERE request_event_id = $1 AND resource_event_id = $2 AND delivery_round=$3`, [request.source.event_id, latest.source.event_id,round]);
         ids.push(existing.rows[0].proposal_id);
       }
       await connection.query("UPDATE coordinator_runs SET status = 'completed', finished_at_ms = $2, proposal_count = $3 WHERE run_id = $1", [runId, now, ids.length]);
@@ -267,7 +272,8 @@ export class CoordinatorStore {
       r.data AS resource_data, current.kind AS current_kind, current.data AS current_data,
       current.entity_id AS current_entity, current.owner_node_id AS current_owner,
       current.event_id AS current_event, current.cloud_revision AS current_revision,
-      current.expires_at_ms AS current_expiry
+      current.expires_at_ms AS current_expiry,
+      ${deliveryRoundSql("p.request_id","p.resource_id")} AS current_delivery_round
       FROM coordinator_proposals p
       JOIN sos_reports s ON s.event_id = p.request_event_id
       JOIN resource_events r ON r.event_id = p.resource_event_id
@@ -282,7 +288,8 @@ export class CoordinatorStore {
         cloud_revision: row.current_revision, expires_at_ms: row.current_expiry }, now) : undefined;
       const current = row.request_state === 1 && Number(row.request_expires_at_ms) > now &&
         Number(row.current_request_revision) === proposal.request_source.cloud_revision && latest &&
-        sameSource(latest.source, proposal.resource_source) && validQuantity(proposal, latest);
+        sameSource(latest.source, proposal.resource_source) && validQuantity(proposal, latest) &&
+        Number(row.delivery_round) === Number(row.current_delivery_round);
       return { ...proposal, request_description: row.request_description, request_area: row.request_area,
         request_expires_at_ms: Number(row.request_expires_at_ms),
         resource_label: row.resource_kind === "helper" ? row.resource_data.display_name ?? "Unnamed helper" : null,
@@ -317,8 +324,10 @@ export class CoordinatorStore {
         const request = await readRequest(connection, proposal.request_id, now);
         const latest = (await readResources(connection, now, [proposal.resource_id]))
           .find(r => r.kind === proposal.resource_kind && r.resource_id === proposal.resource_id);
+        const round = (await connection.query(`SELECT ${deliveryRoundSql("$1","$2")} AS round`,
+          [proposal.request_id,proposal.resource_id])).rows[0].round;
         return latest && sameSource(request.source, proposal.request_source) && sameSource(latest.source, proposal.resource_source) &&
-          validQuantity(proposal, latest) ? "current" : "stale";
+          validQuantity(proposal, latest) && Number(rows[0].delivery_round) === Number(round) ? "current" : "stale";
       } catch (error) {
         if (error instanceof CoordinatorFailure && error.code === "REQUEST_UNAVAILABLE") return "stale";
         throw error;

@@ -10,12 +10,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Database } from "./database.js";
 import { AssistanceService,initializeAssistance } from "./assistance.js";
-import { CoordinatorStore } from "./coordinator/store.js";
+import { CoordinatorStore,initializeCoordinator } from "./coordinator/store.js";
 import { AssistanceTeam } from "./coordinator/team.js";
 import type { MatchContext } from "./coordinator/types.js";
 
 const key=()=>SigningIdentity.fromPem(generateKeyPairSync("ec",{namedCurve:"prime256v1"}).privateKey.export({format:"pem",type:"pkcs8"}).toString());
-async function fixture(path?: string,manualReview=true) {
+async function fixture(path?: string,manualReview=true,description="Need drinking water") {
   const pg=new PGlite(path);let clock=1792860000000;
   const cloudPem=generateKeyPairSync("ec",{namedCurve:"prime256v1"}).privateKey.export({format:"pem",type:"pkcs8"}).toString();
   const cloud=SigningIdentity.fromPem(cloudPem),requester=key(),supplier=key(),other=key();
@@ -34,7 +34,7 @@ async function fixture(path?: string,manualReview=true) {
   const upload=(p:WirePacket,id:string=randomUUID())=>app.inject({method:"POST",url:"/v1/sync/upload",headers:headers(),payload:{idempotency_key:id,packets:[p]}});
   const consent={public_mesh_allowed:true,cloud_processing_allowed:true};
   const requestId=randomUUID(),offerId=randomUUID();
-  const original=packet(requester,1,{request_id:requestId,category:3,description:"Need drinking water",coarse_area:"Station",consent});
+  const original=packet(requester,1,{request_id:requestId,category:3,description,coarse_area:"Station",consent});
   const offer=packet(supplier,5,{offer_id:offerId,owner_node_id:Buffer.from(supplier.nodeId,"hex"),resource_type:1,quantity:10,unit:"litres",consent});
   assert.equal((await upload(original)).statusCode,200);assert.equal((await upload(offer)).statusCode,200);
   async function proposal(request: string = requestId,resource: string = offerId,kind="offer",quantity:number|null=7) {
@@ -85,8 +85,61 @@ test("operator approval, signed owner acceptance and download confirmation reser
     assert.equal((await f.app.inject({url:`/v1/sync/download?cursor=${download.json().next_cursor}`,headers:f.headers()})).json().packets.length,0);
     f.advance();assert.equal((await f.upload(f.closure(6))).statusCode,200);
     const after=(await f.app.inject({url:"/v1/dashboard/offers",headers:f.headers("viewer")})).json().items[0];
-    assert.equal(after.reserved_quantity,0);assert.equal(after.consumed_quantity,7);assert.equal(after.available_quantity,3);
+    assert.equal(after.reserved_quantity,0);assert.equal(after.consumed_quantity,0);assert.equal(after.available_quantity,10);
     await f.status(id,6,f.requester.nodeId);
+  }finally{await f.app.close();}
+});
+
+test("resolving releases outstanding invitations and commitments, preserves receipts and makes stock reusable",async()=>{
+  const f=await fixture();try{
+    const received=await f.proposal();await f.review(received);
+    await f.upload(f.decision(await f.status(received)));
+    await f.upload(f.decision(await f.status(received,2,f.requester.nodeId),4,f.requester));
+    const releasedOffer=randomUUID(),pendingOffer=randomUUID();
+    let original:WirePacket|undefined;
+    for(const offerId of [releasedOffer,pendingOffer]){
+      const offer=f.packet(f.supplier,5,{offer_id:offerId,owner_node_id:Buffer.from(f.supplier.nodeId,"hex"),resource_type:1,quantity:10,unit:"litres",consent:f.consent});
+      assert.equal((await f.upload(offer)).statusCode,200);
+      if(offerId===releasedOffer)original=offer;
+    }
+    const committed=await f.proposal(f.requestId,releasedOffer),pending=await f.proposal(f.requestId,pendingOffer);
+    await f.review(committed);await f.review(pending);
+    await f.upload(f.decision(await f.status(committed)));
+    const oldCommitment=await f.status(committed,2,f.requester.nodeId),oldInvitation=await f.status(pending);
+    f.advance();const closure=f.closure(6);
+    f.failStatus(true);
+    assert.equal((await f.upload(closure,"resolve-retry")).statusCode,503);
+    assert.equal((await f.pg.query<any>("SELECT state FROM assistance_cases WHERE proposal_id=$1",[committed])).rows[0].state,2);
+    f.failStatus(false);
+    assert.equal((await f.upload(closure,"resolve-retry")).statusCode,200);
+    const count=(await f.pg.query("SELECT * FROM assistance_events")).rows.length;
+    assert.equal((await f.upload(closure)).statusCode,200);
+    assert.equal((await f.pg.query("SELECT * FROM assistance_events")).rows.length,count);
+    await f.status(received,7,f.requester.nodeId);await f.status(committed,6);await f.status(pending,4);
+    const balance=async(id:string)=>(await f.app.inject({url:"/v1/dashboard/offers",headers:f.headers("viewer")})).json().items.find((o:any)=>o.offer_id===id);
+    assert.equal((await balance(f.offerId)).consumed_quantity,7);
+    for(const id of [releasedOffer,pendingOffer]){
+      const stock=await balance(id);
+      assert.equal(stock.reserved_quantity,0);assert.equal(stock.consumed_quantity,0);assert.equal(stock.available_quantity,10);
+    }
+    assert.equal((await f.upload(f.decision(oldCommitment,4,f.requester))).statusCode,409);
+    assert.equal((await f.upload(f.decision(oldInvitation))).statusCode,409);
+    // Resolution no longer locks the released offer's quantity or unit.
+    const envelope=decode("ImmutableEnvelopeV1",Buffer.from(original!.immutable_envelope_bytes,"base64url"));
+    const edit=createPacket(f.supplier,6,{offer_id:releasedOffer,owner_node_id:Buffer.from(f.supplier.nodeId,"hex"),state:1,quantity:10,unit:"bottles",coarse_area:"",consent:f.consent,
+      available_until_ms:envelope.expires_at_ms,original_offer_envelope:Buffer.from(original!.immutable_envelope_bytes,"base64url"),original_offer_signature:Buffer.from(original!.signature,"base64url")},
+      {packetId:randomUUID(),eventId:randomUUID(),createdAtMs:f.clock(),expiresAtMs:envelope.expires_at_ms});
+    const edited=await f.upload(edit);assert.equal(edited.statusCode,200,edited.body);
+    const request=randomUUID();await f.upload(f.packet(f.other,1,{request_id:request,category:3,description:"Need drinking water",consent:f.consent}));
+    const context=await new CoordinatorStore(f.database).context(request,f.clock(),"supply");
+    assert.equal(context.resources.find(r=>r.resource_id===releasedOffer)!.quantity,10);
+    const next=await f.proposal(request,releasedOffer,"offer",10);
+    assert.equal((await f.review(next)).statusCode,200);
+    assert.equal((await f.upload(f.decision(await f.status(next)))).statusCode,200);
+    await f.status(next,2,f.other.nodeId);
+    assert.equal((await balance(releasedOffer)).reserved_quantity,10);
+    assert.equal((await balance(releasedOffer)).available_quantity,0);
+    assert.equal((await balance(f.offerId)).consumed_quantity,7);
   }finally{await f.app.close();}
 });
 
@@ -119,6 +172,62 @@ test("only the requester can confirm individual assistance received; stock is co
     f.advance();await f.upload(f.closure(5));
     assert.equal((await f.pg.query<any>("SELECT state FROM assistance_cases WHERE proposal_id=$1",[id])).rows[0].state,7);
     assert.equal((await f.app.inject({url:"/v1/dashboard/offers",headers:f.headers("viewer")})).json().items[0].consumed_quantity,7);
+  }finally{await f.app.close();}
+});
+
+test("the same signed supply offer can fulfil a remaining need after partial receipt, including upgraded databases",async()=>{
+  const f=await fixture(undefined,true,"Need 10 litres of drinking water");try{
+    const store=new CoordinatorStore(f.database),inputs:MatchContext[]=[];
+    const team=new AssistanceTeam(store,{available:true,name:"test-partial-delivery",suggest:async context=>{
+      inputs.push(context);
+      const offer=context.resources.find(r=>r.resource_id===f.offerId)!;
+      const received=context.follow_up!.arrangements.filter(a=>a.state===7 && a.resource_type===1 && a.unit==="litres")
+        .reduce((sum,a)=>sum+(a.quantity??0),0);
+      return {matches:[{request_id:f.requestId,resource_kind:"offer",resource_id:offer.resource_id,
+        quantity:Math.min(received===0?7:10-received,offer.quantity!),explanation:"Deliver the remaining requested drinking water"}]};
+    }},f.clock);
+    const first=(await team.run(f.requestId)).proposal_ids[0];assert.ok(first);
+    assert.equal(inputs.length,1);
+    // Recreate the previous proposal schema and migrate with a real pending proposal.
+    await f.pg.query("DROP INDEX coordinator_proposal_delivery_round");
+    await f.pg.query("ALTER TABLE coordinator_proposals DROP COLUMN delivery_round");
+    await f.pg.query("ALTER TABLE coordinator_proposals ADD CONSTRAINT coordinator_proposals_request_event_id_resource_event_id_key UNIQUE(request_event_id,resource_event_id)");
+    await initializeCoordinator(f.database);
+    assert.equal((await f.pg.query<any>("SELECT delivery_round FROM coordinator_proposals WHERE proposal_id=$1",[first])).rows[0].delivery_round,0);
+    await team.run(f.requestId);assert.equal(inputs.length,1); // Pending review blocks repetition.
+    const service=new AssistanceService(f.database,f.cloud,f.clock);
+    await service.setReviewMode(false,"operator");await service.autoReview();
+    await team.run(f.requestId);assert.equal(inputs.length,1); // Invitation still needs acceptance.
+    assert.equal((await f.upload(f.decision(await f.status(first)))).statusCode,200);
+    await team.run(f.requestId);assert.equal(inputs.length,1); // Active delivery blocks repetition.
+    const receipt=f.decision(await f.status(first,2,f.requester.nodeId),4,f.requester);
+    assert.equal((await f.upload(receipt)).statusCode,200);
+    assert.equal((await f.upload(receipt)).statusCode,200); // Duplicate receipt cannot open another round.
+    const next=await store.context(f.requestId,f.clock(),"supply");
+    assert.equal(next.resources.length,1);assert.equal(next.resources[0].resource_id,f.offerId);
+    assert.equal(next.resources[0].source.event_id,decode("ImmutableEnvelopeV1",Buffer.from(f.offer.immutable_envelope_bytes,"base64url")).event_id);
+    assert.equal(next.resources[0].quantity,3);assert.equal(next.resources[0].delivery_round,1);
+    assert.equal(next.follow_up!.arrangements[0].resource_type,1);assert.equal(next.follow_up!.arrangements[0].quantity,7);
+    assert.equal(await store.checkProposal(first,f.clock()),"stale");
+    const second=(await team.run(f.requestId)).proposal_ids[0];assert.ok(second);assert.notEqual(second,first);
+    assert.equal(inputs.length,2);
+    const proposals=(await f.pg.query<any>("SELECT proposal_id,delivery_round,quantity FROM coordinator_proposals ORDER BY delivery_round")).rows;
+    assert.deepEqual(proposals.map(p=>[p.delivery_round,p.quantity]),[[0,7],[1,3]]);
+    assert.equal(await store.checkProposal(second,f.clock()),"current");
+    await team.run(f.requestId);assert.equal(inputs.length,2);
+    await Promise.all([service.autoReview(),service.autoReview()]);
+    assert.equal((await f.pg.query("SELECT * FROM assistance_cases")).rows.length,2);
+    assert.equal((await f.pg.query("SELECT * FROM assistance_events WHERE proposal_id=$1",[second])).rows.length,2);
+    assert.equal((await f.upload(f.decision(await f.status(second)))).statusCode,200);
+    const reserved=(await f.app.inject({url:"/v1/dashboard/offers",headers:f.headers("viewer")})).json().items[0];
+    assert.equal(reserved.consumed_quantity,7);assert.equal(reserved.reserved_quantity,3);assert.equal(reserved.available_quantity,0);
+    assert.equal((await f.upload(f.decision(await f.status(second,2,f.requester.nodeId),4,f.requester))).statusCode,200);
+    await team.run(f.requestId);assert.equal(inputs.length,2);
+    assert.equal((await store.context(f.requestId,f.clock(),"supply")).resources.length,0);
+    const final=(await f.app.inject({url:"/v1/dashboard/offers",headers:f.headers("viewer")})).json().items[0];
+    assert.equal(final.consumed_quantity,10);assert.equal(final.reserved_quantity,0);assert.equal(final.available_quantity,0);
+    assert.equal((await f.pg.query<any>("SELECT data FROM resource_events WHERE entity_id=$1",[f.offerId])).rows[0].data.quantity,10);
+    assert.equal((await f.pg.query<any>("SELECT state FROM sos_reports WHERE request_id=$1",[f.requestId])).rows[0].state,1);
   }finally{await f.app.close();}
 });
 
@@ -219,6 +328,7 @@ test("specialists follow signed decisions through alternatives, commitments, rec
     const team=new AssistanceTeam(store,{available:true,name:"test-specialists",suggest:async context=>{
       inputs.push(context);
       assert.ok(context.resources.every(r=>r.kind===(context.specialist==="helper"?"helper":"offer")));
+      if(context.specialist==="supply" && context.follow_up!.arrangements.some(a=>a.state===7))return {matches:[]};
       const r=context.resources.find(r=>r.resource_id===(context.specialist==="helper"?f.supplier.nodeId:f.offerId))??context.resources[0];
       return {matches:[{request_id:f.requestId,resource_kind:r.kind,resource_id:r.resource_id,
         quantity:r.kind==="helper"?null:7,explanation:"Reported capability; access still needs owner confirmation"}]};
@@ -240,17 +350,18 @@ test("specialists follow signed decisions through alternatives, commitments, rec
     await f.upload(f.decision(await f.status(replacement,1,f.other.nodeId),1,f.other));
     await team.run(f.requestId);assert.equal(inputs.length,3);
     await f.upload(f.decision(await f.status(replacement,2,f.requester.nodeId),4,f.requester));
-    await team.run(f.requestId);assert.equal(inputs.length,3);
+    await team.run(f.requestId);assert.equal(inputs.length,4);
     plans=await store.followups(f.clock());
     assert.equal(plans.find(p=>p.specialist==="supply")!.received_count,1);
     assert.equal(plans.find(p=>p.specialist==="helper")!.status,"committed");
     await f.upload(f.decision(await f.status(helper,2),3));
-    await team.run(f.requestId);assert.equal(inputs.length,4);assert.equal(inputs[3].specialist,"helper");
+    await team.run(f.requestId);assert.equal(inputs.length,5);assert.equal(inputs[4].specialist,"helper");
     await service.autoReview();f.advance(3600001);await service.autoReview();
-    await team.run(f.requestId);assert.equal(inputs.length,4);
-    assert.ok((await store.followups(f.clock())).every(p=>p.status==="no_candidates"));
+    await team.run(f.requestId);assert.equal(inputs.length,5);
+    assert.equal((await store.followups(f.clock())).find(p=>p.specialist==="helper")!.status,"no_candidates");
+    assert.equal((await store.followups(f.clock())).find(p=>p.specialist==="supply")!.status,"no_match");
     await f.upload(f.closure(6));await store.closeTasks(f.clock());
-    assert.equal((await team.run(f.requestId)).code,"REQUEST_UNAVAILABLE");assert.equal(inputs.length,4);
+    assert.equal((await team.run(f.requestId)).code,"REQUEST_UNAVAILABLE");assert.equal(inputs.length,5);
     assert.ok((await store.followups(f.clock())).every(p=>p.status==="closed"));
   }finally{await f.app.close();}
 });

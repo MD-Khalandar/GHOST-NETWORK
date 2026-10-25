@@ -295,6 +295,7 @@ enum ReceiptTypeV1 {
 
 // Status: 1 invited, 2 committed, 3 declined, 4 cancelled, 5 expired,
 // 6 requester resolved the SOS, 7 requester confirmed this assistance received.
+// Resolution releases outstanding reservations; only state 7 consumes supplies.
 // A commitment is not proof that supplies or assistance have been delivered.
 message AssistanceStatusV1 {
   string proposal_id = 1;

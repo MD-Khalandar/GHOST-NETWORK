@@ -12,6 +12,7 @@ export interface SosSource {
 }
 
 export interface ResourceSource {
+  delivery_round?: number;
   kind: "helper" | "offer";
   resource_id: string;
   owner_node_id: string;
@@ -27,7 +28,7 @@ export interface ResourceSource {
 export type Specialist = "helper" | "supply";
 export interface FollowUp {
   awaiting_review: number;
-  arrangements: { proposal_id:string; resource_id:string; state:number; version:number; quantity:number|null; unit:string }[];
+  arrangements: { proposal_id:string; resource_id:string; state:number; version:number; quantity:number|null; unit:string; resource_type?:number|null }[];
 }
 export interface MatchContext { request: SosSource; resources: ResourceSource[]; specialist?:Specialist; follow_up?:FollowUp }
 export interface MatchDraft {
