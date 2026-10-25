@@ -1,5 +1,7 @@
 # GHOST
 
+Video: https://www.youtube.com/watch?v=dDsuvHzaNGA
+
 **Ask for help when the network goes quiet.**
 
 GHOST is an Android SOS network for outages. A phone saves a request, nearby
