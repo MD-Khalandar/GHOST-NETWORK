@@ -148,7 +148,7 @@ class LocalChatRepositoryTest {
         assertEquals("Delivered to the other phone",shown.status)
         b.chat.send(id,"I am waiting there",pin);transfer(b,a);a.chat.process(pin);transfer(a,b)
         assertEquals(2,a.chat.observe().first().single().messages.size)
-        assertEquals("Delivered to the other phone",b.chat.observe().first().single().messages.last().status)
+        assertEquals("Delivered to the other phone",b.chat.observe().first().single().messages.single{it.mine}.status)
     }
 
     @Test fun historySurvivesRestartAndClosedArrangementCannotSend()=runBlocking {

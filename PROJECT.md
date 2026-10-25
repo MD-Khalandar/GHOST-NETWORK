@@ -203,6 +203,11 @@ sync/mesh receives the update; no push service is added. No attachments or read
 receipts. There is no forward secrecy or protection for public routing metadata.
 Updated server and participating phones are required; handset Keystore testing remains.
 
+Android release packaging constrains Nearby's transitive Fragment to 1.8.9 for
+Activity Result compatibility. Hosted APKs target the Render server and use a
+separate release signing key in ignored `.local/release-signing/`; back it up for
+future updates. Debug-signed installations cannot update directly to this key.
+
 Next: field-test assistance/background connections and GPS acquisition. Server
 commitment, requester-reported resolution and receipt do not independently prove delivery.
 

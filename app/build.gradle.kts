@@ -98,6 +98,12 @@ ksp {
 }
 
 dependencies {
+    constraints {
+        implementation("androidx.fragment:fragment:1.8.9") {
+            because("Nearby brings Fragment 1.1.0; Activity Result requires at least 1.3.0")
+        }
+    }
+
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
